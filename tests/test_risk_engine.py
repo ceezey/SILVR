@@ -7,6 +7,7 @@ import pytest
 import silver_bot.risk.kill_switch as kill_switch_module
 from silver_bot.config import load_config
 from silver_bot.risk import KillSwitch, RiskConfig, RiskManagementEngine, RiskRequest, RiskState, build_risk_engine
+from silver_bot.storage import SQLiteStorage
 
 
 def request(
@@ -245,3 +246,76 @@ def test_daily_loss_rejection_trips_kill_switch(tmp_path) -> None:
 
     assert decision.reason == "Max daily loss limit reached"
     assert json.loads(kill_file.read_text(encoding="utf-8"))["reason"] == "Max daily loss limit reached"
+
+
+def risk_storage(tmp_path) -> SQLiteStorage:
+    storage = SQLiteStorage(tmp_path / "risk.sqlite3")
+    storage.initialize()
+    return storage
+
+
+def test_risk_state_survives_engine_restart(tmp_path) -> None:
+    storage = risk_storage(tmp_path)
+    day = date(2026, 1, 2)
+    first = RiskManagementEngine(state_store=storage)
+    first.reserve_trade(day)
+    first.release_trade(realized_pnl=-50, day=day)
+
+    second = RiskManagementEngine(state_store=storage)
+
+    assert second.state == RiskState(
+        current_day=day,
+        daily_realized_pnl=-50,
+        consecutive_losses=1,
+        trades_today=1,
+        open_positions=0,
+    )
+
+
+def test_restart_does_not_reset_consecutive_loss_limit(tmp_path) -> None:
+    storage = risk_storage(tmp_path)
+    day = date(2026, 1, 2)
+    first = RiskManagementEngine(RiskConfig(max_consecutive_losses=3), state_store=storage)
+    for _ in range(3):
+        first.reserve_trade(day)
+        first.release_trade(realized_pnl=-10, day=day)
+
+    second = RiskManagementEngine(RiskConfig(max_consecutive_losses=3), state_store=storage)
+
+    assert second.evaluate(request()).reason == "Max consecutive losses limit reached"
+
+
+def test_corrupt_risk_state_halts_trading(tmp_path) -> None:
+    import sqlite3
+
+    storage = risk_storage(tmp_path)
+    storage.save_risk_state(RiskState(current_day=date(2026, 1, 2)))
+    connection = sqlite3.connect(storage.database_path)
+    try:
+        connection.execute("UPDATE risk_state SET open_positions = -3")
+        connection.commit()
+    finally:
+        connection.close()
+
+    engine = RiskManagementEngine(state_store=storage)
+    decision = engine.evaluate(request())
+
+    assert decision.approved is False
+    assert decision.reason == "Risk state could not be loaded; trading halted"
+
+
+def test_build_risk_engine_attaches_storage(tmp_path) -> None:
+    storage = risk_storage(tmp_path)
+    config = load_config(env_path=tmp_path / ".env", yaml_path=tmp_path / "missing.yaml", environ={})
+
+    engine = build_risk_engine(config, storage)
+    engine.reserve_trade(date(2026, 1, 2))
+
+    assert storage.load_risk_state().trades_today == 1
+
+
+def test_engine_without_store_does_not_persist(tmp_path) -> None:
+    engine = RiskManagementEngine()
+    engine.reserve_trade(date(2026, 1, 2))
+
+    assert engine.state_store is None

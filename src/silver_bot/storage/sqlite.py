@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from contextlib import contextmanager
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Iterator, Iterable
 
 from silver_bot.models import Candle, LogEvent
+from silver_bot.risk.models import RiskState, RiskStateError
 
 
 class SQLiteStorage:
@@ -110,6 +113,15 @@ class SQLiteStorage:
                     reason TEXT NOT NULL,
                     features_snapshot TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS risk_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    current_day TEXT,
+                    daily_realized_pnl REAL NOT NULL,
+                    consecutive_losses INTEGER NOT NULL,
+                    trades_today INTEGER NOT NULL,
+                    open_positions INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
                 );
                 """
             )
@@ -246,10 +258,79 @@ class SQLiteStorage:
                 ),
             )
 
+    def save_risk_state(self, state: RiskState) -> None:
+        """Persist the single risk-state row."""
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO risk_state (
+                    id, current_day, daily_realized_pnl, consecutive_losses,
+                    trades_today, open_positions, updated_at
+                )
+                VALUES (1, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    state.current_day.isoformat() if state.current_day else None,
+                    state.daily_realized_pnl,
+                    state.consecutive_losses,
+                    state.trades_today,
+                    state.open_positions,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
+    def load_risk_state(self) -> RiskState | None:
+        """Return the saved risk state, None if never saved; raise if untrustworthy."""
+
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    """
+                    SELECT current_day, daily_realized_pnl, consecutive_losses,
+                           trades_today, open_positions
+                    FROM risk_state WHERE id = 1
+                    """
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise RiskStateError(f"risk_state could not be read: {exc}") from exc
+        if row is None:
+            return None
+        current_day, pnl, losses, trades, open_positions = row
+        try:
+            day = date.fromisoformat(current_day) if current_day is not None else None
+        except (TypeError, ValueError) as exc:
+            raise RiskStateError("risk_state.current_day is not an ISO date") from exc
+        if isinstance(pnl, bool) or not isinstance(pnl, (int, float)) or not math.isfinite(pnl):
+            raise RiskStateError("risk_state.daily_realized_pnl is not a finite number")
+        for name, value in (
+            ("consecutive_losses", losses),
+            ("trades_today", trades),
+            ("open_positions", open_positions),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise RiskStateError(f"risk_state.{name} must be a non-negative integer")
+        return RiskState(
+            current_day=day,
+            daily_realized_pnl=float(pnl),
+            consecutive_losses=losses,
+            trades_today=trades,
+            open_positions=open_positions,
+        )
+
     def count_rows(self, table_name: str) -> int:
         """Return row count for known local tables."""
 
-        allowed = {"paper_trades", "paper_events", "ml_predictions", "candles", "signals", "trades", "logs"}
+        allowed = {
+            "paper_trades",
+            "paper_events",
+            "ml_predictions",
+            "candles",
+            "signals",
+            "trades",
+            "logs",
+            "risk_state",
+        }
         if table_name not in allowed:
             raise ValueError("unknown table name")
         with self._connect() as connection:

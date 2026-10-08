@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Protocol
 
 MAX_RISK_PER_TRADE = 0.005
 
@@ -63,6 +64,18 @@ class RiskState:
             self.current_day = day
             self.daily_realized_pnl = 0.0
             self.trades_today = 0
+
+
+class RiskStateError(ValueError):
+    """Raised when persisted risk state cannot be trusted."""
+
+
+class RiskStateStore(Protocol):
+    """Persistence for RiskState across restarts."""
+
+    def load_risk_state(self) -> RiskState | None: ...
+
+    def save_risk_state(self, state: RiskState) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
