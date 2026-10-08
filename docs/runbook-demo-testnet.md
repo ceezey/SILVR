@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the URL, risk-limit and kill-switch statements in step 3 re-checked 2026-10-09 against `70ccaec`
 
 This runbook prepares and checks Binance Futures demo (testnet) mode: creating testnet keys, setting the demo environment, running the demo readiness checker, a dry startup, verification and stopping. It absorbs the demo steps of the old `DEPLOYMENT.md` and the demo example of the old `CONFIGURATION.md`.
 
@@ -54,7 +54,7 @@ Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-ga
    MAX_LEVERAGE=3
    ```
 
-   What the flags do. `DEMO_TRADING=true` turns on every demo requirement, even if the mode is not `demo`. `PAPER_TRADING` must be `false` when `DEMO_TRADING=true`. `LIVE_TRADING` must stay `false` (true is rejected). `BINANCE_TESTNET=true` plus a base URL containing `testnet.binancefuture.com` is required; the URL check is a substring match, so a lookalike host would pass (G-10): type the URL exactly as shown. The risk limits are range-checked in demo mode only: risk per trade at most 0.005, daily loss at most 0.02, leverage at most 3. `KILL_SWITCH_PATH` must be set, but the runtime does not pass it to the risk engine (G-6), so it is a readiness gate, not an effective stop.
+   What the flags do. `DEMO_TRADING=true` turns on every demo requirement, even if the mode is not `demo`. `PAPER_TRADING` must be `false` when `DEMO_TRADING=true`. `LIVE_TRADING` must stay `false` (true is rejected). `BINANCE_TESTNET=true` is required, and a base URL, if set, must be `https` with host exactly `testnet.binancefuture.com` (no userinfo, port 443 or none); lookalike hosts are rejected since `0a76564` (`config/settings.py:348-365`, G-10 closed). Risk per trade must be at most 0.005 in every mode; daily loss at most 0.02 and leverage at most 3 are checked in demo mode only. `KILL_SWITCH_PATH` must be set, but only `build_risk_engine` passes it to the risk engine and the entrypoint does not call it yet (G-6), so it is a readiness gate, not an effective stop.
 
 4. **Run the demo readiness checker.** It writes a JSON report and places no orders. Send the report to a folder of your choice:
 
@@ -107,6 +107,6 @@ Done means: the checker exits 0 with 18 passed checks, health and startup exit 0
 - [x] Every runnable command was executed against the code with a temporary demo `.env` containing placeholder values; no real key was used and the repository `.env` was not read or changed.
 - [x] The runbook states that no network I/O, order placement or demo session exists, and defines "dry startup" accordingly.
 - [x] Key creation requires trade-only permission with withdrawals disabled, a separate testnet account and a private git-ignored `.env`.
-- [x] The substring URL check (G-10) and the inert kill-switch path (G-6) are stated next to the settings they affect.
+- [x] The exact-host URL check (G-10) and the kill-switch path that no runtime uses yet (G-6) are stated next to the settings they affect.
 - [x] No em dash and no live-trading step appears; live remains `Planned, blocked`.
 - [ ] Step 1 and the Docker commands were not executed, so they are described from the site rules and the compose file only.

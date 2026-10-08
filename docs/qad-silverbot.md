@@ -4,10 +4,10 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-09 against code at commit `70ccaec` (HIGH safety fixes batch 1 added 34 test functions; rows outside that batch are unchanged since `62037d1`)
 
-This document is the test plan for Silver Bot. It maps all 108 existing tests to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. Related documents: [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [build-silverbot.md](build-silverbot.md) and the [index](index.md).
+This document is the test plan for Silver Bot. It maps all 143 existing test functions (167 collected tests) to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. Related documents: [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [build-silverbot.md](build-silverbot.md) and the [index](index.md).
 
 Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`), [sdd-silverbot.md](sdd-silverbot.md), [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) and [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (RFC-004, the mode-gate conditions).
 
@@ -39,23 +39,26 @@ Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`
 
 **Data.** All tests use synthetic candles and in-code fixtures. No historical dataset ships with the repository, and the owner has not yet chosen a data source (OI-8 in the BRD). Real-data runs are therefore not part of this suite (section 3.7).
 
-**Baseline result (verbatim).** Run on 2026-10-08 with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` (recorded on 2026-10-08 in the original checkout path) at the reconciled commit:
+**Baseline result (verbatim).** Run on 2026-10-09 with `python -m pytest -q` from the repository root (Python 3.14.3) on `dev` at `70ccaec` plus this docs change:
 
 ```text
-........................................................................ [ 66%]
-....................................                                     [100%]
-108 passed in 1.57s
+........................................................................ [ 43%]
+........................................................................ [ 86%]
+.......................                                                  [100%]
+167 passed in 4.40s
 ```
 
-The count is 108 test functions in 19 files (`^def test_` over `tests/`). The elapsed time is a single observation, not a benchmark.
+The 2026-10-08 baseline at `62037d1` was `108 passed in 1.57s`, run with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` in the original checkout path.
+
+The count is 143 test functions in 20 files (`^def test_` over `tests/`); parametrized cases make 167 collected tests. At `62037d1` it was 108 functions in 19 files. The elapsed time is a single observation, not a benchmark.
 
 Rows below cite tests as `tests/<file>.py::<name>`; every cited name was checked to exist (section 8).
 
 ## 3. Test Matrix
 
-Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered (G-#)`. A Not covered row is a scenario the PRD or an RFC says should hold but that no test pins; every one has a gap id and is listed again in section 3.8. A test may prove more than one scenario; where two rows cite the same test it is because the test asserts both. Scenario counts: 153 rows, of which 108 are automated and 45 are Not covered.
+Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered (G-#)`. A Not covered row is a scenario the PRD or an RFC says should hold but that no test pins; every one has a gap id and is listed again in section 3.8. A test may prove more than one scenario; where two rows cite the same test it is because the test asserts both. Scenario counts: 171 rows, of which 134 are automated and 37 are Not covered.
 
-### 3.1 Happy path (46 scenarios)
+### 3.1 Happy path (52 scenarios)
 
 | QAD-T# | Scenario | PRD-F# | Automated by (`tests/<file>.py::<name>`) or Not covered |
 |---|---|---|---|
@@ -105,8 +108,14 @@ Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered 
 | QAD-T44 | Backtest trade carries the ML probability and a reduced position size | PRD-F2, PRD-F6 | `tests/test_ml_probability_filter.py::test_backtest_includes_ml_probability_and_reduces_risk` |
 | QAD-T45 | A candidate that passes the promotion policy is promoted and the decision is exported | PRD-F6 | `tests/test_ml_promotion.py::test_candidate_model_is_promoted_when_policy_passes` |
 | QAD-T46 | With no active model a valid candidate is promoted | PRD-F6 | `tests/test_ml_promotion.py::test_no_active_model_fallback_promotes_valid_candidate` |
+| QAD-T164 | Testnet URL guard accepts the exact host, a path, upper case, port 443 and surrounding spaces | PRD-F5 | `tests/test_exchange.py::test_testnet_url_accepts_exact_host` |
+| QAD-T165 | Live readiness accepts a JSON-object report that starts with a UTF-8 BOM | PRD-F8 | `tests/test_readiness.py::test_live_readiness_accepts_report_with_utf8_bom` |
+| QAD-T166 | `initialize` creates `risk_state`; a saved state loads back unchanged; no row loads as None | PRD-F3, PRD-F10 | `tests/test_storage.py::test_risk_state_table_exists`, `tests/test_storage.py::test_risk_state_round_trip`, `tests/test_storage.py::test_risk_state_missing_row_returns_none` |
+| QAD-T167 | `build_risk_engine` with storage attaches the SQLite state store | PRD-F3 | `tests/test_risk_engine.py::test_build_risk_engine_attaches_storage` |
+| QAD-T168 | An engine without a store writes no `risk_state` row | PRD-F3 | `tests/test_risk_engine.py::test_engine_without_store_does_not_persist` |
+| QAD-T169 | Materialized root files (`AGENTS.md`, `MODEL_CARD.md`, `.claude/agents/*.md`) match their canonical docs | None (docs tooling) | `tests/test_materialize_docs.py::test_materialized_files_are_up_to_date` |
 
-### 3.2 Sad path: expected rejections and negative outcomes (41 scenarios)
+### 3.2 Sad path: expected rejections and negative outcomes (42 scenarios)
 
 | QAD-T# | Scenario | PRD-F# | Automated by (`tests/<file>.py::<name>`) or Not covered |
 |---|---|---|---|
@@ -117,7 +126,7 @@ Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered 
 | QAD-T51 | Session settings from environment or yaml reach the strategy | PRD-F1, PRD-F9 | Not covered (G-18) |
 | QAD-T52 | Backtest outside the session takes no trade and records the rejection reason | PRD-F2 | `tests/test_backtest_engine.py::test_backtest_records_no_trade_rejections` |
 | QAD-T53 | A limit order whose entry is never touched is not filled | PRD-F2 | `tests/test_backtest_engine.py::test_limit_order_not_filled_if_price_never_reaches_entry` |
-| QAD-T54 | Default backtest costs are non-zero (slippage and spread) | PRD-F2 | Not covered (G-11) |
+| QAD-T54 | Default backtest costs are non-zero (slippage 5.0 bps, spread 3.0 bps) | PRD-F2 | `tests/test_backtest_engine.py::test_backtest_cost_defaults_are_conservative` |
 | QAD-T55 | Reward-to-risk below the configured minimum is rejected by the risk engine | PRD-F3 | `tests/test_risk_engine.py::test_low_reward_to_risk_is_rejected` |
 | QAD-T56 | Default (disabled) alerter sends nothing, even with a client | PRD-F7 | `tests/test_monitoring_reports.py::test_telegram_disabled_behavior` |
 | QAD-T57 | Paper run with the default alerter sends no Telegram message | PRD-F4, PRD-F7 | `tests/test_paper_trading.py::test_paper_trading_telegram_disabled_by_default` |
@@ -151,8 +160,9 @@ Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered 
 | QAD-T85 | Startup with a valid configuration records bot_started and bot_stopped and exits 0 | PRD-F11 | Not covered (G-28) |
 | QAD-T86 | Health command exits 2 on a rejected configuration | PRD-F11 | Not covered (G-28) |
 | QAD-T87 | Host preparation script and systemd unit create the silverbot user and writable bind mounts | PRD-F11 | Not covered (G-26) |
+| QAD-T170 | A corrupt `risk_state` row (negative count, non-integer count, bad date, non-numeric PnL) raises `RiskStateError` | PRD-F3, PRD-F10 | `tests/test_storage.py::test_corrupt_risk_state_raises` |
 
-### 3.3 Unsafe and abuse cases (42 scenarios)
+### 3.3 Unsafe and abuse cases (50 scenarios)
 
 Unsafe configuration, live-trading attempts, missing stop loss, kill switch active, secret leakage, lookahead and deployment files that could enable live. This is the priority section: any failure here is severity S1 (section 5).
 
@@ -166,7 +176,7 @@ Unsafe configuration, live-trading attempts, missing stop loss, kill switch acti
 | QAD-T93 | A real order placement request raises OrderPlacementDisabled | PRD-F5, PRD-F12 | `tests/test_exchange.py::test_binance_adapter_rejects_real_order_placement` |
 | QAD-T94 | A real order cancellation request raises OrderPlacementDisabled | PRD-F5, PRD-F12 | `tests/test_exchange.py::test_binance_adapter_rejects_real_order_cancellation` |
 | QAD-T95 | Adapter built with testnet=True and the production URL raises "testnet endpoint" | PRD-F5 | `tests/test_exchange.py::test_binance_adapter_rejects_production_url_for_testnet_mode` |
-| QAD-T96 | Look-alike host containing the testnet name as a substring is rejected by the URL guard | PRD-F5 | Not covered (G-10) |
+| QAD-T96 | Look-alike host containing the testnet name as a substring is rejected by the URL guard | PRD-F5 | `tests/test_exchange.py::test_testnet_url_rejects_lookalikes`, `tests/test_exchange.py::test_adapter_rejects_lookalike_testnet_host`, `tests/test_config.py::test_demo_config_rejects_lookalike_testnet_url` |
 | QAD-T97 | Missing stop loss is rejected ("Stop loss is required") | PRD-F3 | `tests/test_risk_engine.py::test_missing_stop_loss_is_rejected` |
 | QAD-T98 | Stop loss on the wrong side is rejected ("Invalid stop loss for trade direction") | PRD-F3 | `tests/test_risk_engine.py::test_invalid_stop_loss_is_rejected` |
 | QAD-T99 | Daily loss at the limit locks the engine out | PRD-F3 | `tests/test_risk_engine.py::test_daily_loss_lockout` |
@@ -178,9 +188,9 @@ Unsafe configuration, live-trading attempts, missing stop loss, kill switch acti
 | QAD-T105 | Kill-switch file during a backtest produces a "Risk rejected: Kill switch is active" record | PRD-F2, PRD-F3 | `tests/test_backtest_engine.py::test_backtest_logs_risk_rejection_when_kill_switch_active` |
 | QAD-T106 | Kill-switch file during a paper run opens no trade, records KILL_SWITCH_ACTIVE and sends an alert | PRD-F3, PRD-F4 | `tests/test_paper_trading.py::test_paper_trading_kill_switch_alert_and_risk_rejection` |
 | QAD-T107 | Default-constructed risk engine arms the kill switch without a supplied path | PRD-F3 | Not covered (G-6) |
-| QAD-T108 | A loss-limit breach trips the kill switch automatically and closes open positions | PRD-F3 | Not covered (G-6) |
-| QAD-T109 | Risk engine uses the Settings limits and cannot be set above 0.5% per trade | PRD-F3, PRD-F9 | Not covered (G-5) |
-| QAD-T110 | Daily loss, consecutive loss and trade counts survive a restart | PRD-F3 | Not covered (G-7) |
+| QAD-T108 | A loss-limit breach trips the kill switch automatically (three losing releases; the daily-loss rejection) | PRD-F3 | `tests/test_risk_engine.py::test_consecutive_losses_trip_kill_switch`, `tests/test_risk_engine.py::test_daily_loss_rejection_trips_kill_switch` |
+| QAD-T109 | Risk engine built from Settings carries their limits and cannot be set above 0.5% per trade | PRD-F3, PRD-F9 | `tests/test_risk_engine.py::test_build_risk_engine_carries_settings_caps`, `tests/test_risk_engine.py::test_risk_per_trade_above_half_percent_is_rejected` |
+| QAD-T110 | Daily loss, consecutive loss and trade counts survive a restart | PRD-F3 | `tests/test_risk_engine.py::test_risk_state_survives_engine_restart`, `tests/test_risk_engine.py::test_restart_does_not_reset_consecutive_loss_limit` |
 | QAD-T111 | Demo readiness fails on a production endpoint | PRD-F5, PRD-F8 | `tests/test_demo_readiness.py::test_demo_readiness_rejects_production_endpoint` |
 | QAD-T112 | Demo readiness fails when the risk engine, kill switch or stop-loss requirement is disabled | PRD-F3, PRD-F8 | `tests/test_demo_readiness.py::test_demo_readiness_fails_if_risk_kill_switch_or_stop_loss_disabled` |
 | QAD-T113 | Demo readiness fails when the kill-switch file is active | PRD-F3, PRD-F8 | `tests/test_demo_readiness.py::test_demo_readiness_fails_if_kill_switch_file_is_active` |
@@ -190,7 +200,7 @@ Unsafe configuration, live-trading attempts, missing stop loss, kill switch acti
 | QAD-T117 | Live readiness blocks missing API keys and unconfirmed withdrawal restriction | PRD-F8, PRD-F12 | `tests/test_readiness.py::test_live_readiness_blocks_missing_api_keys_and_withdrawal_confirmation` |
 | QAD-T118 | Live readiness blocks unsafe risk limits | PRD-F8, PRD-F12 | `tests/test_readiness.py::test_live_readiness_blocks_unsafe_risk_limits` |
 | QAD-T119 | Live readiness blocks when the kill-switch file is active | PRD-F3, PRD-F8 | `tests/test_readiness.py::test_live_readiness_blocks_when_kill_switch_file_is_active` |
-| QAD-T120 | A 0-byte or invalid evidence report fails the readiness check | PRD-F8 | Not covered (G-2) |
+| QAD-T120 | A 0-byte or invalid evidence report fails the readiness check | PRD-F8 | `tests/test_readiness.py::test_live_readiness_rejects_unusable_report` |
 | QAD-T121 | Live startup consults the readiness report | PRD-F8, PRD-F12 | Not covered (G-2) |
 | QAD-T122 | API keys, secrets and Telegram token are redacted from the audit log and absent from the file | PRD-F7 | `tests/test_monitoring_reports.py::test_structured_log_generation_and_secret_redaction` |
 | QAD-T123 | Demo credentials are redacted from the demo-readiness audit event | PRD-F7, PRD-F8 | `tests/test_monitoring_reports.py::test_demo_credentials_are_redacted_from_logs` |
@@ -200,8 +210,16 @@ Unsafe configuration, live-trading attempts, missing stop loss, kill switch acti
 | QAD-T127 | systemd unit runs compose paper bot and never sets live mode | PRD-F11, PRD-F12 | `tests/test_deployment_files.py::test_systemd_service_runs_compose_paper_bot` |
 | QAD-T128 | Liquidity sweep ignores a level not known before the sweep (no lookahead) | PRD-F1 | `tests/test_strategy_modules.py::test_liquidity_sweep_ignores_levels_not_known_before_sweep` |
 | QAD-T129 | Market structure shift is None until the break candle exists (no lookahead) | PRD-F1 | `tests/test_strategy_modules.py::test_market_structure_shift_does_not_use_future_break_candle` |
+| QAD-T154 | `RiskConfig` rejects risk per trade above 0.5% and accepts exactly 0.5% | PRD-F3 | `tests/test_risk_engine.py::test_risk_per_trade_above_half_percent_is_rejected`, `tests/test_risk_engine.py::test_risk_per_trade_at_half_percent_is_allowed` |
+| QAD-T155 | `build_risk_engine` passes no kill-switch path when `KILL_SWITCH_ENABLED=false` | PRD-F3, PRD-F9 | `tests/test_risk_engine.py::test_build_risk_engine_ignores_kill_switch_path_when_disabled` |
+| QAD-T156 | Kill switch fails closed: a directory at the path, an `OSError` from the check, or a regular-file parent counts as active | PRD-F3 | `tests/test_risk_engine.py::test_kill_switch_directory_path_is_active`, `tests/test_risk_engine.py::test_kill_switch_unreadable_path_is_active`, `tests/test_risk_engine.py::test_kill_switch_parent_is_a_file_is_active` |
+| QAD-T157 | A missing kill-switch file under an existing directory is inactive | PRD-F3 | `tests/test_risk_engine.py::test_kill_switch_missing_file_is_inactive` |
+| QAD-T158 | `trip` writes JSON with `reason` and `tripped_at`; a second trip keeps the first reason | PRD-F3 | `tests/test_risk_engine.py::test_kill_switch_trip_writes_reason_and_timestamp`, `tests/test_risk_engine.py::test_kill_switch_second_trip_keeps_first_reason` |
+| QAD-T159 | With no path, `trip` writes nothing and the switch stays inactive | PRD-F3 | `tests/test_risk_engine.py::test_kill_switch_without_path_trip_is_noop` |
+| QAD-T160 | An unreadable persisted risk state halts trading ("Risk state could not be loaded; trading halted") | PRD-F3 | `tests/test_risk_engine.py::test_corrupt_risk_state_halts_trading` |
+| QAD-T161 | A kill-switch trip closes or reduces open positions | PRD-F3 | Not covered (G-6) |
 
-### 3.4 Invalid configuration (11 scenarios)
+### 3.4 Invalid configuration (13 scenarios)
 
 | QAD-T# | Scenario | PRD-F# | Automated by (`tests/<file>.py::<name>`) or Not covered |
 |---|---|---|---|
@@ -213,13 +231,15 @@ Unsafe configuration, live-trading attempts, missing stop loss, kill switch acti
 | QAD-T135 | ML registry path with parent traversal is rejected | PRD-F6, PRD-F9 | `tests/test_config.py::test_ml_registry_path_cannot_escape_workspace` |
 | QAD-T136 | OHLCV request with start equal to end raises "start must be before end" before any network work | PRD-F10 | `tests/test_exchange.py::test_binance_ohlcv_skeleton_validates_date_range_before_network_work` |
 | QAD-T137 | Readiness reasons say how to fix a missing report path and an invalid boolean | PRD-F8 | `tests/test_readiness.py::test_readiness_messages_explain_missing_report_and_invalid_boolean` |
-| QAD-T138 | Shipped .env.example copied to .env loads | PRD-F9 | Not covered (G-4) |
-| QAD-T139 | Risk limits above 0.5% per trade, 2% daily loss or 3x leverage are rejected outside demo mode | PRD-F9 | Not covered (G-5) |
+| QAD-T138 | Shipped .env.example copied to .env loads (as paper mode) | PRD-F9 | `tests/test_config.py::test_shipped_env_example_loads_as_paper` |
+| QAD-T139 | `MAX_RISK_PER_TRADE` above 0.5% is rejected outside demo mode | PRD-F9 | `tests/test_config.py::test_max_risk_per_trade_above_cap_is_rejected_in_paper_mode` |
 | QAD-T140 | NO_TRADE signal built without a reason raises "NO_TRADE signals require a reason" | PRD-F1 | Not covered (G-32) |
+| QAD-T162 | `KILL_SWITCH_ENABLED=true` with a blank `KILL_SWITCH_PATH` is rejected in paper mode | PRD-F3, PRD-F9 | `tests/test_config.py::test_kill_switch_enabled_without_path_is_rejected_in_paper_mode` |
+| QAD-T163 | `MAX_DAILY_LOSS` above 2% or `MAX_LEVERAGE` above 3 is rejected outside demo mode | PRD-F9 | Not covered (G-5) |
 
-### 3.5 ML adversarial: leakage, out-of-range probabilities, missing model (13 scenarios)
+### 3.5 ML adversarial: leakage, out-of-range probabilities, missing model (14 scenarios)
 
-The ML filter may only approve, reject or reduce risk (PRD-F6, RFC-003). These rows attack that boundary. The known flaw is that a NaN probability approves (H-1, G-8); the test for the correct behaviour does not exist yet.
+The ML filter may only approve, reject or reduce risk (PRD-F6, RFC-003). These rows attack that boundary. The NaN flaw (H-1, G-8) was fixed in `8e66054`: a NaN, infinite or out-of-range probability now rejects, and QAD-T145, QAD-T146 and QAD-T171 pin it.
 
 | QAD-T# | Scenario | PRD-F# | Automated by (`tests/<file>.py::<name>`) or Not covered |
 |---|---|---|---|
@@ -227,8 +247,8 @@ The ML filter may only approve, reject or reduce risk (PRD-F6, RFC-003). These r
 | QAD-T142 | Candidate optimised on the final test set is rejected | PRD-F6 | `tests/test_ml_promotion.py::test_candidate_rejected_if_final_test_was_used_for_optimization` |
 | QAD-T143 | Calibration rejects mismatched lengths, out-of-range probabilities and non-binary labels | PRD-F6 | `tests/test_ml_calibration.py::test_calibration_report_rejects_invalid_inputs` |
 | QAD-T144 | Missing registry or no active model falls back to the rule-based signal (APPROVE, probability None) | PRD-F6 | `tests/test_ml_probability_filter.py::test_ml_filter_missing_model_falls_back_to_rule_based_signal` |
-| QAD-T145 | Model returns NaN: the signal is rejected | PRD-F6 | Not covered (G-8) |
-| QAD-T146 | Model returns a probability outside [0, 1]: it is clamped before the decision | PRD-F6 | Not covered (G-32) |
+| QAD-T145 | Model returns NaN or an infinity: the signal is rejected | PRD-F6 | `tests/test_ml_probability_filter.py::test_ml_filter_rejects_invalid_probability` |
+| QAD-T146 | Model returns a probability outside [0, 1]: the signal is rejected (not clamped) | PRD-F6 | `tests/test_ml_probability_filter.py::test_ml_filter_rejects_invalid_probability` |
 | QAD-T147 | Stale model (registered but outdated artifact) is detected and not used | PRD-F6 | Not covered (G-28) |
 | QAD-T148 | Corrupt or unreadable model artifact falls back safely | PRD-F6 | Not covered (G-28) |
 | QAD-T149 | Registering a model with a missing artifact, feature list or metrics file raises FileNotFoundError | PRD-F6 | Not covered (G-32) |
@@ -236,6 +256,7 @@ The ML filter may only approve, reject or reduce risk (PRD-F6, RFC-003). These r
 | QAD-T151 | Split has purge or embargo, and higher-timeframe features do not look ahead | PRD-F6 | Not covered (G-22) |
 | QAD-T152 | A model written to the registry by any route is activated only after promotion policy passes | PRD-F6 | Not covered (G-22) |
 | QAD-T153 | ML_FILTER_ENABLED and thresholds in settings reach the filter at startup | PRD-F6, PRD-F9 | Not covered (G-9) |
+| QAD-T171 | Probabilities exactly 0.0 and 1.0 keep the threshold logic (0.0 rejects below threshold, 1.0 approves) | PRD-F6 | `tests/test_ml_probability_filter.py::test_ml_filter_boundary_probabilities_keep_threshold_logic` |
 
 ### 3.6 Traceability: PRD-F1 to PRD-F12
 
@@ -244,15 +265,15 @@ A scenario that lists several features appears under each. "Automated" rows have
 | PRD-F# | Feature | Automated QAD-T# | Not-covered QAD-T# (see 3.8) |
 |---|---|---|---|
 | PRD-F1 | Signal engine | QAD-T1, QAD-T2, QAD-T3, QAD-T4, QAD-T5, QAD-T6, QAD-T7, QAD-T8, QAD-T9, QAD-T47, QAD-T48, QAD-T50, QAD-T128, QAD-T129 | QAD-T49, QAD-T51, QAD-T81, QAD-T140 |
-| PRD-F2 | Backtester | QAD-T11, QAD-T12, QAD-T13, QAD-T14, QAD-T44, QAD-T52, QAD-T53, QAD-T105 | QAD-T15, QAD-T16, QAD-T54, QAD-T78, QAD-T79, QAD-T80 |
-| PRD-F3 | Risk engine and kill switch | QAD-T10, QAD-T55, QAD-T97, QAD-T98, QAD-T99, QAD-T100, QAD-T101, QAD-T102, QAD-T103, QAD-T104, QAD-T105, QAD-T106, QAD-T112, QAD-T113, QAD-T119 | QAD-T107, QAD-T108, QAD-T109, QAD-T110 |
+| PRD-F2 | Backtester | QAD-T11, QAD-T12, QAD-T13, QAD-T14, QAD-T44, QAD-T52, QAD-T53, QAD-T54, QAD-T105 | QAD-T15, QAD-T16, QAD-T78, QAD-T79, QAD-T80 |
+| PRD-F3 | Risk engine and kill switch | QAD-T10, QAD-T55, QAD-T97, QAD-T98, QAD-T99, QAD-T100, QAD-T101, QAD-T102, QAD-T103, QAD-T104, QAD-T105, QAD-T106, QAD-T108, QAD-T109, QAD-T110, QAD-T112, QAD-T113, QAD-T119, QAD-T154, QAD-T155, QAD-T156, QAD-T157, QAD-T158, QAD-T159, QAD-T160, QAD-T162, QAD-T166, QAD-T167, QAD-T168, QAD-T170 | QAD-T107, QAD-T161 |
 | PRD-F4 | Paper trading | QAD-T17, QAD-T18, QAD-T57, QAD-T106 | QAD-T71, QAD-T72, QAD-T73 |
-| PRD-F5 | Demo/testnet mode | QAD-T23, QAD-T24, QAD-T25, QAD-T90, QAD-T91, QAD-T92, QAD-T93, QAD-T94, QAD-T95, QAD-T111 | QAD-T82, QAD-T96 |
-| PRD-F6 | ML probability filter | QAD-T33, QAD-T34, QAD-T35, QAD-T36, QAD-T37, QAD-T38, QAD-T39, QAD-T40, QAD-T41, QAD-T42, QAD-T43, QAD-T44, QAD-T45, QAD-T46, QAD-T60, QAD-T61, QAD-T62, QAD-T63, QAD-T64, QAD-T65, QAD-T66, QAD-T133, QAD-T135, QAD-T141, QAD-T142, QAD-T143, QAD-T144 | QAD-T145, QAD-T146, QAD-T147, QAD-T148, QAD-T149, QAD-T150, QAD-T151, QAD-T152, QAD-T153 |
+| PRD-F5 | Demo/testnet mode | QAD-T23, QAD-T24, QAD-T25, QAD-T90, QAD-T91, QAD-T92, QAD-T93, QAD-T94, QAD-T95, QAD-T96, QAD-T111, QAD-T164 | QAD-T82 |
+| PRD-F6 | ML probability filter | QAD-T33, QAD-T34, QAD-T35, QAD-T36, QAD-T37, QAD-T38, QAD-T39, QAD-T40, QAD-T41, QAD-T42, QAD-T43, QAD-T44, QAD-T45, QAD-T46, QAD-T60, QAD-T61, QAD-T62, QAD-T63, QAD-T64, QAD-T65, QAD-T66, QAD-T133, QAD-T135, QAD-T141, QAD-T142, QAD-T143, QAD-T144, QAD-T145, QAD-T146, QAD-T171 | QAD-T147, QAD-T148, QAD-T149, QAD-T150, QAD-T151, QAD-T152, QAD-T153 |
 | PRD-F7 | Monitoring and alerting | QAD-T17, QAD-T30, QAD-T31, QAD-T32, QAD-T56, QAD-T57, QAD-T115, QAD-T122, QAD-T123 | QAD-T67, QAD-T68, QAD-T69, QAD-T70 |
-| PRD-F8 | Readiness gates | QAD-T25, QAD-T26, QAD-T27, QAD-T58, QAD-T59, QAD-T111, QAD-T112, QAD-T113, QAD-T114, QAD-T115, QAD-T116, QAD-T117, QAD-T118, QAD-T119, QAD-T123, QAD-T137 | QAD-T120, QAD-T121 |
-| PRD-F9 | Safe configuration | QAD-T19, QAD-T20, QAD-T21, QAD-T22, QAD-T23, QAD-T29, QAD-T88, QAD-T89, QAD-T130, QAD-T131, QAD-T132, QAD-T133, QAD-T134, QAD-T135 | QAD-T51, QAD-T109, QAD-T138, QAD-T139, QAD-T153 |
-| PRD-F10 | Market data and storage | QAD-T17, QAD-T28, QAD-T43, QAD-T136 | QAD-T74, QAD-T75, QAD-T76, QAD-T77 |
+| PRD-F8 | Readiness gates | QAD-T25, QAD-T26, QAD-T27, QAD-T58, QAD-T59, QAD-T111, QAD-T112, QAD-T113, QAD-T114, QAD-T115, QAD-T116, QAD-T117, QAD-T118, QAD-T119, QAD-T120, QAD-T123, QAD-T137, QAD-T165 | QAD-T121 |
+| PRD-F9 | Safe configuration | QAD-T19, QAD-T20, QAD-T21, QAD-T22, QAD-T23, QAD-T29, QAD-T88, QAD-T89, QAD-T109, QAD-T130, QAD-T131, QAD-T132, QAD-T133, QAD-T134, QAD-T135, QAD-T138, QAD-T139, QAD-T155, QAD-T162 | QAD-T51, QAD-T153, QAD-T163 |
+| PRD-F10 | Market data and storage | QAD-T17, QAD-T28, QAD-T43, QAD-T136, QAD-T166, QAD-T170 | QAD-T74, QAD-T75, QAD-T76, QAD-T77 |
 | PRD-F11 | Deployment | QAD-T124, QAD-T125, QAD-T126, QAD-T127 | QAD-T83, QAD-T84, QAD-T85, QAD-T86, QAD-T87 |
 | PRD-F12 | Live trading (Planned, blocked) | QAD-T88, QAD-T89, QAD-T91, QAD-T93, QAD-T94, QAD-T116, QAD-T117, QAD-T118, QAD-T124, QAD-T126, QAD-T127 | QAD-T121 |
 
@@ -260,7 +281,7 @@ A scenario that lists several features appears under each. "Automated" rows have
 
 ### 3.7 Strategy Evidence (measured, not asserted)
 
-No strategy performance claim is made anywhere in this suite. The three evidence reports (`reports/backtest_report.json`, `reports/out_of_sample_validation_report.json`, `reports/paper_trading_report.json`) are 0 bytes (G-1). The 108 tests run on synthetic data and prove behaviour, not edge. Every metric below is therefore not yet measured. Thresholds are owned by the BRD (BRD-M1 to BRD-M10); this table only records what must be measured and where it will come from.
+No strategy performance claim is made anywhere in this suite. The three evidence reports (`reports/backtest_report.json`, `reports/out_of_sample_validation_report.json`, `reports/paper_trading_report.json`) are 0 bytes (G-1). The 167 collected tests run on synthetic data and prove behaviour, not edge. Every metric below is therefore not yet measured. Thresholds are owned by the BRD (BRD-M1 to BRD-M10); this table only records what must be measured and where it will come from.
 
 | Metric | Success metric | Source of the measurement | Status |
 |---|---|---|---|
@@ -268,7 +289,7 @@ No strategy performance claim is made anywhere in this suite. The three evidence
 | Expectancy after costs | BRD-M2 | `expectancy` in the backtest report | Not yet measured (G-1) |
 | Maximum drawdown | BRD-M4 | `max_drawdown`, `max_drawdown_percent`; tolerance is Owner input required (OI-3) | Not yet measured (G-1) |
 | Trade count in the evidence run | BRD-M5 | `total_trades`; the minimum is Owner input required (OI-9) | Not yet measured (G-1) |
-| Cost realism: slippage and spread recorded and non-zero | BRD-M3 | `slippage_bps` and `spread_bps` in the report config; backtest defaults are 0 (G-11) | Not yet measured (G-11) |
+| Cost realism: slippage and spread recorded and non-zero | BRD-M3 | `slippage_bps` and `spread_bps` in the report config; backtest defaults are 5.0 and 3.0 bps since `59ed6d5` (G-11 closed), not yet checked against fills | Not yet measured (G-1) |
 | Result not carried by one trade or one short period | BRD-M6 | Trade journal and `session_performance`; the definition is Open | Not yet measured (G-1) |
 | Out-of-sample result | BRD-M7 | Out-of-sample report; criteria Open; the split helper is unwired and not enforced (G-12) | Not yet measured (G-12) |
 | Walk-forward stability | BRD-M7 | No walk-forward exists | Not yet measured (G-12) |
@@ -281,7 +302,7 @@ No strategy performance claim is made anywhere in this suite. The three evidence
 
 ### 3.8 Uncovered Scenarios Register
 
-Every Not covered row from 3.1 to 3.5 is listed here once. 45 scenarios have no test. Each is tracked by an existing gap. Scenarios whose PRD acceptance criteria name no specific gap are tracked by G-32 (uncovered test scenarios) in [scrutiny-silverbot.md](scrutiny-silverbot.md). Closing a row means writing the test, changing the cell in section 3 to the test name, and removing the row here.
+Every Not covered row from 3.1 to 3.5 is listed here once. 37 scenarios have no test. Each is tracked by an existing gap. Scenarios whose PRD acceptance criteria name no specific gap are tracked by G-32 (uncovered test scenarios) in [scrutiny-silverbot.md](scrutiny-silverbot.md). Closing a row means writing the test, changing the cell in section 3 to the test name, and removing the row here.
 
 The five PRD acceptance criteria that name no specific gap are AC-01.5 (QAD-T49), AC-01.6 (QAD-T140), AC-04.8 (QAD-T15), AC-04.9 (QAD-T16) and AC-13.3 (QAD-T67); all are tracked by G-32.
 
@@ -291,7 +312,6 @@ The five PRD acceptance criteria that name no specific gap are AC-01.5 (QAD-T49)
 | QAD-T16 | Running the same candles twice gives identical backtest results | PRD-F2 | G-32 | AC-04.9 |
 | QAD-T49 | Quality score below minimum, or reward-to-risk below minimum, returns NO_TRADE naming the reason | PRD-F1 | G-32 | AC-01.5 |
 | QAD-T51 | Session settings from environment or yaml reach the strategy | PRD-F1, PRD-F9 | G-18 | - |
-| QAD-T54 | Default backtest costs are non-zero (slippage and spread) | PRD-F2 | G-11 | - |
 | QAD-T67 | Audit file that cannot be written does not crash a trading loop | PRD-F7 | G-32 | AC-13.3 |
 | QAD-T68 | Application log record is structured JSON with context fields | PRD-F7 | G-16 | - |
 | QAD-T69 | Telegram alert reaches Telegram over the network | PRD-F7 | G-15 | - |
@@ -313,18 +333,9 @@ The five PRD acceptance criteria that name no specific gap are AC-01.5 (QAD-T49)
 | QAD-T85 | Startup with a valid configuration records bot_started and bot_stopped and exits 0 | PRD-F11 | G-28 | - |
 | QAD-T86 | Health command exits 2 on a rejected configuration | PRD-F11 | G-28 | - |
 | QAD-T87 | Host preparation script and systemd unit create the silverbot user and writable bind mounts | PRD-F11 | G-26 | - |
-| QAD-T96 | Look-alike host containing the testnet name as a substring is rejected by the URL guard | PRD-F5 | G-10 | - |
 | QAD-T107 | Default-constructed risk engine arms the kill switch without a supplied path | PRD-F3 | G-6 | - |
-| QAD-T108 | A loss-limit breach trips the kill switch automatically and closes open positions | PRD-F3 | G-6 | - |
-| QAD-T109 | Risk engine uses the Settings limits and cannot be set above 0.5% per trade | PRD-F3, PRD-F9 | G-5 | - |
-| QAD-T110 | Daily loss, consecutive loss and trade counts survive a restart | PRD-F3 | G-7 | - |
-| QAD-T120 | A 0-byte or invalid evidence report fails the readiness check | PRD-F8 | G-2 | - |
 | QAD-T121 | Live startup consults the readiness report | PRD-F8, PRD-F12 | G-2 | - |
-| QAD-T138 | Shipped .env.example copied to .env loads | PRD-F9 | G-4 | - |
-| QAD-T139 | Risk limits above 0.5% per trade, 2% daily loss or 3x leverage are rejected outside demo mode | PRD-F9 | G-5 | - |
 | QAD-T140 | NO_TRADE signal built without a reason raises "NO_TRADE signals require a reason" | PRD-F1 | G-32 | AC-01.6 |
-| QAD-T145 | Model returns NaN: the signal is rejected | PRD-F6 | G-8 | - |
-| QAD-T146 | Model returns a probability outside [0, 1]: it is clamped before the decision | PRD-F6 | G-32 | - |
 | QAD-T147 | Stale model (registered but outdated artifact) is detected and not used | PRD-F6 | G-28 | - |
 | QAD-T148 | Corrupt or unreadable model artifact falls back safely | PRD-F6 | G-28 | - |
 | QAD-T149 | Registering a model with a missing artifact, feature list or metrics file raises FileNotFoundError | PRD-F6 | G-32 | - |
@@ -332,12 +343,14 @@ The five PRD acceptance criteria that name no specific gap are AC-01.5 (QAD-T49)
 | QAD-T151 | Split has purge or embargo, and higher-timeframe features do not look ahead | PRD-F6 | G-22 | - |
 | QAD-T152 | A model written to the registry by any route is activated only after promotion policy passes | PRD-F6 | G-22 | - |
 | QAD-T153 | ML_FILTER_ENABLED and thresholds in settings reach the filter at startup | PRD-F6, PRD-F9 | G-9 | - |
+| QAD-T161 | A kill-switch trip closes or reduces open positions | PRD-F3 | G-6 | - |
+| QAD-T163 | `MAX_DAILY_LOSS` above 2% or `MAX_LEVERAGE` above 3 is rejected outside demo mode | PRD-F9 | G-5 | - |
 
-By gap: G-1: QAD-T80; G-2: QAD-T120, QAD-T121; G-3: QAD-T73, QAD-T83; G-4: QAD-T138; G-5: QAD-T109, QAD-T139; G-6: QAD-T107, QAD-T108; G-7: QAD-T110; G-8: QAD-T145; G-9: QAD-T153; G-10: QAD-T96; G-11: QAD-T54; G-12: QAD-T78, QAD-T79; G-13: QAD-T72, QAD-T76, QAD-T77; G-14: QAD-T74, QAD-T75; G-15: QAD-T69; G-16: QAD-T68, QAD-T70; G-17: QAD-T82; G-18: QAD-T51; G-21: QAD-T71; G-22: QAD-T151, QAD-T152; G-23: QAD-T150; G-26: QAD-T87; G-28: QAD-T84, QAD-T85, QAD-T86, QAD-T147, QAD-T148; G-29: QAD-T81; G-32: QAD-T15, QAD-T16, QAD-T49, QAD-T67, QAD-T140, QAD-T146, QAD-T149.
+By gap: G-1: QAD-T80; G-2: QAD-T121; G-3: QAD-T73, QAD-T83; G-5: QAD-T163; G-6: QAD-T107, QAD-T161; G-9: QAD-T153; G-12: QAD-T78, QAD-T79; G-13: QAD-T72, QAD-T76, QAD-T77; G-14: QAD-T74, QAD-T75; G-15: QAD-T69; G-16: QAD-T68, QAD-T70; G-17: QAD-T82; G-18: QAD-T51; G-21: QAD-T71; G-22: QAD-T151, QAD-T152; G-23: QAD-T150; G-26: QAD-T87; G-28: QAD-T84, QAD-T85, QAD-T86, QAD-T147, QAD-T148; G-29: QAD-T81; G-32: QAD-T15, QAD-T16, QAD-T49, QAD-T67, QAD-T140, QAD-T149. G-4, G-7, G-8, G-10 and G-11 have no uncovered row since batch 1.
 
 ## 4. Automation vs Manual
 
-**Automated (pytest, runs offline).** All 108 automated scenarios in section 3, covering strategy, backtest, risk, paper run, config, readiness, exchange guards, storage, ML, monitoring and deployment-file text. Run it with `.venv/Scripts/python -m pytest -q` from the repo root.
+**Automated (pytest, runs offline).** All 134 automated scenarios in section 3, covering strategy, backtest, risk, paper run, config, readiness, exchange guards, storage, ML, monitoring and deployment-file text. Run it with `.venv/Scripts/python -m pytest -q` from the repo root.
 
 **Manual checks.** None of these can be performed today; each names what blocks it. They become release-gate items in section 6 once their blockers close.
 
@@ -345,7 +358,7 @@ By gap: G-1: QAD-T80; G-2: QAD-T120, QAD-T121; G-3: QAD-T73, QAD-T83; G-4: QAD-T
 |---|---|---|---|
 | Testnet dry start | Before the demo gate | Bot starts in demo mode, connects to the testnet only, places no order outside the testnet, writes `bot_started` and `bot_stopped` | Planned; blocked by G-3, G-13, G-17 (no runtime, no network I/O) |
 | Telegram test message | Before the demo gate and before any live proposal | A real message reaches the owner's chat; `TELEGRAM_ALERTS_TESTED` is set only after it | Planned; blocked by G-15 (no transport) |
-| Kill-switch drill | Before the paper gate is passed | Create the kill-switch file while the bot runs; no new trade opens, an alert is sent, and the reset steps are written down and followed | Planned; blocked by G-3 (no running bot) and G-6 (inert by default, no reset tooling) |
+| Kill-switch drill | Before the paper gate is passed | Create the kill-switch file while the bot runs; no new trade opens, an alert is sent, and the reset steps are written down and followed | Planned; blocked by G-3 (no running bot builds its engine with `build_risk_engine`). Clearing steps exist in [ops-silverbot.md](ops-silverbot.md) §4.1 |
 | Evidence report review | At each gate | The owner reads the report, checks it is non-empty and that the cost values are recorded (BRD-M3) | Planned; blocked by G-1 |
 | Secret scan of tracked files | Before every commit that touches config | No key, token or `.env` content is tracked | Partly automated (demo readiness check 18, behaviour outside git Open, U-20); run by the owner today |
 | Deployment dry run on the host | Before an unattended run | `silverbot` user, bind mounts and health check work on the host | Planned; blocked by G-26, G-27 |
@@ -356,9 +369,9 @@ Severity is set by safety impact, not by how often the defect appears.
 
 | Severity | Definition | Examples (current open items) | Response |
 |---|---|---|---|
-| S1 | A defect in a control that stops capital loss or live trading: the risk engine, kill switch, stop-loss requirement, loss limits, the live block at config load, the mode gates and readiness gates, secret handling, or ML bypassing the risk engine. Any risk or live-gate bug is S1. | G-5 (risk limits not unified), G-6 (kill switch inert by default), G-7 (risk state lost on restart), G-8 (NaN approves), G-10 (testnet guard substring), G-2 (readiness passes 0-byte files) | Stop other work. The affected mode gate stays closed. Add a failing test first, then fix, then run the full suite. No merge with an open S1. |
-| S2 | A defect that makes evidence wrong or misleading: cost model, lookahead, metrics, validation, report content. | G-11 (zero default costs), G-12 (no out-of-sample enforcement), G-19, G-20 | Fix before the next evidence run. Reports made with the defect are discarded. |
-| S3 | A defect in a non-safety function: monitoring, deployment, storage, configuration quirks that fail closed. | G-4, G-14 to G-16, G-24 to G-27 | Fix in normal order. |
+| S1 | A defect in a control that stops capital loss or live trading: the risk engine, kill switch, stop-loss requirement, loss limits, the live block at config load, the mode gates and readiness gates, secret handling, or ML bypassing the risk engine. Any risk or live-gate bug is S1. | G-5 (settings limits reach no running engine), G-6 (kill switch not armed at runtime, no position close), G-7 (persistence used by no running engine). G-2, G-8 and G-10 were S1 and closed in batch 1 | Stop other work. The affected mode gate stays closed. Add a failing test first, then fix, then run the full suite. No merge with an open S1. |
+| S2 | A defect that makes evidence wrong or misleading: cost model, lookahead, metrics, validation, report content. | G-12 (no out-of-sample enforcement), G-19, G-20. G-11 (zero default costs) closed in `59ed6d5` | Fix before the next evidence run. Reports made with the defect are discarded. |
+| S3 | A defect in a non-safety function: monitoring, deployment, storage, configuration quirks that fail closed. | G-14 to G-16, G-24 to G-27. G-4 closed in `c6d909d` | Fix in normal order. |
 | S4 | Documentation or cosmetic. | G-31 | Fix when convenient. |
 
 **Rules.**
@@ -381,14 +394,14 @@ Prerequisites to start evidence runs (old "Backtest Before Paper Trading"):
 | Item | Status |
 |---|---|
 | Strategy engine works, with lookahead tests passing (QAD-T128, QAD-T129) | Built; whole-strategy lookahead not proven (G-29) |
-| Risk engine works (QAD-T97, QAD-T99 and related) | Built; unified limits and persistence missing (G-5, G-7) |
-| Backtester works with costs (QAD-T13, QAD-T14) | Built; zero default costs (G-11) |
+| Risk engine works (QAD-T97, QAD-T99 and related) | Built; 0.5% cap, settings factory and persistence built (QAD-T109, QAD-T110, QAD-T154) but no runtime builds the engine with them (G-5, G-7 partial) |
+| Backtester works with costs (QAD-T13, QAD-T14) | Built; defaults 5.0 bps slippage and 3.0 bps spread (QAD-T54) |
 | Logs are clear and rejections carry reasons | Built for strategy and risk reasons |
 | Historical data source chosen and data loaded (OI-8) | Owner input required; fetch is a stub (G-13) |
 
 Exit criteria (leave backtest, enter paper). All must hold, from a non-empty report:
 
-- [ ] Backtest and out-of-sample reports exist, are non-empty and are valid (G-1). The readiness check must reject empty files (H-2).
+- [ ] Backtest and out-of-sample reports exist, are non-empty and are valid (G-1). The readiness check rejects empty or non-JSON-object files (H-2 fixed, QAD-T120).
 - [ ] Costs are included, with non-zero slippage and spread recorded in the report configuration (BRD-M3, G-11).
 - [ ] Profit factor meets BRD-M1 (at least 1.2) and expectancy meets BRD-M2 (positive), both after costs. These are minimum research thresholds, not profit guarantees (old `BACKTESTING.md`).
 - [ ] Maximum drawdown is within the owner's tolerance (BRD-M4, OI-3) and the trade count meets the owner's minimum (BRD-M5, OI-9).
@@ -404,22 +417,22 @@ Entering paper requires a runtime that runs the paper engine through the entrypo
 
 - [ ] A non-empty paper trading report exists from a stable run (G-1, RFC-004 condition 1).
 - [ ] Paper behaviour matches backtest behaviour within a tolerance written down in advance (BRD-M8; tolerance Open). The old guide lists "paper trading does not match backtest behaviour" as a red flag.
-- [ ] The kill-switch drill has been performed (section 4) and the kill switch is armed by default with automatic triggers and a documented reset (RFC-004 condition 4, G-6).
-- [ ] Risk limits come from one source capped at 0.005 per trade, 0.02 daily loss and 3x leverage, and risk state survives a restart (RFC-004 condition 5, G-5, G-7).
+- [ ] The kill-switch drill has been performed (section 4) and the running engine is built by `build_risk_engine` with `KILL_SWITCH_ENABLED=true`. Automatic triggers (QAD-T108) and the documented reset (OPS §4.1, §4.7) exist (RFC-004 condition 4, G-6).
+- [ ] Risk limits come from one source capped at 0.005 per trade (built, QAD-T109, QAD-T139, QAD-T154), 0.02 daily loss and 3x leverage (demo only today, QAD-T163), and risk state survives a restart in the running bot (built for a store-backed engine, QAD-T110; RFC-004 condition 5, G-5, G-7).
 - [ ] No order was placed without a stop loss and none bypassed the risk engine (BRD-M10, zero); checked in the audit log.
 - [ ] Daily and weekly reports are produced without manual calls (G-16).
-- [ ] The full suite passes (baseline: 108 passed) and no S1 or S2 bug is open (section 5).
+- [ ] The full suite passes (baseline: 167 passed at `70ccaec`) and no S1 or S2 bug is open (section 5).
 
 ### 6.3 Gate 3: demo (Binance Futures testnet; entering and leaving)
 
 Entering demo requires the demo readiness checker to report ready (18 checks, RFC-004 section 3.1; QAD-T25) and the demo config rules to load (QAD-T23). Exit criteria (leave demo, allow a live proposal to be written):
 
-- [ ] A demo runtime exists that does network I/O against the testnet only, with an exact scheme-and-host URL guard (RFC-004 conditions 2 and 6, G-10, G-17).
+- [ ] A demo runtime exists that does network I/O against the testnet only (RFC-004 condition 2, G-17). The exact scheme-and-host URL guard exists (QAD-T96, QAD-T164; condition 6, G-10 closed).
 - [ ] The testnet dry start and the Telegram test message in section 4 have been performed, and `TELEGRAM_ALERTS_TESTED` was set only after a real message arrived (RFC-004 condition 7, G-15).
 - [ ] Demo fills are compared with the cost assumptions; slippage and spread values for later evidence runs are taken from them (BRD-M3).
 - [ ] Testnet behaviour is not treated as live behaviour: the testnet book is thin, so demo validates plumbing, not performance (scrutiny section 4).
 - [ ] Key handling is settled: keys only from the environment, withdrawals disabled on the exchange key and confirmed by the owner, no secret in any tracked file (RFC-004 condition 8).
-- [ ] If ML is used, the NaN flaw is fixed and the filter is wired and tested; otherwise ML stays off (RFC-004 condition 9, G-8, G-9).
+- [ ] If ML is used, the filter is wired and tested; otherwise ML stays off (RFC-004 condition 9, G-9). The NaN flaw is fixed (QAD-T145, G-8 closed).
 
 ### 6.4 Gate 4: live (Planned, blocked; PRD-F12)
 
@@ -446,17 +459,17 @@ ML is optional and may only approve, reject or reduce risk (PRD-F6, [RFC-003](rf
 | Training metrics | Accuracy, precision, recall, F1, positive rate and ROC-AUC at a fixed 0.5 threshold; the test split is created but not scored (D-39, G-22) | QAD-T38 |
 | Calibration | Brier score and expected calibration error over equal-width bins (default 10); a report only, no calibrator is fitted | QAD-T36, QAD-T37 |
 | Promotion policy | Primary metric accuracy; maximum Brier score and minimum sample count limits; test degradation and final-test misuse checks; narrower than the original plan (D-36) | QAD-T45, QAD-T61, QAD-T62, QAD-T63, QAD-T64, QAD-T65, QAD-T46, QAD-T66, QAD-T142 |
-| Filter decisions | Approve at or above the minimum probability, reduce risk between the thresholds, reject below the reduce-risk threshold, pass through when disabled or no model | QAD-T40, QAD-T41, QAD-T60, QAD-T42, QAD-T144 |
+| Filter decisions | Approve at or above the minimum probability, reduce risk between the thresholds, reject below the reduce-risk threshold, pass through when disabled or no model, reject a NaN, infinite or out-of-range probability | QAD-T40, QAD-T41, QAD-T60, QAD-T42, QAD-T144, QAD-T145, QAD-T146, QAD-T171 |
 
 **Leakage tests.** Feature names are screened for leakage keywords (QAD-T141); splits are chronological with no shuffle (QAD-T35); a candidate optimised on the final test set is rejected (QAD-T142); the strategy and structure code is tested for lookahead (QAD-T128, QAD-T129). Leakage control is name-based, and there is no purge or embargo, so leakage through higher-timeframe features is possible and untested (G-22, section 3.5).
 
-**Required before any model could be trusted** (all Not covered today): NaN output handling (G-8), out-of-range probability handling (G-32), stale and corrupt artifact handling (G-28), untrusted pickle load (G-23), purge or embargo and higher-timeframe lookahead (G-22), registry activation bypassing promotion (G-22). A model must also beat the unfiltered rule-based trades on a held-out set (section 3.7) before it is described as useful. No model is shipped, so no ML evidence exists.
+**Required before any model could be trusted** (all Not covered today): stale and corrupt artifact handling (G-28), untrusted pickle load (G-23), purge or embargo and higher-timeframe lookahead (G-22), registry activation bypassing promotion (G-22). NaN and out-of-range output handling is covered since `8e66054` (QAD-T145, QAD-T146). A model must also beat the unfiltered rule-based trades on a held-out set (section 3.7) before it is described as useful. No model is shipped, so no ML evidence exists.
 
 ## 8. Self-Check
 
-- [x] Every one of the 108 test functions in `tests/*.py` appears in at least one QAD-T# row (verified by script; result in the task report: 108 of 108).
+- [x] Every one of the 143 test functions in `tests/*.py` appears in at least one QAD-T# row (verified by script on 2026-10-09: 143 of 143).
 - [x] Every `tests/<file>.py::<name>` reference names a test that exists (verified by grep for `def <name>`).
-- [x] Every Not covered row cites an existing `G-#` and is listed in section 3.8 (45 rows).
+- [x] Every Not covered row cites an existing `G-#` and is listed in section 3.8 (37 rows).
 - [x] Section 3.7 records zero measured performance numbers; every metric is Not yet measured with a `G-#`.
 - [x] PRD-F1 to PRD-F12 each appear in the traceability table, and PRD-F12 is labelled Planned, blocked.
 - [x] Release criteria for the four mode gates cite RFC-004 and the old backtesting guide, and nothing is checked that is not true today.

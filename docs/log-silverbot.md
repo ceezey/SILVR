@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft (append-only)
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-09 against code at commit `70ccaec` (two rows appended)
 
 Add rows at the bottom of section 1; never edit or delete an earlier row. A correction is a new row.
 
@@ -32,6 +32,8 @@ This log absorbs the change log of the old `PROGRESS.md`. The old file gave phas
 | before 2026-06-15 | Configuration checklist | Added `CONFIGURATION.md` and `config.example.yaml`; aligned `.env.example` and deployment docs to variable names; tightened validation of exchange name, symbol, timeframe and ML paths; clearer readiness messages. `.env.example` still fails to load (G-4). | `tests/test_config.py`, `tests/test_readiness.py` |
 | before 2026-06-15 | Phase 9.5 Binance demo/testnet mode | Separate `demo` mode (`MODE=demo`, `DEMO_TRADING=true`, `BINANCE_TESTNET=true`); strict demo config validation; adapter endpoint selection with a testnet-only guard (substring match, G-10); `python -m silver_bot.demo_readiness` with 18 checks; Compose `demo` profile. No network I/O exists in the adapter. | `tests/test_demo_readiness.py`, `tests/test_exchange.py`, `tests/test_config.py` |
 | 2026-10-08 | Docs canonicalization | Replaced the ten root documents (ARCHITECTURE.md, BACKTESTING.md, CONFIGURATION.md, DEPLOYMENT.md, ML_MODEL.md, RISK_POLICY.md, STRATEGY_NOTES.md, PROGRESS.md, TODO.md, codex-task.json) with the canonical suite under `docs/`; every old claim was checked against the code and every disagreement recorded as a drift row; gaps (G-#) were collected in SCRUTINY; runbooks and this log were written (runbook commands were executed on 2026-10-09). No code, tests or config were changed. | [spec](superpowers/specs/2026-10-08-canonical-docs-design.md), [plan](superpowers/plans/2026-10-08-canonical-docs.md), [audit-docs-drift.md](audit-docs-drift.md) |
+| 2026-10-09 | HIGH safety fixes batch 1 (code) | Eight HIGH gaps fixed on `dev` in four lanes, merged at `70ccaec`: G-8 NaN or out-of-range ML probability rejects (`8e66054`); G-10 exact `https` testnet host (`0a76564`); G-4 `.env.example` loads as paper (`c6d909d`); G-11 backtest defaults 5 bps slippage and 3 bps spread (`59ed6d5`); G-2 readiness rejects empty or non-JSON reports (`88220e6`); G-5 0.5% per-trade cap everywhere and `build_risk_engine` (`5e4acc5`); G-6 fail-closed kill switch that trips on the loss limits (`08c81ad`); G-7 `risk_state` persistence that halts on a corrupt row (`2d7f713`). G-5, G-6 and G-7 stay partial until the G-3 runtime calls `build_risk_engine`. `python -m pytest -q`: 109 passed before, 167 after. | [spec](superpowers/specs/2026-10-09-high-safety-fixes-design.md), [plan](superpowers/plans/2026-10-09-high-safety-fixes.md), `tests/test_risk_engine.py`, `tests/test_storage.py`, `tests/test_config.py`, `tests/test_exchange.py`, `tests/test_readiness.py`, `tests/test_ml_probability_filter.py`, `tests/test_backtest_engine.py` |
+| 2026-10-09 | Docs reconciliation for batch 1 | SCRUTINY, AUDIT, SDD, the three affected RFCs, QAD, OPS, BUILD, AIA, PRD, BRD, CLR, UES, VAL, SAD, DSD, the runbooks, the index and README updated to the merged code; `file:line` citations into the eight changed source files re-pointed to `70ccaec`; OPS gained the kill-switch clearing and `risk_state` reset steps. No code, tests or config were changed. | [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3, [audit-docs-drift.md](audit-docs-drift.md), [ops-silverbot.md](ops-silverbot.md) sections 4.1 and 4.7 |
 
 ## 2. Friction
 
@@ -40,13 +42,13 @@ Process lessons from the build so far. They are observations, not fixes; the fix
 - **Evidence files existed but were empty.** The three evidence reports (`reports/backtest_report.json`, `reports/out_of_sample_validation_report.json`, `reports/paper_trading_report.json`) are 0 bytes, yet the live-readiness checker passes them because it only tests that the path exists (G-1, G-2). A green gate was therefore not evidence. Rule going forward: no performance claim without a non-empty report.
 - **Status was tracked in three files.** `PROGRESS.md`, `TODO.md` and `codex-task.json` each held a version of "what is done", and they drifted from the code (for example, task-list items ticked for features that are stubs, such as the historical fetcher and Telegram). Rule going forward: one status table (PRD section 3) and this log; task checkboxes live in PRD section 9.
 - **Phase labels outran the runtime.** Phases were marked complete when the component and its unit tests existed, not when the bot could run it. The entrypoint ignores the mode and exits after a startup stub (G-3), so backtest, paper and demo have no command line runtime.
-- **The shipped example config did not load.** `.env.example` was edited as phases were added and never run through `load_config` (G-4). Rule going forward: every runbook config block is verified by loading it.
+- **The shipped example config did not load.** `.env.example` was edited as phases were added and never run through `load_config` (G-4, fixed in `c6d909d` with a test that loads it). Rule going forward: every runbook config block is verified by loading it.
 - **Entries carried no dates.** The old change log had phase names only, so the history before 2026-06-15 cannot be ordered by day. This log dates every new row.
 - **Commands in prose were not tested.** The old README and DEPLOYMENT described `python main.py` as running paper and backtest modes; it does not (D-1). The runbooks in this suite were each executed against the code before being written down.
 
 ## Self-Check
 
-- [x] Every change-log section of the old `PROGRESS.md` has a row in section 1 (16 phase rows plus the docs pass).
+- [x] Every change-log section of the old `PROGRESS.md` has a row in section 1 (16 phase rows plus the docs pass); the 2026-10-09 rows were appended after them.
 - [x] Rows without a source date use `before 2026-06-15`; no date was invented.
 - [x] Evidence cells name test files that exist under `tests/` or documents that exist under `docs/`.
 - [x] Rows state known stubs and gaps (G-#) next to the claim they limit.

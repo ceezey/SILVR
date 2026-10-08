@@ -4,7 +4,7 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
+**Last updated:** 2026-10-09
 **Last reconciled:** 2026-10-08 against code at commit `62037d1`
 
 This runbook says how to run the backtest engine, where its outputs land, how to produce a chronological out-of-sample split, how to check that the report files are not empty, and how to run the live readiness checker on them. It absorbs the "outputs" parts of the old `BACKTESTING.md`.
@@ -65,7 +65,7 @@ Run every command from one working folder with the virtual environment active (s
        print(result.export_paths)
    ```
 
-   Notes on the settings. `BacktestConfig` defaults are `initial_balance=10000.0`, `maker_fee=0.0002`, `taker_fee=0.0005`, and **zero** slippage and spread; the script sets 1 bps each so costs are non-zero (G-11). The strategy settings in the script (`swing_lookback=2`, `atr_period=3`, `minimum_signal_score=70`) are the values the unit tests use for a 10-candle sample; they are not tuned for real data. For real data start from `SilverBulletStrategyEngine()` defaults and choose settings on the training and validation slices only (step 5). The engine always runs the risk engine and the kill-switch check; the ML filter is off unless configured.
+   Notes on the settings. `BacktestConfig` defaults are `initial_balance=10000.0`, `maker_fee=0.0002`, `taker_fee=0.0005`, `slippage_bps=5.0` and `spread_bps=3.0` (non-zero since `59ed6d5`, G-11 closed; before that both were zero). The script sets 1 bps each explicitly, which is below the defaults; the Verify numbers below were produced with those 1 bps values. The strategy settings in the script (`swing_lookback=2`, `atr_period=3`, `minimum_signal_score=70`) are the values the unit tests use for a 10-candle sample; they are not tuned for real data. For real data start from `SilverBulletStrategyEngine()` defaults and choose settings on the training and validation slices only (step 5). The engine always runs the risk engine and the kill-switch check; the ML filter is off unless configured.
 
 3. **Run the backtest:**
 
@@ -119,7 +119,7 @@ Run every command from one working folder with the virtual environment active (s
 
    Discipline: tune strategy and cost settings on `training` and `validation` only. Run `final_test` once, after the settings are frozen; no code enforces this (F03.61), so it is a manual rule (never optimize on the final test set). The JSON file is a plain per-slice metrics dump with no pass or fail verdict; deciding what counts as a pass is an open owner input (see [brd-silverbot.md](brd-silverbot.md) section 8).
 
-6. **Check the report files are non-empty.** The readiness checker does not do this (G-2), so do it yourself:
+6. **Check the report files are non-empty.** Since `88220e6` the readiness checker fails an empty or non-JSON-object report, but it does not look at `trades.csv` or at any metric, so check yourself:
 
    ```bash
    find out oos -type f -size 0
@@ -139,7 +139,7 @@ Run every command from one working folder with the virtual environment active (s
    $env:BACKTEST_REPORT_PATH="out/backtest_report.json"; $env:OOS_VALIDATION_REPORT_PATH="oos/out_of_sample_validation_report.json"; python -m silver_bot.readiness --output readiness/live_readiness_report.json
    ```
 
-   Exit code 2 and `"ready": false` are the expected result: live trading is blocked at configuration load regardless, the paper report is missing, and the manual confirmations are unset. The checker only tests that each report path exists and is a file (it also passes 0-byte files), so a pass on those three checks is not evidence.
+   Exit code 2 and `"ready": false` are the expected result: live trading is blocked at configuration load regardless, the paper report is missing, and the manual confirmations are unset. The checker only tests that each report is a readable, non-empty JSON object (since `88220e6`; before it, a 0-byte file passed). It reads no metric, so a pass on those three checks is not evidence.
 
 ## Verify
 
@@ -161,7 +161,7 @@ Done means: step 3 exits 0, `out/backtest_report.json` has `total_trades` above 
 
 - [x] Every command and script was executed against the code on a synthetic candle file under a scratch folder; no file was written to the repository `reports/` directory.
 - [x] The absence of a backtest CLI, of real historical fetching (G-13) and of an out-of-sample report writer is stated before the steps.
-- [x] Costs are set non-zero in the scripts and the zero default is called out (G-11).
+- [x] Costs are set non-zero in the scripts, and the defaults (5.0 and 3.0 bps since `59ed6d5`, zero before) are stated (G-11).
 - [x] No strategy performance number is presented as a result; the sample figures are labelled synthetic.
-- [x] The readiness checker's existence-only behaviour (G-2) is stated beside the command that uses it.
+- [x] The readiness checker's report checks (non-empty JSON object only, no metrics; G-2) are stated beside the command that uses it.
 - [ ] The scripts were not run on real market data, because no code in the repository can fetch it.

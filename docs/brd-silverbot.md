@@ -4,14 +4,14 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; risk, cost and kill-switch statements re-checked 2026-10-09 against `70ccaec`
 
 This document states why the project exists, what it must achieve, and which numbers only the owner can supply. It defines the ids `BRD-V#` (impact variables), `BRD-M#` (success metrics) and `OI-#` (owner inputs) that the PRD, SDD and index cite. Context: [idea-silverbot.md](idea-silverbot.md), [val-silverbot.md](val-silverbot.md), [ues-silverbot.md](ues-silverbot.md), [scrutiny-silverbot.md](scrutiny-silverbot.md) and [audit-docs-drift.md](audit-docs-drift.md). The documents that cite these ids are [prd-silverbot.md](prd-silverbot.md), [sdd-silverbot.md](sdd-silverbot.md), [qad-silverbot.md](qad-silverbot.md) and [clr-silverbot.md](clr-silverbot.md).
 
 ## 1. Executive Summary
 
-Silver Bot is a personal, single-operator trading bot for the ICT Silver Bullet method on crypto futures (default venue Binance Futures, default symbol BTCUSDT, default timeframe 1m; `src/silver_bot/config/settings.py:73-75`). It must earn its way through four modes in order: backtest, paper, exchange demo/testnet, and only then, if ever, live. Live trading is `Planned, blocked` and is hard-rejected at config load (`settings.py:104-107`).
+Silver Bot is a personal, single-operator trading bot for the ICT Silver Bullet method on crypto futures (default venue Binance Futures, default symbol BTCUSDT, default timeframe 1m; `src/silver_bot/config/settings.py:74-76`). It must earn its way through four modes in order: backtest, paper, exchange demo/testnet, and only then, if ever, live. Live trading is `Planned, blocked` and is hard-rejected at config load (`settings.py:105-108`).
 
 The business requirement is survival first: no trade without a stop loss, no martingale, no averaging down, fixed fractional risk, and a mandatory risk engine and kill switch. The success requirement is evidence: cost-inclusive, out-of-sample results and a stable paper run before any step toward live. Today no such evidence exists: the three evidence reports are 0 bytes (G-1, D-86) and no performance claim is made in this document.
 
@@ -38,10 +38,10 @@ The few variables that dominate whether the project succeeds. Each is something 
 | ID | Variable | Why it dominates | Where it lives |
 |---|---|---|---|
 | BRD-V1 | Edge per trade (expectancy in R, and win rate at a given reward-to-risk) | Without positive expectancy after costs nothing else matters. Unproven (G-1). | Backtest metrics `expectancy`, `average_r`, `win_rate`, `profit_factor` (`src/silver_bot/backtest/metrics.py:30-46`) |
-| BRD-V2 | Cost per trade (fees, slippage, spread, as a fraction of notional and in R) | Costs are subtracted from every trade and rise with 1m trade frequency. Backtest slippage and spread default to 0 bps, which is unrealistic (D-5, G-11). | `BacktestConfig` and `PaperExecutionConfig` (`backtest/models.py:32-35`, `execution/models.py:30-33`) |
-| BRD-V3 | Risk per trade (fraction of equity at stake) | Sets loss size per stop-out and, with the stop distance, the notional and the cost in R. | `RiskConfig.risk_per_trade` (`risk/models.py:18`) |
-| BRD-V4 | Trade frequency | More trades raise cost drag and exposure; fewer trades make evidence slow to gather. Capped at 3 per day by default. | `RiskConfig.max_trades_per_day` (`risk/models.py:23`) |
-| BRD-V5 | Drawdown control (daily loss cap, consecutive-loss cap, kill switch) | Bounds the damage while the edge is still unproven. The kill switch is inert by default and risk state is in memory (G-6, G-7). | `risk/models.py:21-22,26`; `risk/engine.py:63-68` |
+| BRD-V2 | Cost per trade (fees, slippage, spread, as a fraction of notional and in R) | Costs are subtracted from every trade and rise with 1m trade frequency. Backtest slippage and spread default to 5.0 and 3.0 bps since `59ed6d5` (D-5, G-11 closed); whether that matches real fills is unverified. | `BacktestConfig` and `PaperExecutionConfig` (`backtest/models.py:32-35`, `execution/models.py:30-33`) |
+| BRD-V3 | Risk per trade (fraction of equity at stake) | Sets loss size per stop-out and, with the stop distance, the notional and the cost in R. | `RiskConfig.risk_per_trade` (`risk/models.py:21`) |
+| BRD-V4 | Trade frequency | More trades raise cost drag and exposure; fewer trades make evidence slow to gather. Capped at 3 per day by default. | `RiskConfig.max_trades_per_day` (`risk/models.py:26`) |
+| BRD-V5 | Drawdown control (daily loss cap, consecutive-loss cap, kill switch) | Bounds the damage while the edge is still unproven. The kill switch now trips itself on the daily-loss and consecutive-loss limits and risk state can persist in SQLite, but only an engine built by `build_risk_engine` gets either, and nothing builds one yet (G-6, G-7 partial). | `risk/models.py:24-25,29`; `risk/engine.py:76-83` |
 
 ## 5. Capital Philosophy Gate
 
@@ -49,17 +49,17 @@ These rules are not tunable per trade; they are conditions for the project to ex
 
 | Rule | Where it is enforced or stated | Honest status |
 |---|---|---|
-| No martingale and no averaging down | Stated in `risk/models.py:15`; AGENTS.md safety rules. `max_open_positions` is 1 (`risk/models.py:24`, checked at `risk/engine.py:70`), so a second position cannot be added. | No code path scales size up after a loss; verified by reading, test coverage tracked in [qad-silverbot.md](qad-silverbot.md). |
-| Stop loss always | `risk/engine.py:36-37` rejects a request with no stop loss; rejects wrong-side stops (`:47-48`) and stops tighter than `minimum_stop_distance` (`:49-50`). Config requires `STOP_LOSS_REQUIRED=true` in demo mode (`config/settings.py:184-185`). | Enforced in the risk engine. `minimum_stop_distance` is an absolute price amount, default 0.01 (`risk/models.py:19`), so it is a floor, not a percent control. |
-| Fixed fractional risk | Position size = risk amount / stop distance (`risk/engine.py:74`), with `risk_per_trade` defaulting to 0.005 (0.5% of equity; `risk/models.py:18`). | Enforced when the risk engine sizes the trade. |
-| Minimum reward-to-risk | `minimum_reward_to_risk` defaults to 2.0 (`risk/models.py:20`). | Enforced; a setup below it is rejected. |
-| Daily loss, consecutive loss, trades per day, open positions | Defaults 0.02, 3, 3, 1 (`risk/models.py:21-24`); checks at `risk/engine.py:63-70`. | Enforced, but state is held in memory and resets on restart (G-7). |
-| Leverage cap | Default 3.0 (`risk/models.py:25`); rejection at `risk/engine.py:77-78`. | Enforced in the risk engine. |
-| Kill switch | `kill_switch_path` default None, which makes it inert (`risk/models.py:26`); active check at `risk/engine.py:30-31`. | Inert by default, existence-only, no automatic trigger (G-6). |
+| No martingale and no averaging down | Stated in `risk/models.py:18`; AGENTS.md safety rules. `max_open_positions` is 1 (`risk/models.py:27`, checked at `risk/engine.py:85`), so a second position cannot be added. | No code path scales size up after a loss; verified by reading, test coverage tracked in [qad-silverbot.md](qad-silverbot.md). |
+| Stop loss always | `risk/engine.py:49-50` rejects a request with no stop loss; rejects wrong-side stops (`:60-61`) and stops tighter than `minimum_stop_distance` (`:62-63`). Config requires `STOP_LOSS_REQUIRED=true` in demo mode (`config/settings.py:189-190`). | Enforced in the risk engine. `minimum_stop_distance` is an absolute price amount, default 0.01 (`risk/models.py:22`), so it is a floor, not a percent control. |
+| Fixed fractional risk | Position size = risk amount / stop distance (`risk/engine.py:89`), with `risk_per_trade` defaulting to 0.005 (0.5% of equity; `risk/models.py:21`). | Enforced when the risk engine sizes the trade. |
+| Minimum reward-to-risk | `minimum_reward_to_risk` defaults to 2.0 (`risk/models.py:23`). | Enforced; a setup below it is rejected. |
+| Daily loss, consecutive loss, trades per day, open positions | Defaults 0.02, 3, 3, 1 (`risk/models.py:24-27`); checks at `risk/engine.py:76-85`. | Enforced. State persists across restarts only for an engine built with SQLite storage; the paper and backtest engines keep it in memory (G-7 partial). |
+| Leverage cap | Default 3.0 (`risk/models.py:28`); rejection at `risk/engine.py:92-93`. | Enforced in the risk engine. |
+| Kill switch | `kill_switch_path` default None, which makes it inert (`risk/models.py:29`); active check at `risk/engine.py:43-44`; fail-closed check and automatic trip at `risk/kill_switch.py:22-60`. | Inert by default; when a path is set it fails closed and trips on the daily-loss and consecutive-loss limits. No position close (G-6 partial). |
 
-**Precision on where the percentages apply.** The Settings caps `MAX_RISK_PER_TRADE` 0.005, `MAX_DAILY_LOSS` 0.02 and `MAX_LEVERAGE` 3 (`config/settings.py:174-176`) are validated only in demo mode (`settings.py:186-191`); in other modes they accept any float, and they are not wired into `RiskConfig` (D-11, G-5). `RiskConfig` itself accepts a per-trade risk of up to 0.05, that is 5% (`risk/models.py:29-30`), ten times the documented 0.5%. The defaults above are conservative; the ceilings are not. Unifying them is G-5 and [RFC-002](rfc-silverbot-risk-kill-switch.md) (risk and kill switch).
+**Precision on where the percentages apply.** The Settings caps `MAX_RISK_PER_TRADE` 0.005, `MAX_DAILY_LOSS` 0.02 and `MAX_LEVERAGE` 3 (`config/settings.py:177-179`) behave differently since `5e4acc5`. `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode (`config/settings.py:180-181`), and `RiskConfig` rejects a per-trade risk above 0.005 (`risk/models.py:10,32-33`), so 0.5% is both the default and the ceiling. `MAX_DAILY_LOSS` and `MAX_LEVERAGE` are still validated only in demo mode (`config/settings.py:191-194`). `build_risk_engine` maps all three into `RiskConfig` (`risk/factory.py:15-28`), but nothing calls it until the entrypoint exists (D-11, G-5 partial, G-3). Details are in [RFC-002](rfc-silverbot-risk-kill-switch.md) (risk and kill switch).
 
-The ML filter can only approve, reject or reduce risk; it never creates a trade, places an order, raises risk or bypasses the stop loss or kill switch (AGENTS.md ML rules; `ml/filter.py`, G-8 caveat).
+The ML filter can only approve, reject or reduce risk; it never creates a trade, places an order, raises risk or bypasses the stop loss or kill switch (AGENTS.md ML rules; `ml/filter.py`). A NaN or out-of-range model probability rejects since `8e66054` (G-8 closed).
 
 ## 6. Scope
 
@@ -84,7 +84,7 @@ Targets come only from code or old-document thresholds. Where neither supplies a
 | BRD-M7 | Out-of-sample result acceptable | Open (criteria to be set in QAD); the final test set stays untouched until final validation | BACKTESTING.md:501, :108-127 | Out-of-sample report (currently 0 bytes, G-1, G-12) |
 | BRD-M8 | Paper run matches backtest behaviour | Open (tolerance not defined) | BACKTESTING.md:519 | `reports/paper_trading_report.json` against the backtest report |
 | BRD-M9 | Return goal | Owner input required (OI-4) | None in code or old docs | Backtest `return_percent`, later paper and demo reports |
-| BRD-M10 | Safety integrity: orders placed without a stop loss, or bypassing the risk engine or kill switch | Zero | AGENTS.md safety rules; `risk/engine.py:36-37` | Risk-engine rejection tests and audit log ([qad-silverbot.md](qad-silverbot.md)) |
+| BRD-M10 | Safety integrity: orders placed without a stop loss, or bypassing the risk engine or kill switch | Zero | AGENTS.md safety rules; `risk/engine.py:49-50` | Risk-engine rejection tests and audit log ([qad-silverbot.md](qad-silverbot.md)) |
 
 Evidence gate: BRD-M1 to BRD-M8 cannot be marked met while any of the three reports is empty (G-1).
 
@@ -119,7 +119,7 @@ Every number or decision that only the owner can give. Referenced as `Owner inpu
 
 - [x] The BRD defines BRD-V1 to BRD-V5, BRD-M1 to BRD-M10 and OI-1 to OI-12 with no gaps in numbering.
 - [x] Every metric target is either a cited code or old-document value, or is marked Owner input required (OI-#) or Open.
-- [x] Risk percentages are stated with their exact scope: Settings caps apply in demo mode only, and RiskConfig allows up to 0.05 per trade (D-11, G-5).
+- [x] Risk percentages are stated with their exact scope: the 0.005 per-trade cap applies in every mode and in `RiskConfig`; the daily-loss and leverage caps apply in demo mode only (D-11, G-5).
 - [x] No performance or profit claim is made; G-1 and D-86 are cited for the empty reports.
 - [x] The capital philosophy rows each cite a file and line number from the reconciled commit.
 - [x] Links point only to existing files.

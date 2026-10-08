@@ -28,9 +28,10 @@ Full proposal conditions: [RFC-004 §7.1](docs/rfc-silverbot-readiness-gates.md)
 
 ## Current Status
 
-Honest summary at commit `62037d1` (see [docs/prd-silverbot.md](docs/prd-silverbot.md) section 3 for the per-feature table):
+Honest summary at commit `70ccaec` on `dev` (see [docs/prd-silverbot.md](docs/prd-silverbot.md) section 3 for the per-feature table):
 
-- Built and tested: signal engine, risk engine, config loading, readiness checkers (108 tests pass).
+- Built and tested: signal engine, risk engine, config loading, readiness checkers (`python -m pytest -q`: 167 passed).
+- HIGH safety fixes batch 1 (2026-10-09): a NaN or out-of-range ML probability now rejects; the testnet URL guard is an exact `https` host match; `.env.example` loads as paper mode; readiness rejects empty or non-JSON reports; backtests default to 5 bps slippage and 3 bps spread; risk per trade is capped at 0.5% everywhere; the kill switch fails closed and trips itself on the daily-loss and consecutive-loss limits; risk state can persist in SQLite. The last three are not used by any running bot until the entrypoint builds its risk engine with `build_risk_engine` (G-3). Details: [docs/scrutiny-silverbot.md](docs/scrutiny-silverbot.md) section 3.
 - Partial: backtester, paper trading, demo/testnet mode, ML filter, monitoring, market data, deployment files.
 - Not working end to end: `main()` is a startup stub. There is no runnable backtest, paper or demo mode from the entrypoint yet (G-3).
 - No evidence: `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are empty. Nothing here supports any claim about strategy performance.
@@ -42,16 +43,18 @@ Set up the environment and run the tests by following [docs/runbook-local-dev.md
 
 ## Safe Defaults
 
+These are the `load_config` defaults (`src/silver_bot/config/settings.py:69-91`); the shipped `.env.example` keeps them:
+
 ```text
 LIVE_TRADING=false
 PAPER_TRADING=true
 DEMO_TRADING=false
-USE_ML_FILTER=false
-ALLOW_MARKET_ORDERS=false
-REQUIRE_STOP_LOSS=true
+ML_FILTER_ENABLED=false
+STOP_LOSS_REQUIRED=true
+MAX_RISK_PER_TRADE=0.005
 ```
 
-Risk limits, with the caveat that not all of them reach the risk engine yet (D-11): maximum risk per trade 0.5%, maximum daily loss 2%, maximum consecutive losses 3, maximum trades per day 3. See [docs/sdd-silverbot.md](docs/sdd-silverbot.md) section 3.4 for the exact configuration keys and [docs/rfc-silverbot-risk-kill-switch.md](docs/rfc-silverbot-risk-kill-switch.md) for the risk gates.
+The risk engine requires a stop loss whatever `STOP_LOSS_REQUIRED` says, and there is no market-order setting (no order code exists). Risk limits: maximum risk per trade 0.5%, enforced at config load in every mode and by `RiskConfig` itself; maximum daily loss 2%, maximum consecutive losses 3, maximum trades per day 3, maximum leverage 3x. D-11 is partly resolved: `build_risk_engine` maps the settings limits and kill-switch path into the engine, but nothing calls it until the entrypoint exists (G-3), so the paper and backtest engines still use `RiskConfig` defaults with no kill-switch path. See [docs/sdd-silverbot.md](docs/sdd-silverbot.md) section 3.4 for the exact configuration keys and [docs/rfc-silverbot-risk-kill-switch.md](docs/rfc-silverbot-risk-kill-switch.md) for the risk gates.
 
 ## Documentation Map
 

@@ -4,23 +4,23 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; statements about G-2, G-4 to G-8, G-10 and G-11 re-checked 2026-10-09 against `70ccaec`
 
 This document is the source of truth for what Silver Bot must do, what is built, and in which phases the rest is delivered. It defines the ids `PRD-F1` to `PRD-F12` (features) and `US-01` onward (user stories), and it replaces the old `TODO.md` and `PROGRESS.md` as the feature and phase record. Business context is in [brd-silverbot.md](brd-silverbot.md); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design is in [sdd-silverbot.md](sdd-silverbot.md), the design records are the four RFCs linked in section 3, and the test matrix is in [qad-silverbot.md](qad-silverbot.md); AIA, CLR and OPS are [aia-silverbot.md](aia-silverbot.md), [clr-silverbot.md](clr-silverbot.md) and [ops-silverbot.md](ops-silverbot.md). Status values: Built; Built (caveats); Partial; Stub; Planned; Planned, blocked. No row states a strategy performance result; none exists because the three evidence reports are 0 bytes (G-1, D-86).
 
 ## 1. Purpose & Value Proposition
 
-Silver Bot is a personal, single-operator bot that encodes the ICT Silver Bullet method for crypto futures (default Binance Futures, BTCUSDT, 1m; `src/silver_bot/config/settings.py:73-75`) behind a mandatory risk layer. It exists to answer one question safely: does this method have an edge after realistic costs? It does this by climbing four modes in order: backtest, paper, exchange demo/testnet, and only then, if ever, live.
+Silver Bot is a personal, single-operator bot that encodes the ICT Silver Bullet method for crypto futures (default Binance Futures, BTCUSDT, 1m; `src/silver_bot/config/settings.py:74-76`) behind a mandatory risk layer. It exists to answer one question safely: does this method have an edge after realistic costs? It does this by climbing four modes in order: backtest, paper, exchange demo/testnet, and only then, if ever, live.
 
 Value to the owner:
 
 - Rule-based decisions with a recorded reason for every rejected setup (no forced or skipped trades).
 - A risk engine that every trade must pass (stop loss, reward-to-risk, loss limits, kill switch) before any simulated or demo order exists.
 - A readable audit trail (JSONL audit log, trade records, reports) so every decision can be reviewed.
-- A hard block on live trading until evidence exists. The block is unconditional today: `LIVE_TRADING=true` and `TRADING_MODE=live` are rejected at config load (`settings.py:104-107`).
+- A hard block on live trading until evidence exists. The block is unconditional today: `LIVE_TRADING=true` and `TRADING_MODE=live` are rejected at config load (`settings.py:105-108`).
 
-Honest current state: the building blocks are real and tested (108 tests in 19 files), but the entrypoint is a startup stub, so no mode can be run end to end (D-1, G-3).
+Honest current state: the building blocks are real and tested (167 collected tests from 143 test functions in 20 files at `70ccaec`), but the entrypoint is a startup stub, so no mode can be run end to end (D-1, G-3).
 
 ## 2. Persona: Owner-Operator
 
@@ -39,17 +39,17 @@ Priority is MoSCoW for this release. Status comes from the code-verified fact sh
 | PRD-F# | Feature | Priority (MoSCoW) | Status | Evidence | RFC |
 |---|---|---|---|---|---|
 | PRD-F1 | Silver Bullet signal engine: sessions, liquidity, sweep, displacement, MSS, FVG, HTF bias, quality score; LONG / SHORT / NO_TRADE with reasons | Must | Built | All stages present with verbatim NO_TRADE reasons (`strategy/silver_bullet.py:67-209`); 14 tests incl. lookahead guards. Caveats: config never wired to settings (D-14, H-6, G-18); swing-only liquidity, no invalidation, no spread/ATR/news filters (D-18, D-19, G-19) | [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md) |
-| PRD-F2 | Event-driven backtester, cost simulation, reports and out-of-sample validation | Must | Partial | Engine, cost model, partial TP, four exports, metrics built and tested (7 engine tests). Gaps: costs default to 0 bps (D-5, H-7, G-11); out-of-sample split helper unwired and untested (D-33, G-12); no walk-forward or Monte Carlo (D-6); missing metrics and exports (D-25 to D-32, G-20); not reachable from any entry point (G-3) | N/A |
-| PRD-F3 | Risk engine and kill switch | Must | Built (caveats) | 14 gates in order with verbatim reasons (`risk/engine.py:30-87`), 10 risk tests. Caveats: Settings limits unwired and `RiskConfig` allows 5% per trade (D-11, H-5, G-5); kill switch inert unless a path is injected (D-12, H-9, G-6); state in memory (H-11, G-7); no emergency shutdown (D-22) | [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) |
+| PRD-F2 | Event-driven backtester, cost simulation, reports and out-of-sample validation | Must | Partial | Engine, cost model, partial TP, four exports, metrics built and tested (8 engine tests). Costs default to 5 bps slippage and 3 bps spread since `59ed6d5` (G-11 closed). Gaps: out-of-sample split helper unwired and untested (D-33, G-12); no walk-forward or Monte Carlo (D-6); missing metrics and exports (D-25 to D-32, G-20); not reachable from any entry point (G-3) | N/A |
+| PRD-F3 | Risk engine and kill switch | Must | Built (caveats) | 14 gates in order with verbatim reasons (`risk/engine.py:43-102`), 28 risk test functions. Since batch 1: per-trade risk capped at 0.5% in `RiskConfig` and at load; `build_risk_engine` wires settings, the kill-switch path and SQLite state; the kill switch fails closed and trips on the loss limits. Caveats: nothing calls `build_risk_engine` until G-3, so running engines keep defaults, no kill-switch path and in-memory state (G-5, G-6, G-7 partial); no emergency shutdown or position close (D-22, G-21) | [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) |
 | PRD-F4 | Paper trading: market stream, reconnect, REST fallback, paper executor, trade management | Must | Partial | `PaperExecutionEngine`, `PaperTradingEngine`, mock and reconnecting stream, storage and alerts built and tested (4 tests). No WebSocket; polling skeleton depends on a stubbed adapter; not constructed by any entry point (D-8, G-3, G-13, G-21) | N/A |
-| PRD-F5 | Binance Futures demo/testnet mode | Should | Partial | Config rules, 18-check demo readiness, adapter URL guard and compose `demo` service built and tested. All network I/O is a stub (`exchange/binance_futures.py:71`); no demo runtime; URL guard is a substring match (D-13, D-46, G-3, G-10, G-17) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
-| PRD-F6 | ML probability filter (approve / reject / reduce risk only) | Could | Partial | Dataset, features, training, calibration, promotion, registry and filter built and tested (25 ML tests). Not wired to settings (D-4, G-9); no pipeline entry point and no shipped model; NaN probability approves (H-1, G-8); promotion not enforced on registry (D-37, G-22) | [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) |
+| PRD-F5 | Binance Futures demo/testnet mode | Should | Partial | Config rules, 18-check demo readiness, adapter URL guard and compose `demo` service built and tested. All network I/O is a stub (`exchange/binance_futures.py:72`); no demo runtime (D-46, G-3, G-17). URL guard is an exact `https` host match since `0a76564` (D-13, G-10 closed) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
+| PRD-F6 | ML probability filter (approve / reject / reduce risk only) | Could | Partial | Dataset, features, training, calibration, promotion, registry and filter built and tested (27 ML test functions). A NaN, infinite or out-of-range probability rejects since `8e66054` (H-1, G-8 closed). Not wired to settings (D-4, G-9); no pipeline entry point and no shipped model; promotion not enforced on registry (D-37, G-22) | [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) |
 | PRD-F7 | Monitoring and alerting: structured logs, audit log, journal, Telegram, daily/weekly reports, dashboard JSON | Must | Partial | Audit JSONL with secret redaction, journal, daily and weekly report builders, dashboard JSON builder and 6 tests exist. Reports, journal and dashboard have no caller (D-48, D-49, G-16); Telegram has no network transport (D-3, D-47, G-15); app log is plain text (D-81) | N/A |
-| PRD-F8 | Readiness gates: demo and live readiness checkers and reports | Must | Built (caveats) | Live (15 checks) and demo (18 checks) checkers, report export and 15 tests. Report-only and never consulted (D-10, G-2); "report exists" passes 0-byte files (H-2, D-86); a live-ready result needs `LIVE_TRADING=true`, which the app refuses to load (H-3) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
-| PRD-F9 | Safe configuration: typed loading, fail-closed validation, safe defaults | Must | Built | Typed `load_config`, fail-closed live rejection, demo rules, path checks and 16 config tests. Caveats: `.env.example` fails to load (D-2, H-14, G-4); risk limits checked only in demo mode (D-11); `MODE` override and yaml parser quirks (D-42, D-43, D-44, G-24) | N/A |
-| PRD-F10 | Market data and storage: historical fetcher, SQLite | Must | Partial | SQLite with seven tables and five writers built and tested; the fetcher is a wrapper over a stub that raises `NotImplementedError` (D-8, G-13); `signals` and `trades` tables unused, no candle read API, no migrations (D-9, D-34, D-35, G-14) | N/A |
+| PRD-F8 | Readiness gates: demo and live readiness checkers and reports | Must | Built (caveats) | Live (15 checks) and demo (18 checks) checkers, report export and 17 tests. Report checks require a non-empty JSON object since `88220e6` (H-2, G-2 closed). Report-only and never consulted (D-10); the evidence files are still 0 bytes (D-86, G-1); a live-ready result needs `LIVE_TRADING=true`, which the app refuses to load (H-3) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
+| PRD-F9 | Safe configuration: typed loading, fail-closed validation, safe defaults | Must | Built | Typed `load_config`, fail-closed live rejection, demo rules, path checks and 20 config tests. `.env.example` loads as paper mode since `c6d909d` (G-4 closed); `MAX_RISK_PER_TRADE` capped at 0.005 and an enabled kill switch needs a path in every mode. Caveats: daily-loss and leverage limits checked only in demo mode (D-11 partial); `MODE` override and yaml parser quirks (D-42, D-43, D-44, G-24) | N/A |
+| PRD-F10 | Market data and storage: historical fetcher, SQLite | Must | Partial | SQLite with eight tables (including `risk_state`) and six writers built and tested; the fetcher is a wrapper over a stub that raises `NotImplementedError` (D-8, G-13); `signals` and `trades` tables unused, no candle read API, no migrations (D-9, D-34, D-35, G-14) | N/A |
 | PRD-F11 | Deployment: Docker, compose, systemd, logrotate, host prep, health | Should | Partial | Dockerfile, compose (5 services), systemd unit, logrotate, `prepare-host.sh` and health command exist; 4 file-content tests. The container runs the startup stub and is restarted in a loop (D-1, H-4, G-3); `silverbot` user never created (D-50); no hardening (G-26); health checks config only (D-82, G-27) | N/A |
-| PRD-F12 | Live trading | Won't (this release) | Planned, blocked | Rejected unconditionally at config load (`config/settings.py:104-107`); order methods raise `OrderPlacementDisabled` (`exchange/base.py:44-52`); no live executor (G-17) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
+| PRD-F12 | Live trading | Won't (this release) | Planned, blocked | Rejected unconditionally at config load (`config/settings.py:105-108`); order methods raise `OrderPlacementDisabled` (`exchange/base.py:44-52`); no live executor (G-17) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
 
 ## 4. User Stories & Acceptance Criteria
 
@@ -92,7 +92,7 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 - AC-04.4 Given non-zero fees, when the backtest runs, then net profit is lower than the fee-free run. Test: `tests/test_backtest_engine.py::test_fees_reduce_net_profit`.
 - AC-04.5 Given non-zero slippage, when the backtest runs, then net profit is lower. Test: `tests/test_backtest_engine.py::test_slippage_reduces_net_profit`.
 - AC-04.6 Given a limit order whose entry price is never touched, when the backtest runs, then no trade is recorded. Test: `tests/test_backtest_engine.py::test_limit_order_not_filled_if_price_never_reaches_entry`.
-- AC-04.7 Given the default configuration, when a backtest runs, then slippage and spread are non-zero. Not covered (G-11); defaults are 0 bps (D-5).
+- AC-04.7 Given the default configuration, when a backtest runs, then slippage and spread are non-zero. Test: `tests/test_backtest_engine.py::test_backtest_cost_defaults_are_conservative` (5.0 and 3.0 bps; G-11 closed).
 - AC-04.8 Given partial take profit or breakeven enabled, when a trade reaches 1R, then the position is partly closed and the stop moves to breakeven. Not covered by any test (G-32; QAD §3.8); the logic exists but no test pins it.
 - AC-04.9 Given the same candles twice, when the backtest runs twice, then the results are identical. Not covered by any test (G-32; QAD §3.8); the engine sorts candles by `open_time` before replay.
 
@@ -116,16 +116,16 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 - AC-06.7 Given three trades today, when evaluated, then it rejects with "Max trades per day limit reached". Test: `tests/test_risk_engine.py::test_max_trades_lockout`.
 - AC-06.8 Given one open position, when evaluated, then it rejects with "Max open positions limit reached". Test: `tests/test_risk_engine.py::test_max_open_positions_lockout`.
 - AC-06.9 Given notional above the leverage cap, when evaluated, then it rejects with "Maximum leverage exceeded". Test: `tests/test_risk_engine.py::test_maximum_leverage_rejection`.
-- AC-06.10 Given the Settings risk limits (0.5% per trade, 2% daily loss, 3x leverage), when the bot is configured, then the risk engine uses those same limits and cannot be set above 0.5% per trade. Not covered (G-5); `RiskConfig` accepts up to 5% and is not built from Settings (D-11, H-5).
-- AC-06.11 Given a restart, when the bot resumes the same day, then daily loss, consecutive loss and trade counts are retained. Not covered (G-7); state is in memory (H-11).
+- AC-06.10 Given the Settings risk limits (0.5% per trade, 2% daily loss, 3x leverage), when the bot is configured, then the risk engine uses those same limits and cannot be set above 0.5% per trade. Tests: `tests/test_risk_engine.py::test_build_risk_engine_carries_settings_caps`, `tests/test_risk_engine.py::test_risk_per_trade_above_half_percent_is_rejected`. Partial (G-5): no runtime calls `build_risk_engine` yet.
+- AC-06.11 Given a restart, when the bot resumes the same day, then daily loss, consecutive loss and trade counts are retained. Tests: `tests/test_risk_engine.py::test_risk_state_survives_engine_restart`, `tests/test_risk_engine.py::test_restart_does_not_reset_consecutive_loss_limit`. Partial (G-7): only an engine built with SQLite storage persists, and no runtime builds one yet.
 
 **US-07** As the owner, I want a kill switch that stops new entries, so that I can halt the bot immediately.
 
 - AC-07.1 Given the kill-switch file exists, when the risk engine evaluates, then it rejects first with "Kill switch is active". Test: `tests/test_risk_engine.py::test_kill_switch_active`.
 - AC-07.2 Given the kill-switch file exists during a backtest, when a signal is produced, then the rejected record reads "Risk rejected: Kill switch is active". Test: `tests/test_backtest_engine.py::test_backtest_logs_risk_rejection_when_kill_switch_active`.
 - AC-07.3 Given the kill-switch file exists during a paper run, when candles are processed, then no trade opens, a KILL_SWITCH_ACTIVE event is recorded and a "Kill switch active" alert is sent. Test: `tests/test_paper_trading.py::test_paper_trading_kill_switch_alert_and_risk_rejection`.
-- AC-07.4 Given a default-constructed engine, when no kill-switch path is supplied, then the kill switch is armed. Not covered (G-6); it is inert by default (D-12, H-9).
-- AC-07.5 Given a breach of a loss limit, when it occurs, then the kill switch trips automatically and open positions are closed. Not covered (G-6); neither exists (D-22).
+- AC-07.4 Given a default-constructed engine, when no kill-switch path is supplied, then the kill switch is armed. Not covered (G-6); `RiskConfig` still defaults to no path (backtests); the settings path is armed only through `build_risk_engine` (D-12, H-9).
+- AC-07.5 Given a breach of a loss limit, when it occurs, then the kill switch trips automatically and open positions are closed. The trip is tested (`tests/test_risk_engine.py::test_consecutive_losses_trip_kill_switch`, `tests/test_risk_engine.py::test_daily_loss_rejection_trips_kill_switch`); position close is not built (G-6, D-22).
 
 ### PRD-F4 Paper trading
 
@@ -153,7 +153,7 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 - AC-10.5 Given a demo configuration, when the adapter is built, then it uses the testnet base URL. Test: `tests/test_exchange.py::test_binance_adapter_uses_testnet_url_in_demo_mode`.
 - AC-10.6 Given testnet with the production URL, when the adapter is built, then it raises "testnet endpoint". Test: `tests/test_exchange.py::test_binance_adapter_rejects_production_url_for_testnet_mode`.
 - AC-10.7 Given any request to place or cancel an order, when the adapter is called, then it raises `OrderPlacementDisabled`. Tests: `tests/test_exchange.py::test_binance_adapter_rejects_real_order_placement`, `tests/test_exchange.py::test_binance_adapter_rejects_real_order_cancellation`.
-- AC-10.8 Given a look-alike host that contains `testnet.binancefuture.com` as a substring, when the URL is validated, then it is rejected. Not covered (G-10, D-13); today it passes.
+- AC-10.8 Given a look-alike host that contains `testnet.binancefuture.com` as a substring, when the URL is validated, then it is rejected. Tests: `tests/test_exchange.py::test_testnet_url_rejects_lookalikes`, `tests/test_config.py::test_demo_config_rejects_lookalike_testnet_url` (G-10 closed).
 - AC-10.9 Given demo mode, when the bot starts, then it connects to the testnet and places testnet orders. Not covered (G-3, G-17); no network I/O exists.
 
 ### PRD-F6 ML filter
@@ -167,7 +167,7 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 - AC-11.5 Given the filter is disabled, when it evaluates, then the signal is unchanged. Test: `tests/test_ml_probability_filter.py::test_ml_filter_disabled_leaves_signal_unchanged`.
 - AC-11.6 Given a prediction, when it is made, then a row is stored in `ml_predictions`. Test: `tests/test_ml_probability_filter.py::test_ml_prediction_is_stored_in_database`.
 - AC-11.7 Given a reduce-risk decision, when a backtest runs, then the trade carries the probability and a reduced position size. Test: `tests/test_ml_probability_filter.py::test_backtest_includes_ml_probability_and_reduces_risk`.
-- AC-11.8 Given a model that returns NaN, when the filter evaluates, then the signal is rejected. Not covered (G-8, H-1); today NaN becomes 1.0 and approves.
+- AC-11.8 Given a model that returns NaN, when the filter evaluates, then the signal is rejected. Test: `tests/test_ml_probability_filter.py::test_ml_filter_rejects_invalid_probability` (also infinities and values outside [0, 1]; G-8 closed).
 - AC-11.9 Given `ML_FILTER_ENABLED=true` and thresholds in settings, when the bot starts, then the filter uses them. Not covered (G-9, D-4); settings are not wired to the filter.
 
 **US-12** As the owner, I want a candidate model promoted only when it beats the active one under policy, so that a worse model never goes live in the filter.
@@ -207,7 +207,7 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 - AC-15.4 Given Telegram enabled without `TELEGRAM_ALERTS_TESTED`, when the checker runs, then it fails; with the flag it passes. Test: `tests/test_readiness.py::test_live_readiness_requires_telegram_test_when_enabled`.
 - AC-15.5 Given an active kill-switch file, when the checker runs, then readiness is blocked. Test: `tests/test_readiness.py::test_live_readiness_blocks_when_kill_switch_file_is_active`.
 - AC-15.6 Given a result, when it is exported, then the JSON holds `ready`, a timestamp and each check; given a missing report or bad boolean, then the reason says how to fix it. Tests: `tests/test_readiness.py::test_readiness_report_export`, `tests/test_readiness.py::test_readiness_messages_explain_missing_report_and_invalid_boolean`.
-- AC-15.7 Given a 0-byte or invalid evidence report, when the checker runs, then the report check fails. Not covered (G-2, H-2); a 0-byte file passes.
+- AC-15.7 Given a 0-byte or invalid evidence report, when the checker runs, then the report check fails. Test: `tests/test_readiness.py::test_live_readiness_rejects_unusable_report` (H-2 fixed).
 - AC-15.8 Given live startup, when the bot would go live, then it consults the readiness report. Not covered (G-2, D-10); nothing consults it.
 
 **US-16** As the owner, I want a demo-readiness checker, so that I know the demo setup is safe before using the testnet.
@@ -236,14 +236,14 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 - AC-18.4 Given a reduce-risk threshold above the minimum probability, when the config loads, then it is rejected. Test: `tests/test_config.py::test_ml_thresholds_must_be_valid`.
 - AC-18.5 Given a bad symbol, timeframe or exchange name, when the config loads, then it is rejected. Test: `tests/test_config.py::test_symbol_timeframe_and_exchange_are_validated`.
 - AC-18.6 Given a `.env` with a UTF-8 BOM, or yaml with nested section aliases, when the config loads, then both parse. Tests: `tests/test_config.py::test_env_file_allows_utf8_bom`, `tests/test_config.py::test_config_yaml_aliases_are_loaded`.
-- AC-18.7 Given the shipped `.env.example` copied to `.env`, when the config loads, then it loads. Not covered (G-4, D-2); it fails today.
-- AC-18.8 Given risk limits above 0.5% per trade, 2% daily loss or 3x leverage outside demo mode, when the config loads, then it is rejected. Not covered (G-5, G-24); checked only in demo mode.
+- AC-18.7 Given the shipped `.env.example` copied to `.env`, when the config loads, then it loads. Test: `tests/test_config.py::test_shipped_env_example_loads_as_paper` (G-4 closed).
+- AC-18.8 Given risk limits above 0.5% per trade, 2% daily loss or 3x leverage outside demo mode, when the config loads, then it is rejected. Per-trade risk: `tests/test_config.py::test_max_risk_per_trade_above_cap_is_rejected_in_paper_mode`. Daily loss and leverage: not covered, checked only in demo mode (G-5, G-24).
 
 ### PRD-F10 Market data and storage
 
 **US-19** As the owner, I want trades, events, candles, logs and ML predictions stored in SQLite, so that sessions can be reviewed.
 
-- AC-19.1 Given a new database path, when storage initialises, then the expected tables are created. Test: `tests/test_storage.py::test_database_initialization_creates_phase_one_tables` (asserts five of the seven tables).
+- AC-19.1 Given a new database path, when storage initialises, then the expected tables are created. Test: `tests/test_storage.py::test_database_initialization_creates_phase_one_tables` (asserts five of the eight tables); `tests/test_storage.py::test_risk_state_table_exists` covers `risk_state`.
 - AC-19.2 Given a paper run, when it completes, then trades and events are stored. Test: `tests/test_paper_trading.py::test_paper_trading_opens_closes_stores_and_alerts`.
 - AC-19.3 Given stored candles, when a backtest asks for a date range, then candles are read back. Not covered (G-14); no candle read API exists.
 - AC-19.4 Given signals and trades, when they occur, then the `signals` and `trades` tables are filled. Not covered (G-14); the tables have no writer.
@@ -287,7 +287,7 @@ The product has no web UI. The operator works through a terminal, environment fi
 | `python -m silver_bot.readiness` | `--output` (default `reports/live_readiness_report.json`) | Runs 15 live-readiness checks from process environment only; writes the report. Report-only; never enables live trading (`readiness.py:126-147`). | 0 ready; 2 not ready |
 | `python -m silver_bot.demo_readiness` | `--output` (default `reports/demo_readiness_report.json`) | Runs 18 demo-readiness checks from `.env` overlaid by process environment; writes the report (`demo_readiness.py:99-111`). | 0 ready; 2 not ready |
 | `python -m silver_bot.health` | none | Loads config; no output, no connectivity or database check (`health.py:8-21`). Used by the Dockerfile `HEALTHCHECK`. | 0 ok; 2 `ConfigError`; 3 live flag (unreachable) |
-| `pytest` | standard pytest arguments | Runs the 108 tests in `tests/` (`pyproject.toml`: `pythonpath=["src"]`, `testpaths=["tests"]`). | pytest codes |
+| `pytest` | standard pytest arguments | Runs the 167 collected tests in `tests/` (`pyproject.toml`: `pythonpath=["src"]`, `testpaths=["tests"]`). | pytest codes |
 
 Not present: any backtest runner, paper runner, demo runner, report scheduler, model training entry point, or kill-switch command (G-3, G-16, G-22, G-6). Backtest, paper and ML pipelines are libraries called from tests only.
 
@@ -310,7 +310,7 @@ Not present: any backtest runner, paper runner, demo runner, report scheduler, m
 | `SYMBOL`, `TIMEFRAME`, `EXCHANGE_NAME` | BTCUSDT, 1m, binance | Format-validated |
 | `BACKTEST_REPORT_PATH`, `OOS_VALIDATION_REPORT_PATH`, `PAPER_TRADING_REPORT_PATH` | under `reports/` | Read by live readiness only |
 
-The complete key list with line references lives in [sdd-silverbot.md](sdd-silverbot.md) section 3.4. `.env.example` does not load as shipped (D-2, G-4).
+The complete key list with line references lives in [sdd-silverbot.md](sdd-silverbot.md) section 3.4. `.env.example` loads as paper mode (G-4 closed in `c6d909d`).
 
 **Reports and files the system can produce:**
 
@@ -328,7 +328,7 @@ The complete key list with line references lives in [sdd-silverbot.md](sdd-silve
 
 ### 5.2 Mode Model
 
-The only supported modes are `backtest`, `paper` and `demo`. Live is not a state the application can enter. All transitions are decided at config load and fail closed (`settings.py:94-115`).
+The only supported modes are `backtest`, `paper` and `demo`. Live is not a state the application can enter. All transitions are decided at config load and fail closed (`settings.py:95-116`).
 
 The mode resolution decided at config load, showing which inputs are accepted and which fail closed with a `ConfigError`.
 
@@ -362,7 +362,7 @@ stateDiagram-v2
     end note
 ```
 
-Caveats recorded elsewhere: the `.env.example` default combination promotes to demo and then fails for missing keys (D-2); the risk-limit caps apply only in demo mode (D-11, G-24); `main()` does not branch on the resulting mode (D-1).
+Caveats recorded elsewhere: `DEMO_TRADING=true` promotes paper to demo in any mode (D-78); the daily-loss and leverage caps apply only in demo mode, while `MAX_RISK_PER_TRADE` is capped in every mode (D-11, G-24); `main()` does not branch on the resulting mode (D-1).
 
 ### 5.3 Core Flows
 
@@ -371,8 +371,8 @@ Each flow lists the intended steps and the current reality. Steps marked Not bui
 1. **Backtest run.** Intended: owner supplies historical candles, selects `TRADING_MODE=backtest`, runs the bot, reviews `trades.csv`, `equity_curve.csv`, `rejected_signals.csv` and `backtest_report.json`, and runs out-of-sample validation. Reality: the engine works when called from Python (see US-04); there is no runner, no data source (G-13) and no validation wiring (G-12). Evidence reports are empty (G-1).
 2. **Paper session.** Intended: start in paper mode, receive a live candle stream, evaluate signals, pass risk, simulate fills, store trades and send alerts. Reality: `PaperTradingEngine` runs against a mock stream in tests; no entry point constructs it, and the stream has no WebSocket (US-08, US-09, G-3, G-13).
 3. **Demo startup.** Intended: set the demo flags, run `python -m silver_bot.demo_readiness`, then start in demo mode against the testnet. Reality: config rules and the readiness checker work; startup writes two audit events and exits; no testnet call exists (US-10, G-3, G-17).
-4. **Readiness check.** Owner exports the environment, runs `python -m silver_bot.readiness` (live) or `python -m silver_bot.demo_readiness` (demo), reads the JSON, and fixes failed checks. Works today. Limits: results are advisory and not consulted by the bot (G-2), and evidence-report checks are existence-only (H-2).
-5. **Kill-switch activation.** Owner creates the file at `KILL_SWITCH_PATH`; the next risk evaluation rejects with "Kill switch is active"; the paper engine records a KILL_SWITCH_ACTIVE event and alerts once. Reset: delete the file. Limits: needs the path configured, does not close positions, never trips automatically (US-07, G-6).
+4. **Readiness check.** Owner exports the environment, runs `python -m silver_bot.readiness` (live) or `python -m silver_bot.demo_readiness` (demo), reads the JSON, and fixes failed checks. Works today. Limits: results are advisory and not consulted by the bot (D-10), and evidence-report checks test only that each file is a non-empty JSON object (H-2 fixed in `88220e6`).
+5. **Kill-switch activation.** Owner creates the file at `KILL_SWITCH_PATH`; the next risk evaluation rejects with "Kill switch is active"; the paper engine records a KILL_SWITCH_ACTIVE event and alerts once. The engine also writes the file itself, with a JSON reason, when it rejects on the daily-loss or consecutive-loss limit. Reset: read the reason, then delete the file with the bot stopped ([ops-silverbot.md](ops-silverbot.md) §4.1). Limits: needs the path configured (only `build_risk_engine` does, and nothing calls it yet), does not close positions (US-07, G-6).
 
 ### 5.4 Instrumentation & Event Taxonomy
 
@@ -397,13 +397,13 @@ The application logger (`utils/logging.py`) writes plain text (`asctime level na
 
 | Area | Requirement | Status |
 |---|---|---|
-| Safety | Default mode is paper; live trading rejected at load; no trade without a stop loss; no martingale; no averaging down; ML and the risk engine cannot be bypassed; no real orders (adapter methods raise) | Enforced in code and tests for the points covered in §4; kill switch, risk-limit unification and persistence are open (G-5, G-6, G-7) |
+| Safety | Default mode is paper; live trading rejected at load; no trade without a stop loss; no martingale; no averaging down; ML and the risk engine cannot be bypassed; no real orders (adapter methods raise) | Enforced in code and tests for the points covered in §4; the kill switch, settings caps and risk-state persistence are built but reach no running bot until G-3 (G-5, G-6, G-7 partial) |
 | Determinism of backtests | Same candles and configuration give the same result; candles are sorted by `open_time`; the strategy and ML see only candles up to the current one; at most one pending or open trade | Implemented (`backtest/engine.py:48,103-106`); determinism is not pinned by a test (AC-04.9, G-32; QAD §3.8) |
 | No real API keys in tests | Tests use mocks and in-memory clients; the suite needs no keys or network | Holds for the 19 test files |
 | Python version | Python 3.11 or newer; `requires-python = ">=3.11"`; Docker image `python:3.11-slim` | Holds; no runtime dependencies are declared (`dependencies = []`, G-25) |
 | Timezone correctness | Session windows are evaluated in America/New_York with daylight saving; audit timestamps are UTC | Session tests cover June and January (AC-02.1, AC-02.2); tzdata availability in deployment is Open (U-8, G-29) |
 | Secrets | No keys in the repository; `.env` is git-ignored and excluded from the image; logs redact secrets | Redaction tested (US-13); readiness secret scan outside git is Open (U-20) |
-| Robustness | Unattended runs need supervisor-safe exit behaviour and persisted risk state | Not met (G-3, G-7, H-4) |
+| Robustness | Unattended runs need supervisor-safe exit behaviour and persisted risk state | Not met (G-3, H-4); persistence built for a store-backed engine (G-7 partial) |
 | Standing rules | Never enable live by default, hardcode keys, use martingale, average down, trade without a stop loss, let ML place trades, or bypass the risk engine or kill switch; never optimise on the final test set | Carried from the old TODO.md "Never Do" list and AGENTS.md; the final-test rule is enforced only in model promotion (AC-12.4, D-33) |
 
 ## 6. Out of Scope for This Release
@@ -411,7 +411,7 @@ The application logger (`utils/logging.py`) writes plain text (`asctime level na
 - **PRD-F12 Live trading** (`Planned, blocked`). Nothing in this release places a real order. Unblock conditions, to be argued in [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) and decided by the owner:
   1. Non-empty, cost-inclusive backtest and out-of-sample reports that meet the thresholds in BRD-M1 to BRD-M8 (G-1, G-11, G-12).
   2. A stable paper run with a non-empty paper report, and a demo/testnet run, which first need a real runtime and real data (G-3, G-13, G-17).
-  3. A readiness gate that is meaningful and consulted (G-2), a kill switch that is armed by default with automatic triggers (G-6), and unified, persisted risk limits (G-5, G-7).
+  3. A readiness gate that is meaningful and consulted (D-10, H-3), a kill switch armed in the running bot (automatic triggers built; G-6), and unified, persisted risk limits in the running bot (built, not wired; G-5, G-7).
   4. A tested Telegram transport (G-15), API-key handling with withdrawals disabled, and owner decisions on capital, jurisdiction and venue (OI-1, OI-6, OI-10).
   5. An explicit owner decision recorded as a change record; this is a separate decision from this release (BRD §6).
 - Selling or licensing the bot, multi-user operation, custody of other people's funds and any go-to-market activity.
@@ -434,7 +434,7 @@ PRD-F6 is optional and `Could` priority. The filter sits after the rule-based si
 
 **Forbidden powers** (AGENTS.md and the BRD capital gate): the filter cannot generate a trade, place an order, increase risk above the maximum, bypass the stop loss, or bypass the risk engine or kill switch. A rejected signal never reaches order creation.
 
-**Known limits:** a NaN probability currently approves (H-1, G-8); the filter is not built from settings (D-4, G-9); no model is shipped (so the filter is a pass-through); the promotion policy is not enforced on the registry (D-37); the pickle artifact load executes code if artifacts are untrusted (H-8, G-23); leakage control is name-based (D-39, G-22). No claim is made that the filter improves results (BRD assumption stress-test, SCRUTINY §4).
+**Known limits:** a NaN probability approved before `8e66054` and now rejects (H-1, G-8 closed); the filter is not built from settings (D-4, G-9); no model is shipped (so the filter is a pass-through); the promotion policy is not enforced on the registry (D-37); the pickle artifact load executes code if artifacts are untrusted (H-8, G-23); leakage control is name-based (D-39, G-22). No claim is made that the filter improves results (BRD assumption stress-test, SCRUTINY §4).
 
 ## 8. Dependencies & Assumptions
 
@@ -471,7 +471,7 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 - [x] Create Python project scaffold
 - [x] Create `src/` layout
 - [~] Add `pyproject.toml` or `requirements.txt` (`pyproject.toml` exists with no runtime dependencies and there is no `requirements.txt`; D-40, G-25)
-- [~] Add `.env.example` (file exists but does not load; D-2, H-14, G-4)
+- [x] Add `.env.example` (loads as paper since `c6d909d`; D-2, H-14, G-4 closed)
 - [x] Add config loader
 - [x] Add config validation
 - [x] Add exchange adapter interface
@@ -498,8 +498,8 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 
 - [x] Add event-driven backtester
 - [x] Add fee simulation
-- [x] Add slippage simulation (mechanism exists; defaults are 0 bps, D-5, G-11)
-- [x] Add spread simulation (mechanism exists; defaults are 0 bps, D-5, G-11)
+- [x] Add slippage simulation (default 5.0 bps since `59ed6d5`; D-5, G-11 closed)
+- [x] Add spread simulation (default 3.0 bps since `59ed6d5`; D-5, G-11 closed)
 - [x] Add stop-loss simulation
 - [x] Add take-profit simulation
 - [x] Add partial TP simulation (untested; G-32; QAD §3.8)
@@ -512,13 +512,13 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 ### Phase 4: Risk Management (PRD-F3)
 
 - [x] Add position sizing
-- [x] Add max daily loss (state in memory; H-11, G-7)
+- [x] Add max daily loss (state persists only for a store-backed engine; H-11, G-7 partial)
 - [x] Add max consecutive losses
 - [x] Add max trades per day
 - [x] Add max open positions
 - [x] Add leverage validation
 - [x] Add minimum RR validation
-- [~] Add kill switch (inert by default, existence-only, no automatic trigger; D-12, H-9, G-6)
+- [~] Add kill switch (fail closed and auto-trips on loss limits since `08c81ad`; no path unless built by `build_risk_engine`; D-12, H-9, G-6 partial)
 - [~] Add emergency shutdown logic (no such function exists; the kill switch only blocks new entries; D-22, G-6)
 
 ### Phase 5: Paper Trading (PRD-F4)
@@ -542,7 +542,7 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 - [x] Add calibration report (report-only; G-22)
 - [~] Add model promotion rules (criteria narrower and not enforced on the registry; D-36, D-37, G-22)
 - [x] Add model registry
-- [~] Add ML probability filter (not wired to settings; NaN hazard; D-4, H-1, G-8, G-9)
+- [~] Add ML probability filter (not wired to settings; D-4, G-9. NaN hazard fixed, H-1, G-8)
 - [x] Add model rollback support
 
 ### Phase 7: Monitoring (PRD-F7)
@@ -567,12 +567,12 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 
 ### Phase 9: Live Readiness (PRD-F8)
 
-- [x] Add live readiness checker (existence-only report checks; H-2, H-3)
+- [x] Add live readiness checker (report checks require a non-empty JSON object; H-3 open)
 - [x] Add complete configuration checklist
 - [ ] Backtest passes (no non-empty report; G-1)
 - [ ] Out-of-sample validation passes (G-1, G-12)
 - [ ] Paper trading stable (G-1, G-3)
-- [ ] Risk engine tested (unit tests exist; this evidence item stays open until limits are unified; G-5)
+- [ ] Risk engine tested (unit tests exist; this evidence item stays open until the running bot uses `build_risk_engine`; G-5)
 - [ ] Kill switch tested (G-6)
 - [ ] Telegram alerts tested (G-15)
 - [ ] API key secured (Owner input required; OI-10)
@@ -582,7 +582,7 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 ### Phase 9.5: Binance Demo/Testnet (PRD-F5)
 
 - [x] Add demo/testnet mode config
-- [x] Add Binance Futures testnet endpoint validation (substring match; D-13, G-10)
+- [x] Add Binance Futures testnet endpoint validation (exact `https` host match since `0a76564`; D-13, G-10 closed)
 - [x] Add demo readiness checker
 - [x] Add demo readiness report export
 - [x] Add demo/testnet documentation (carried into [OPS](ops-silverbot.md) and the SDD)
@@ -602,14 +602,14 @@ Carried from the old `TODO.md` "Never Do" list. These are permanent constraints,
 
 ### Next
 
-Corrected from the old "Next Recommended" list and ordered by the SCRUTINY verdict (PROCEED WITH FIXES). All items are Planned; none is started in this documentation pass.
+Corrected from the old "Next Recommended" list and ordered by the SCRUTINY verdict (PROCEED WITH FIXES). Items 2, 4 (reject empty evidence) and part of 3 and 6 were done in the HIGH safety fixes batch 1 (2026-10-09); the rest are Planned.
 
 1. Make the entrypoint a real runtime with mode dispatch and supervisor-safe exit behaviour (G-3, H-4).
-2. Fix `.env.example` so it loads (G-4).
-3. Unify risk limits to the documented 0.5% cap and arm the kill switch by default with persisted risk state (G-5, G-6, G-7); design in [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md).
-4. Make readiness meaningful: reject empty or invalid evidence and consult the report (G-2).
-5. Real data access: historical fetch and stream (G-13), then backtest with non-zero costs and an out-of-sample split to produce the first non-empty evidence (G-1, G-11, G-12).
-6. Harden ML (NaN rejection, settings wiring) and the testnet URL guard (G-8, G-9, G-10).
+2. Fix `.env.example` so it loads (G-4). Done in `c6d909d`.
+3. Unify risk limits to the documented 0.5% cap and arm the kill switch by default with persisted risk state (G-5, G-6, G-7); design in [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md). Built in `5e4acc5`, `08c81ad` and `2d7f713`; the item 1 runtime must call `build_risk_engine(config, storage)`.
+4. Make readiness meaningful: reject empty or invalid evidence (done in `88220e6`) and consult the report (D-10).
+5. Real data access: historical fetch and stream (G-13), then backtest with non-zero costs (now the default) and an out-of-sample split to produce the first non-empty evidence (G-1, G-12).
+6. Harden ML settings wiring (G-9). NaN rejection (G-8) and the exact testnet URL guard (G-10) are done.
 7. Telegram transport and report scheduling (G-15, G-16), then a paper run and a demo run.
 8. Close the owner-input register (BRD §8) before setting numeric targets.
 

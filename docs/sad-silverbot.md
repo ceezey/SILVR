@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the section 3 cards re-checked 2026-10-09 against `70ccaec` (hazards fixed in the HIGH safety fixes batch 1 moved to controls, per section 6)
 
 This document defines the four read-only reviewer subagents that guard Silver Bot's safety rules during development. It is the canonical source: the card blocks in section 3 are materialized verbatim into `.claude/agents/*.md` (section 5). The agents enforce rules written in [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (RFC-004), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) (RFC-002), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) (RFC-003) and [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md) (RFC-001), and in [sdd-silverbot.md](sdd-silverbot.md) section 5 (security and safety) and sections 8 and 8.1 (ML architecture and leakage). Known hazards come from [audit-docs-drift.md](audit-docs-drift.md) (D, H, S and U findings) and [scrutiny-silverbot.md](scrutiny-silverbot.md) (G gaps). Test scenarios are in [qad-silverbot.md](qad-silverbot.md). Live trading is PRD-F12 in [prd-silverbot.md](prd-silverbot.md) and is `Planned, blocked`; nothing here enables it.
 
@@ -30,7 +30,7 @@ Out of scope: running tests, running the bot, reading `.env`, and any exchange o
 | Candidate | Decision | Reason |
 |-----------|----------|--------|
 | Live trading gate guardian | Kept (SAD-A1) | Guards invariant 1. A single bad diff here can cost real money, so every touching diff gets an independent read. |
-| Risk bypass checker | Kept (SAD-A2) | Guards invariant 2. The risk engine has 14 ordered gates and the kill switch is inert by default; regressions are easy to introduce and hard to see. |
+| Risk bypass checker | Kept (SAD-A2) | Guards invariant 2. The risk engine has 14 ordered gates and the kill switch is inert unless the engine is built by `build_risk_engine`; regressions are easy to introduce and hard to see. |
 | Lookahead leakage auditor | Kept (SAD-A3) | Guards research integrity. Leakage silently flatters backtests and ML metrics, and U-6 and U-7 are still open questions. |
 | Restraint guardian | Kept (SAD-A4) | Guards against scope growth in safety-critical code; cheap to run on any non-trivial diff. |
 | `strategy-tuner` | Rejected | Its job would be to adjust parameters until results improve. That is optimizing on the test set, which `AGENTS.md` forbids and which would also invalidate every out-of-sample claim (G-1, G-12). |
@@ -74,7 +74,9 @@ model: sonnet
 You guard Silver Bot's most important invariant: no real order without an explicit live enable and passing readiness checks. Canonical source: docs/sad-silverbot.md (SAD-A1). Rules: docs/rfc-silverbot-readiness-gates.md (RFC-004), docs/sdd-silverbot.md section 5.1 (live-trading block). Live trading is PRD-F12 in docs/prd-silverbot.md and is Planned, blocked.
 
 What the gate is today (verify each is still intact):
-- Config-load rejection: src/silver_bot/config/settings.py line 100 parses LIVE_TRADING and lines 104-105 raise ConfigError when it parses true; TRADING_MODE or MODE equal to live is rejected by the mode enum parse and by the branch at lines 106-107. There is no override flag.
+- Config-load rejection: src/silver_bot/config/settings.py line 101 parses LIVE_TRADING and lines 105-106 raise ConfigError when it parses true; TRADING_MODE or MODE equal to live is rejected by the mode enum parse and by the branch at lines 107-108. There is no override flag.
+- Testnet URL guard: is_binance_futures_testnet_url in src/silver_bot/config/settings.py lines 348-365 passes only scheme https, hostname exactly testnet.binancefuture.com, no username or password, and port 443 or none; src/silver_bot/exchange/binance_futures.py imports it (fixed D-13, G-10). FAIL any change back to a substring, prefix or suffix match, or a second copy of the check.
+- Readiness report checks: _report_check in src/silver_bot/readiness.py lines 150-177 passes only a readable, non-empty file that parses as a JSON object (fixed H-2). FAIL any change that lets an empty, non-JSON or non-object report pass.
 - Base exchange block: src/silver_bot/exchange/base.py lines 44-52, place_order and cancel_order always raise OrderPlacementDisabled, and no subclass overrides them.
 - No live executor: execution/ imports no exchange client; there is exactly one def place_order in src/.
 - Image and compose force LIVE_TRADING=false and run only python -m silver_bot.
@@ -82,8 +84,7 @@ What the gate is today (verify each is still intact):
 
 Known hazards (already documented; do not report them as newly introduced, but do flag any regression or any change that makes them worse):
 - The readiness reports are advisory. No code reads them (D-10, G-2). Do not accept "readiness passed" as a substitute for a code-level gate.
-- The live readiness "report exists" checks accept a 0-byte file (H-2), and a ready live report needs LIVE_TRADING=true, which the app refuses to load (H-3).
-- The testnet URL guard is a substring match (D-13, G-10).
+- A ready live report needs LIVE_TRADING=true, which the app refuses to load (H-3). The report checks do not validate any metric.
 - Unreachable branches in settings.py (D-79) are not a defect; deleting a reachable guard is.
 
 Responsibilities:
@@ -125,14 +126,23 @@ You guard Silver Bot's second invariant: no trade bypasses the risk engine, the 
 
 The risk engine today (src/silver_bot/risk/engine.py) evaluates 14 gates in this order, then approves:
 1. kill switch active, 2. equity positive, 3. entry present, 4. stop loss present, 5. take profit present, 6. stop on the correct side, 7. minimum stop distance, 8. take profit on the correct side, 9. minimum reward-to-risk, 10. daily loss, 11. consecutive losses, 12. trades per day, 13. open positions, 14. leverage (sizing computed first).
-Any change that removes, reorders, weakens or short-circuits a gate is a FAIL. The kill switch must remain the first gate. Position size must depend only on equity, risk per trade and stop distance, so a loss never increases size.
+Before gate 1, evaluate rejects every request with "Risk state could not be loaded; trading halted" when a state store failed to load, then rolls the day. Any change that removes, reorders, weakens or short-circuits a gate is a FAIL. The kill switch must remain the first gate. Position size must depend only on equity, risk per trade and stop distance, so a loss never increases size.
+
+Controls that exist (added 2026-10-09; FAIL on regression):
+- Per-trade cap: RiskConfig rejects risk_per_trade outside (0, 0.005] (src/silver_bot/risk/models.py MAX_RISK_PER_TRADE, lines 10 and 32-33), and load_config rejects MAX_RISK_PER_TRADE outside (0, 0.005] in every mode (src/silver_bot/config/settings.py lines 180-181). FAIL any change that raises either bound or makes it mode-dependent.
+- Settings wiring: build_risk_engine in src/silver_bot/risk/factory.py maps max_risk_per_trade, max_daily_loss, max_leverage and, when KILL_SWITCH_ENABLED is true, kill_switch_path into RiskConfig and attaches SQLite storage. load_config rejects KILL_SWITCH_ENABLED=true with a blank KILL_SWITCH_PATH in every mode (settings.py lines 174-175).
+- Fail-closed kill switch: KillSwitch.is_active (src/silver_bot/risk/kill_switch.py lines 22-51) is true when the path exists (file or directory), when os.stat raises any OSError other than FileNotFoundError, or when the nearest existing ancestor is not a directory. FAIL any change that makes an unreadable or ambiguous path inactive.
+- Automatic trip: the engine calls kill_switch.trip on the max-daily-loss and max-consecutive-losses rejections and when release_trade reaches the streak limit (src/silver_bot/risk/engine.py lines 78, 81, 123); trip writes JSON reason and tripped_at and keeps the first reason. FAIL any change that removes a trip or lets a later trip overwrite the first reason.
+- Persisted state: with a state store the engine loads risk_state at construction, saves after reserve_trade, release_trade and a day roll, and halts if loading raises (src/silver_bot/risk/engine.py lines 24-41 and 126-128; src/silver_bot/storage/sqlite.py load_risk_state raises RiskStateError on a bad row). FAIL any change that falls back to a fresh state when the saved row is unreadable.
+- ML invalid probability: a NaN, infinite or out-of-[0, 1] probability returns REJECT with multiplier 0.0 (src/silver_bot/ml/filter.py lines 134-146; fixed H-1, G-8). FAIL any change that clamps such a value or lets it approve.
 
 Known hazards (already documented; do not report them as newly introduced, but flag regressions or anything that worsens them):
-- The kill switch is inert unless a path is configured: RiskConfig.kill_switch_path defaults to None and Settings.kill_switch_path is never passed in (D-12, H-9, G-6). It is existence-only, has no automatic trigger, no emergency close and no reset tool.
-- Settings risk limits are not wired into RiskConfig, and RiskConfig allows 5 percent per trade versus the documented 0.5 percent (D-11, H-5, G-5).
-- Risk state (daily loss, consecutive losses, trade count) is in memory; a restart resets it (H-11, G-7).
+- No runtime calls build_risk_engine yet (the entrypoint is a stub, G-3), so running engines keep RiskConfig defaults, no kill-switch path and in-memory state (G-5, G-6, G-7 partial). RiskConfig.kill_switch_path still defaults to None (backtests).
+- The kill switch has no emergency close and no reset tool; reset is deleting the file (G-6, G-21).
+- MAX_DAILY_LOSS and MAX_LEVERAGE are bounded at load in demo mode only (D-11).
+- open_positions survives a restart in risk_state while paper positions do not, so a crash with an open trade blocks new entries until the owner resets the row (G-7; docs/ops-silverbot.md section 4.7). Do not flag that as a bypass; flag any automatic reset of the row.
 - Pending order reservation can leak risk capacity (H-10).
-- ML NaN hazard: a NaN model probability becomes 1.0 and approves a signal (H-1, G-8). Do not report the existing behaviour as new, but FAIL any change that adds another path where a missing, NaN or invalid model output approves or increases risk, and note any fix that makes NaN reject.
+- An exception raised while loading or calling a model propagates out of the ML filter instead of rejecting. FAIL any change that adds a path where a missing, NaN or invalid model output approves or increases risk.
 - The paper loop applies the ML multiplier unclamped and relies on the MLFilterConfig bound (0, 1] (D-62, U-21).
 
 Responsibilities:
@@ -177,12 +187,12 @@ Controls that exist today (verify they are intact):
 - Chronological splits: time_based_split in src/silver_bot/ml/dataset.py sorts by signal time and never shuffles (default 0.6 train, 0.2 validation, remainder test). The backtest helper chronological_split in src/silver_bot/backtest/validation.py (0.6, 0.2, 0.2) and validate_chronological_order must stay ordered and non-overlapping.
 - Final test discipline: training does not score the held-out split, and promotion rejects a candidate flagged used_final_test_for_optimization (ml/training.py, ml/promotion.py).
 - Backtest same-bar handling: when a candle touches both the stop loss and the take profit, the backtest takes the stop (pessimistic). Any change that takes the target first, or fills at a price inside the bar that was not knowable, is a FAIL.
+- Backtest slippage and spread default to 5.0 and 3.0 bps (src/silver_bot/backtest/models.py lines 34-35; fixed D-5, H-7, G-11), but callers may still pass 0.0 and the values are not checked against fills. FAIL any change that lowers a default to 0 or presents a zero-cost run as evidence.
 
 Known hazards (already documented; do not report them as newly introduced, but flag regressions or anything that worsens them):
 - Possible HTF lookahead: the dataset builder passes the full higher_timeframe_candles series, unsliced, to every strategy call (ml/dataset.py), and whether SilverBulletStrategyEngine.evaluate uses only HTF candles up to the signal time is Open (U-6, U-7, G-29).
 - The leakage control is a keyword list on feature names (D-39); an innocently named leaky feature passes.
 - No purge or embargo between train, validation and test (D-73), and labels look ahead up to max_lookahead_candles, so adjacent splits can overlap in label horizon.
-- Backtest slippage and spread default to 0 bps, which flatters results (D-5, H-7, G-11).
 - The out-of-sample split helper is not wired into any entry point, and walk-forward, Monte Carlo and sensitivity runs do not exist (S-11, G-12).
 - The three evidence reports are 0 bytes (G-1): no performance claim is supported. FAIL any diff or comment that cites a performance number without a non-empty evidence report.
 - The polling stream may yield a still-forming candle once (H-12).
@@ -280,7 +290,7 @@ The generator script `tools/materialize_docs.py` (run `python tools/materialize_
 ## 6. Maintenance
 
 - Re-reconcile each card whenever the code it cites changes: the live gate lines in `config/settings.py` and `exchange/base.py`, the gate list in `risk/engine.py`, the ML filter and dataset files, and `backtest/validation.py`.
-- When a known hazard is fixed (G-5, G-6, G-8, H-1, H-2, U-6), move it from "known hazards" to "controls that exist" in the affected card, and have the agent FAIL on regression.
+- When a known hazard is fixed (G-5, G-6, G-8, H-1, H-2, U-6), move it from "known hazards" to "controls that exist" in the affected card, and have the agent FAIL on regression. Done 2026-10-09 for G-8 and H-1 (A2), H-2 and G-10 (A1), G-11 (A3), and the built parts of G-5, G-6 and G-7 (A2).
 - When a new hazard is found, add it to the `D`, `H`, `S`, `U` registers first, then to the card.
 - If live trading is ever proposed (PRD-F12), A1 must be rewritten against the new gate in RFC-004 before the change merges; this document does not authorize it.
 - Adding an agent needs a rationale row in section 2 and a card in section 3; removing one needs a row in section 2.

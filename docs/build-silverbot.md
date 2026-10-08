@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`
 
 This guide tells a coding agent or a human how to build Silver Bot from the canonical docs. It is materialized to the root `AGENTS.md`, which every future session reads first. Safety rules in section 5 are carried over from the previous `AGENTS.md` and must not be weakened.
 
@@ -54,7 +54,7 @@ Re-ground (re-read the relevant doc and the code) when:
 | Demo mode (PRD-F5) and readiness (PRD-F8) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) | readiness tests, subagent SAD-A1 |
 | ML filter (PRD-F6) | [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), [aia-silverbot.md](aia-silverbot.md) | ML tests, subagent SAD-A3 |
 | Monitoring (PRD-F7), deployment (PRD-F11) | [ops-silverbot.md](ops-silverbot.md) | monitoring tests, runbook steps |
-| Config (PRD-F9), data and storage (PRD-F10) | SDD config and data sections | config tests, the runbook-local-dev step 3 env block loads; `.env.example` is known to fail (G-4) |
+| Config (PRD-F9), data and storage (PRD-F10) | SDD config and data sections | config tests, the runbook-local-dev step 3 env block loads; `.env.example` loads as paper mode since `c6d909d` (G-4 closed, `tests/test_config.py:258`) |
 
 ## 2. Subagents
 
@@ -81,7 +81,7 @@ No version in this table is invented. If `pyproject.toml` or the `Dockerfile` ch
 | ID | Old convention (in old docs) | Current code | Use instead |
 |----|------------------------------|--------------|-------------|
 | D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Keys parse but have no runtime effect | Treat ML as not wired; see [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) |
-| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Keys validate in demo mode but are not wired to `RiskConfig` | Caps live in `RiskConfig` defaults; see [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) |
+| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_engine` maps all three keys and the kill-switch path into `RiskConfig`. No runtime calls it yet (G-3), and the daily-loss and leverage bounds are checked in demo mode only | Build a runtime engine with `build_risk_engine(config, storage)` (`src/silver_bot/risk/factory.py:15-28`); never hand-build a `RiskConfig` for a running bot; see [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) |
 | D-10 | Live trading is gated by `LIVE_TRADING` plus readiness | `LIVE_TRADING=true` is rejected at load; readiness is never consulted by the entrypoint | Live is `Planned, blocked`; see [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
 
 The full list is in [audit-docs-drift.md](audit-docs-drift.md).
@@ -119,13 +119,18 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
 
 ### (b) An order request passes through the risk engine and kill switch
 
-`src/silver_bot/risk/engine.py:25-36` (kill switch is the first check) and `src/silver_bot/execution/paper_trading.py:207-216` (the caller must ask the risk engine before any fill):
+`src/silver_bot/risk/engine.py:33-50` (an unreadable persisted risk state halts first; the kill switch is the first gate) and `src/silver_bot/execution/paper_trading.py:207-216` (the caller must ask the risk engine before any fill):
 
 ```python
     def evaluate(self, request: RiskRequest) -> RiskDecision:
         """Return a risk decision with an explicit approval or rejection reason."""
 
+        if self.state_load_error is not None:
+            return self._reject("Risk state could not be loaded; trading halted")
+        previous_day = self.state.current_day
         self.state.roll_day(request.signal_day)
+        if self.state.current_day != previous_day:
+            self._save_state()
 
         if self.kill_switch.is_active():
             return self._reject("Kill switch is active")
@@ -159,7 +164,7 @@ A rejected decision is recorded and the function returns before any position is 
 
 ### (c) Fail-closed config validation rejects live mode
 
-`src/silver_bot/config/settings.py:104-107`:
+`src/silver_bot/config/settings.py:105-108`:
 
 ```python
     if live_trading:

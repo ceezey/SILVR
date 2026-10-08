@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-09 against code at commit `70ccaec` (the G-8 fix `8e66054`; the rest of `ml/` is unchanged since `62037d1`)
 
 This dossier assures the one machine-learning component in Silver Bot: the optional ML probability filter (PRD-F6). It absorbs the assurance content of the old `ML_MODEL.md`. Architecture is in [sdd-silverbot.md](sdd-silverbot.md) §8 and §8.1; the decision record is [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) (RFC-003); the product requirement is PRD-F6 in [prd-silverbot.md](prd-silverbot.md). Test scenarios are `QAD-T#` in [qad-silverbot.md](qad-silverbot.md) §3.5; gaps are `G-#` in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift and hazards (`D-#`, `H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). Code wins over old documents. Live trading is `Planned, blocked` (PRD-F12) and nothing here enables it.
 
@@ -19,8 +19,8 @@ No performance claim is made anywhere in this dossier: no trained model exists i
 
 **What the filter is, as built.**
 
-- Optional. Off by default: `MLFilterConfig.enabled=False` (`ml/filter.py:29`); the environment key `ML_FILTER_ENABLED` defaults to `false` (`config/settings.py:79,151`) and the Dockerfile and compose force it to `false` (`Dockerfile:11`; compose `research` forces it off).
-- Bounded. It receives an existing rule-based signal and may only approve it unchanged, reject it, or reduce its risk with a multiplier in (0, 1] (`ml/filter.py:42-43,134-145`). It cannot create a trade, place an order, raise risk, change a stop loss or bypass the kill switch (SDD §8.1).
+- Optional. Off by default: `MLFilterConfig.enabled=False` (`ml/filter.py:30`); the environment key `ML_FILTER_ENABLED` defaults to `false` (`config/settings.py:80,152`) and the Dockerfile and compose force it to `false` (`Dockerfile:11`; compose `research` forces it off).
+- Bounded. It receives an existing rule-based signal and may only approve it unchanged, reject it, or reduce its risk with a multiplier in (0, 1] (`ml/filter.py:43-44,148-159`). It cannot create a trade, place an order, raise risk, change a stop loss or bypass the kill switch (SDD §8.1).
 - Downstream of the rules and upstream of the risk engine. An approved or reduced signal still passes `risk.evaluate` (`backtest/engine.py:128-196`; `execution/paper_trading.py:176-267`).
 - Not wired to settings. The four `ML_*` settings are parsed and validated but never converted to an `MLFilterConfig`; the paper loop builds `MLProbabilityFilter()` with defaults, which is disabled (`execution/paper_trading.py:53`, D-4, G-9). In the built system the filter is therefore always off unless a caller injects a configured filter in code.
 - Not exposed. No command runs the offline pipeline (`ml/__init__.py:7-46`, S-21, G-22).
@@ -29,7 +29,7 @@ No performance claim is made anywhere in this dossier: no trained model exists i
 
 ## 1. Model / System Card
 
-This section stands alone: it is the source of the root `MODEL_CARD.md`. Evidence for every statement is cited to code at commit `62037d1`. Related documents: [sdd-silverbot.md](sdd-silverbot.md) (design, section 8), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), the Risk Register in [aia-silverbot.md](aia-silverbot.md), [scrutiny-silverbot.md](scrutiny-silverbot.md) (gaps, `G-n`), [audit-docs-drift.md](audit-docs-drift.md) (drift findings `D-n` and hazards `H-n`; open questions `U-n`), [qad-silverbot.md](qad-silverbot.md) (test scenarios, `QAD-Tn`) and [brd-silverbot.md](brd-silverbot.md) (owner-input rows, `OI-n`).
+This section stands alone: it is the source of the root `MODEL_CARD.md`. Evidence for every statement is cited to code at commit `70ccaec`. Related documents: [sdd-silverbot.md](sdd-silverbot.md) (design, section 8), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), the Risk Register in [aia-silverbot.md](aia-silverbot.md), [scrutiny-silverbot.md](scrutiny-silverbot.md) (gaps, `G-n`), [audit-docs-drift.md](audit-docs-drift.md) (drift findings `D-n` and hazards `H-n`; open questions `U-n`), [qad-silverbot.md](qad-silverbot.md) (test scenarios, `QAD-Tn`) and [brd-silverbot.md](brd-silverbot.md) (owner-input rows, `OI-n`).
 
 | Field | Value |
 |---|---|
@@ -51,8 +51,10 @@ flowchart TD
     B -- "no" --> C["APPROVE unchanged, multiplier 1.0"]
     B -- "yes" --> D{"Active model in registry?"}
     D -- "no or registry unreadable" --> C
-    D -- "yes" --> E["Build 23 features, unpickle model, predict probability p, clamp to 0..1"]
-    E --> F{"p >= min_probability (0.60)?"}
+    D -- "yes" --> E["Build 23 features, unpickle model, predict probability p"]
+    E --> V{"p finite and in 0..1?"}
+    V -- "no" --> J
+    V -- "yes" --> F{"p >= min_probability (0.60)?"}
     F -- "yes" --> G["APPROVE, multiplier 1.0"]
     F -- "no" --> H{"p >= reduce_risk_threshold (0.55)?"}
     H -- "yes" --> I["REDUCE_RISK, multiplier 0.5"]
@@ -62,7 +64,7 @@ flowchart TD
     C --> K
 ```
 
-The thresholds are code defaults (`ml/filter.py:26-43,134-145`). The disabled, no-model and `NO_TRADE` paths approve the unchanged signal (`filter.py:86-123`).
+The thresholds are code defaults (`ml/filter.py:27-44,148-159`). A NaN, infinite, negative or above-1 probability rejects with multiplier 0.0, probability None and reason `ML model returned an invalid probability` (`ml/filter.py:134-146`). The disabled, no-model and `NO_TRADE` paths approve the unchanged signal (`filter.py:87-124`).
 
 **Permitted effects.** Approve a rule-based signal; reject it; reduce its risk (position size, risk amount and leverage multiplied by the multiplier after the risk engine approved, `backtest/engine.py:492-506`, `execution/paper_trading.py:252-259`).
 
@@ -106,11 +108,11 @@ scikit-learn is not a declared dependency (`pyproject.toml:10-15`, `dependencies
 
 - **No model, no performance claim.** `models/` is empty. No accuracy, AUC, calibration or trading result exists to cite, and none may be inferred from the code. Test fixtures use stand-in probabilities (for example 0.72, 0.57, 0.40) that say nothing about real behaviour.
 - **Not wired.** The ML environment settings have no runtime effect (D-4, G-9). There is no command for the offline pipeline (G-22).
-- **NaN approves.** A NaN model probability becomes 1.0 and approves the signal, because `max(0.0, min(1.0, nan))` evaluates to 1.0 (`ml/filter.py:179`, H-1, G-8). The risk engine still applies. No test covers it (QAD-T145).
-- **Errors propagate.** A corrupt artifact, a feature-build error or a row-length mismatch is not caught by `evaluate` (`filter.py:125-132`). Only registry read errors fall back (`filter.py:111-123,160-164`).
+- **Invalid probability rejects (H-1, G-8 fixed in `8e66054`).** The raw `predict_proba` value is no longer clamped (`ml/filter.py:193`); NaN, infinite or out-of-[0, 1] output rejects the signal (`ml/filter.py:134-146`). Before the fix NaN became 1.0 and approved. Pinned by `tests/test_ml_probability_filter.py:197,210` (QAD-T145).
+- **Errors propagate.** A corrupt artifact, a feature-build error or a row-length mismatch is not caught by `evaluate` (`filter.py:126-133`). Only registry read errors fall back (`filter.py:112-124,174-178`).
 - **Fail-open when no model.** A missing registry silently returns the unchanged rule-based signal, so an enabled filter with no model is indistinguishable from a disabled one except by the reason string.
 - **Pickle.** Loading a registered artifact executes code if the registry or artifact file is untrusted (`registry.py:126-131`, H-8, G-23). Artifacts are expected to be self-generated and local.
-- **No staleness or drift handling.** Model age, training window and live feature drift are not checked; there is no retraining schedule (`filter.py:111-132`).
+- **No staleness or drift handling.** Model age, training window and live feature drift are not checked; there is no retraining schedule (`filter.py:112-133`).
 - **Leakage controls are weak.** The check is a keyword test on names only; higher-timeframe candles are passed to every strategy call unsliced in the dataset builder, and whether the strategy uses only candles up to the signal time is `Open` (`dataset.py:87-90`, U-6, G-22); there is no purge or embargo.
 - **Promotion not enforced.** An unpromoted model can be made active; it can still only approve, reject or reduce (D-37).
 - **Small and noisy labels.** Overlapping setups are not de-duplicated, entry fill is not required, the label window is a fixed 100 candles, and the policy minimum of 30 samples is far below what a reliable classifier needs. The minimum the owner accepts is `Owner input required` (BRD OI-9).
@@ -129,14 +131,14 @@ Likelihood and Impact are owner-assessed qualitative ratings for the built syste
 | AIA-R2 | Split leakage: training labels resolve inside the validation or test window | Medium | Medium | Chronological split without shuffling `dataset.py:156-183` (QAD-T35). Gap: no purge or embargo, `outcome_time` unused (D-73) | Partial |
 | AIA-R3 | Overfitting: the model fits noise from few, overlapping setups and the owner trusts the validation score | High | Medium | Validation metrics only `training.py:234-269`; test split held out `training.py:96-100`; promotion needs 30 samples and Brier at most 0.25 `promotion.py:22-42`. Gap: test split never scored, no regularisation, no walk-forward (G-12, G-22) | Partial |
 | AIA-R4 | Miscalibration: probabilities do not match outcomes, so the 0.60 and 0.55 thresholds mean little | Medium | Medium | Brier and ECE report `calibration.py:59-185` (QAD-T36); promotion Brier limit `promotion.py:111-114`. Gap: report only, no calibrator, not run by any pipeline | Partial |
-| AIA-R5 | Model drift: market behaviour changes and the model degrades unnoticed | Medium | Medium | None in code. Predictions are stored for later review in `ml_predictions` (`storage/sqlite.py:100-113`, `paper_trading.py:140-160`); no drift metric, retrain schedule or alert exists | Open |
-| AIA-R6 | A stale or wrong model is loaded: an old, mismatched or unpromoted artifact is active | Medium | Medium | Registry requires artifact, feature list and metrics files `registry.py:57-67`; one active model, rollback by `set_active` `registry.py:104-116`; row ordered by the model's own `features_used` `filter.py:125-131`. Gap: no age or training-window check `filter.py:111-132` (QAD-T147), promotion not enforced (D-37, QAD-T152) | Partial |
-| AIA-R7 | Filter increases risk: a multiplier above 1 or a larger size | Low | High | Multiplier is 1.0, a validated value in (0, 1], or 0.0 `filter.py:42-43,136-144`; backtest clamps to [0, 1] and applies after risk approval `backtest/engine.py:492-506`; risk engine caps size and leverage downstream (RFC-002). Gap: paper path unclamped `paper_trading.py:252-259` (D-62) | Mitigated |
-| AIA-R8 | Filter becomes a trade generator: ML creates or triggers an order | Low | High | `evaluate` takes an existing `SilverBulletSignal`; `NO_TRADE` approves with no probability and both consumers return before ML on `NO_TRADE` `filter.py:98-109`, `backtest/engine.py:110-115`, `paper_trading.py:127-138`; `ml/` has no exchange import or order method `ml/__init__.py:1-5`; exchange order methods raise `OrderPlacementDisabled` `exchange/base.py:44-52` | Mitigated |
-| AIA-R9 | NaN or broken model output approves a signal | Low | High | Clamp to [0, 1] `filter.py:179`, but NaN becomes 1.0 (H-1, G-8); the risk engine still gates the signal. No test (QAD-T145) | Open |
-| AIA-R10 | Pickle artifact or registry is tampered with and executes code on load | Low | High | Registry path checks reject `..` and directories `config/settings.py:152-158`; artifacts are self-generated. Gap: `pickle.load` itself `registry.py:126-131` (H-8, G-23, QAD-T150) | Open |
-| AIA-R11 | False assurance: the owner believes the filter is active (or inactive) because the `ML_*` settings do not reach it | High | Medium | Default-off everywhere `filter.py:29`, `Dockerfile:11`; decisions logged with a reason `filter.py:86-123`. Gap: settings never build `MLFilterConfig` `paper_trading.py:53` (D-4, G-9, QAD-T153) | Open |
-| AIA-R12 | Corrupt artifact or feature error crashes the paper loop | Low | Medium | Registry read errors fall back to the unchanged signal `filter.py:160-164`. Gap: other errors propagate out of `evaluate` `filter.py:125-132` (QAD-T148) | Open |
+| AIA-R5 | Model drift: market behaviour changes and the model degrades unnoticed | Medium | Medium | None in code. Predictions are stored for later review in `ml_predictions` (`storage/sqlite.py:103-116`, `paper_trading.py:140-160`); no drift metric, retrain schedule or alert exists | Open |
+| AIA-R6 | A stale or wrong model is loaded: an old, mismatched or unpromoted artifact is active | Medium | Medium | Registry requires artifact, feature list and metrics files `registry.py:57-67`; one active model, rollback by `set_active` `registry.py:104-116`; row ordered by the model's own `features_used` `filter.py:126-132`. Gap: no age or training-window check `filter.py:112-133` (QAD-T147), promotion not enforced (D-37, QAD-T152) | Partial |
+| AIA-R7 | Filter increases risk: a multiplier above 1 or a larger size | Low | High | Multiplier is 1.0, a validated value in (0, 1], or 0.0 `filter.py:43-44,150-158`; backtest clamps to [0, 1] and applies after risk approval `backtest/engine.py:492-506`; risk engine caps size and leverage downstream (RFC-002). Gap: paper path unclamped `paper_trading.py:252-259` (D-62) | Mitigated |
+| AIA-R8 | Filter becomes a trade generator: ML creates or triggers an order | Low | High | `evaluate` takes an existing `SilverBulletSignal`; `NO_TRADE` approves with no probability and both consumers return before ML on `NO_TRADE` `filter.py:99-110`, `backtest/engine.py:110-115`, `paper_trading.py:127-138`; `ml/` has no exchange import or order method `ml/__init__.py:1-5`; exchange order methods raise `OrderPlacementDisabled` `exchange/base.py:44-52` | Mitigated |
+| AIA-R9 | NaN or broken model output approves a signal | Low | High | Non-finite or out-of-[0, 1] probability rejects (`filter.py:134-146`, `8e66054`; H-1, G-8); tested (QAD-T145, `tests/test_ml_probability_filter.py:197,210`). An exception from the model still propagates (`filter.py:126-133`); the risk engine still gates the signal | Mitigated |
+| AIA-R10 | Pickle artifact or registry is tampered with and executes code on load | Low | High | Registry path checks reject `..` and directories `config/settings.py:153-159`; artifacts are self-generated. Gap: `pickle.load` itself `registry.py:126-131` (H-8, G-23, QAD-T150) | Open |
+| AIA-R11 | False assurance: the owner believes the filter is active (or inactive) because the `ML_*` settings do not reach it | High | Medium | Default-off everywhere `filter.py:30`, `Dockerfile:11`; decisions logged with a reason `filter.py:87-124`. Gap: settings never build `MLFilterConfig` `paper_trading.py:53` (D-4, G-9, QAD-T153) | Open |
+| AIA-R12 | Corrupt artifact or feature error crashes the paper loop | Low | Medium | Registry read errors fall back to the unchanged signal `filter.py:174-178`. Gap: other errors propagate out of `evaluate` `filter.py:126-133` (QAD-T148) | Open |
 | AIA-R13 | An unpromoted model is activated by any route | Medium | Medium | Promotion policy exists and is advisory `promotion.py:73-190` (QAD-T45, QAD-T142). Gap: `register_model(active_status=True)` and `set_active` need no promotion result `registry.py:40-116` (D-37, QAD-T152). Effect is bounded by AIA-R7 and AIA-R8 | Open |
 | AIA-R14 | Results vary by environment: scikit-learn present or absent changes which models exist | Medium | Low | Logistic model always trains `training.py:272-291`. Gap: scikit-learn undeclared `pyproject.toml:10-15` (G-25) | Open |
 
@@ -154,7 +156,7 @@ Run this before any model is enabled outside a backtest, and again after any cha
 - [ ] The sample count meets the owner's minimum (`Owner input required`, OI-9).
 - [ ] The artifact and registry were produced locally by the owner (pickle trust).
 - [ ] The `ML_*` settings reach the filter (D-4 closed) and a startup log or audit event states whether the filter is on.
-- [ ] A NaN probability is rejected (H-1 closed) and a test pins it.
+- [x] A NaN probability is rejected (H-1 closed in `8e66054`) and a test pins it (`tests/test_ml_probability_filter.py:197`).
 - [ ] A backtest with the filter on versus off, on the same data, shows the filter never increased risk and never added a trade.
 - [ ] Rollback was exercised: `set_active` to the previous model, decisions confirmed.
 - [ ] The BUILD log and this register were updated.
@@ -202,4 +204,4 @@ Nothing here is legal advice.
 - [x] No performance figure is stated; the absence of a trained model is stated in §1 and §1.3.
 - [x] Every `AIA-R#` row cites code or a `D-#`, `H-#`, `G-#` or `QAD-T#` that exists in the committed documents.
 - [x] Jurisdiction-dependent items are marked `Open (OI-6)`.
-- [ ] The §3 self-audit checklist can be fully ticked; it cannot today because no model exists and H-1, D-4 and D-37 are open.
+- [ ] The §3 self-audit checklist can be fully ticked; it cannot today because no model exists and D-4 and D-37 are open (H-1 closed in `8e66054`).

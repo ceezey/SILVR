@@ -9,49 +9,49 @@ This is the entry point for every working session. It lists each document, its v
 
 ## 1. Document Suite
 
-All suite docs were last reconciled against code at commit `62037d1`, except the four marked N/A, which describe intent, not code.
+All suite docs were reconciled against code at commit `62037d1`, except the four marked N/A, which describe intent, not code. On 2026-10-09 the docs that describe the eight gaps fixed in the HIGH safety fixes batch 1 (merged to `dev` at `70ccaec`) were re-checked against `70ccaec`; "batch 1 items" in the Last Reconciled column means only those statements and the `file:line` citations into the eight changed source files were re-checked, and the rest still dates from `62037d1`.
 
 | Document | File | Version | Status | Last Updated | Last Reconciled |
 |---|---|---|---|---|---|
-| Scrutiny Gate (SCRUTINY) | [scrutiny-silverbot.md](scrutiny-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
+| Scrutiny Gate (SCRUTINY) | [scrutiny-silverbot.md](scrutiny-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
 | Idea Brief (IDEA) | [idea-silverbot.md](idea-silverbot.md) | 0.1 | Draft | 2026-10-08 | N/A |
-| Validation Brief (VALIDATION) | [val-silverbot.md](val-silverbot.md) | 0.1 | Draft | 2026-10-08 | N/A |
+| Validation Brief (VALIDATION) | [val-silverbot.md](val-silverbot.md) | 0.1 | Draft | 2026-10-09 | N/A |
 | House Style & Voice (VOICE) | [voice-silverbot.md](voice-silverbot.md) | 0.1 | Draft | 2026-10-08 | N/A |
-| Business Requirements (BRD) | [brd-silverbot.md](brd-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Unit Economics (UES) | [ues-silverbot.md](ues-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Product Requirements (PRD) | [prd-silverbot.md](prd-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
+| Business Requirements (BRD) | [brd-silverbot.md](brd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
+| Unit Economics (UES) | [ues-silverbot.md](ues-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
+| Product Requirements (PRD) | [prd-silverbot.md](prd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
 | Design System (DSD) | [dsd-silverbot.md](dsd-silverbot.md) | 0.1 | Draft (design system not started) | 2026-10-09 | N/A |
-| System Design (SDD) | [sdd-silverbot.md](sdd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-08 (`62037d1`) |
-| QA and Test Plan (QAD) | [qad-silverbot.md](qad-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Subagent Roster (SAD) | [sad-silverbot.md](sad-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Project Build Guide (BUILD) | [build-silverbot.md](build-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Compliance & Legal Readiness Register (CLR) | [clr-silverbot.md](clr-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| AI Assurance Dossier (AIA) | [aia-silverbot.md](aia-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Operations & Observability Runbook (OPS) | [ops-silverbot.md](ops-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Build Session Log (LOG) | [log-silverbot.md](log-silverbot.md) | 0.1 | Draft (append-only) | 2026-10-08 | 2026-10-08 (`62037d1`) |
+| System Design (SDD) | [sdd-silverbot.md](sdd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
+| QA and Test Plan (QAD) | [qad-silverbot.md](qad-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`) |
+| Subagent Roster (SAD) | [sad-silverbot.md](sad-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
+| Project Build Guide (BUILD) | [build-silverbot.md](build-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
+| Compliance & Legal Readiness Register (CLR) | [clr-silverbot.md](clr-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
+| AI Assurance Dossier (AIA) | [aia-silverbot.md](aia-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`) |
+| Operations & Observability Runbook (OPS) | [ops-silverbot.md](ops-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
+| Build Session Log (LOG) | [log-silverbot.md](log-silverbot.md) | 0.1 | Draft (append-only) | 2026-10-09 | 2026-10-09 (`70ccaec`) |
 
 ### Runbooks
 
 | Runbook | File | Version | Status | Last Updated | Last Reconciled |
 |---|---|---|---|---|---|
-| Local Development | [runbook-local-dev.md](runbook-local-dev.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Backtest and Evidence | [runbook-backtest.md](runbook-backtest.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Demo / Testnet | [runbook-demo-testnet.md](runbook-demo-testnet.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
+| Local Development | [runbook-local-dev.md](runbook-local-dev.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
+| Backtest and Evidence | [runbook-backtest.md](runbook-backtest.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
+| Demo / Testnet | [runbook-demo-testnet.md](runbook-demo-testnet.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
 
 ### Audits
 
 | Audit | File | Version | Status | Last Updated | Last Reconciled |
 |---|---|---|---|---|---|
-| Docs vs Code Drift (86 findings D-1..D-86, 14 HIGH; code hazards H-1..H-14) | [audit-docs-drift.md](audit-docs-drift.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
+| Docs vs Code Drift (86 findings D-1..D-86, 14 HIGH; code hazards H-1..H-14) | [audit-docs-drift.md](audit-docs-drift.md) | 0.1 | Draft | 2026-10-09 | 2026-10-08 (`62037d1`); Resolved lines 2026-10-09 (`70ccaec`) |
 
 ### RFCs
 
-| RFC ID | File | Feature | Status |
-|---|---|---|---|
-| `silverbot-rfc-001` | [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md) | Signal engine (PRD-F1) | Draft |
-| `silverbot-rfc-002` | [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) | Risk engine and kill switch (PRD-F3) | Draft |
-| `silverbot-rfc-003` | [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) | ML filter gate (PRD-F6) | Draft |
-| `silverbot-rfc-004` | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) | Readiness gates (PRD-F5, PRD-F8, PRD-F12) | Draft |
+| RFC ID | File | Feature | Status | Last Updated |
+|---|---|---|---|---|
+| `silverbot-rfc-001` | [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md) | Signal engine (PRD-F1) | Draft | 2026-10-08 |
+| `silverbot-rfc-002` | [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) | Risk engine and kill switch (PRD-F3) | Draft | 2026-10-09 |
+| `silverbot-rfc-003` | [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) | ML filter gate (PRD-F6) | Draft | 2026-10-09 |
+| `silverbot-rfc-004` | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) | Readiness gates (PRD-F5, PRD-F8, PRD-F12) | Draft | 2026-10-09 |
 
 ### Root files
 
@@ -71,6 +71,8 @@ Edit the source of truth, never the materialized file.
 |---|---|
 | Design spec for this documentation suite | [superpowers/specs/2026-10-08-canonical-docs-design.md](superpowers/specs/2026-10-08-canonical-docs-design.md) |
 | Implementation plan | [superpowers/plans/2026-10-08-canonical-docs.md](superpowers/plans/2026-10-08-canonical-docs.md) |
+| Design spec for the HIGH safety fixes batch 1 | [superpowers/specs/2026-10-09-high-safety-fixes-design.md](superpowers/specs/2026-10-09-high-safety-fixes-design.md) |
+| Implementation plan for the HIGH safety fixes batch 1 | [superpowers/plans/2026-10-09-high-safety-fixes.md](superpowers/plans/2026-10-09-high-safety-fixes.md) |
 
 ### 1.1 Traceability Matrix
 
@@ -97,6 +99,7 @@ No Change Records yet. Records start once a doc is Locked.
 
 | Date | Change | Reference |
 |---|---|---|
+| 2026-10-09 | HIGH safety fixes batch 1 merged to `dev` at `70ccaec` (G-2 `88220e6`, G-4 `c6d909d`, G-5 `5e4acc5`, G-6 `08c81ad`, G-7 `2d7f713`, G-8 `8e66054`, G-10 `0a76564`, G-11 `59ed6d5`; 109 to 167 passing tests). Docs reconciled: G-2, G-4, G-8, G-10 and G-11 Closed, G-5 to G-7 Partial; Resolved lines in the audit; OPS kill-switch clearing and `risk_state` reset steps; QAD scenarios for the 34 new test functions; citations into the changed files re-pointed; SAD cards and the materialized files regenerated. | [design spec](superpowers/specs/2026-10-09-high-safety-fixes-design.md), [plan](superpowers/plans/2026-10-09-high-safety-fixes.md), [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3 |
 | 2026-10-09 | Linked the Figma design file from the DSD header. | [dsd-silverbot.md](dsd-silverbot.md) |
 | 2026-10-09 | Added the tech stack table, SDD section 2.4, verified against `2b916d1`; README links to it. | [sdd-silverbot.md](sdd-silverbot.md) section 2.4 |
 | 2026-10-08 | Canonicalization pass: the root docs were absorbed into this suite, reconciled against code at `62037d1`, and removed. Originals remain in git history at that commit. | [design spec](superpowers/specs/2026-10-08-canonical-docs-design.md), [plan](superpowers/plans/2026-10-08-canonical-docs.md) |
@@ -109,20 +112,18 @@ No incidents recorded. The bot has never run a paper, demo or live session, so t
 
 - [~] All docs are Draft at 0.1; no doc is Locked yet, so the suite is reviewed but not frozen.
 - [ ] Evidence reports are empty: `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are 0 bytes (G-1). No performance claim is made anywhere in the suite.
-- [~] Materialized artifacts match their sources. This was verified by a generator and checker kept outside the repo; the repo has no automated check yet (see the process finding in [audit-docs-drift.md](audit-docs-drift.md)).
+- [x] Materialized artifacts match their sources: `python tools/materialize_docs.py --check` reports no changes, and `tests/test_materialize_docs.py` runs it in the suite. It checks generation only, not docs-vs-code semantics (see the process finding in [audit-docs-drift.md](audit-docs-drift.md)).
 - [x] The tables in section 1 list every file under `docs/` (25 files including this index).
 - [x] The SAD roster matches `.claude/agents/` (four reviewers, SAD-A1..A4).
 - [ ] Phase 9 live-readiness evidence is open: no backtest, out-of-sample, paper, kill-switch or Telegram evidence exists (see [prd-silverbot.md](prd-silverbot.md) section 9).
-- [ ] Code hazards found and not fixed (this pass changed no bot code); each is in [audit-docs-drift.md](audit-docs-drift.md) and [scrutiny-silverbot.md](scrutiny-silverbot.md):
-  - NaN model probability is treated as 1.0 and approves a signal (H-1, G-8).
-  - The kill switch is inert unless a path is injected, checks existence only, never auto-triggers and does not close positions (D-12, H-9, G-6).
-  - Readiness is unreliable and consulted by nothing: a 0-byte report passes "exists", and a live-ready result needs settings the app refuses to load (H-2, H-3, G-2).
-  - Settings risk limits never reach the risk engine, whose RiskConfig accepts up to 5% risk per trade (validation ceiling; default 0.5%; `risk/models.py:18,29`) against the documented 0.5% cap (D-11, H-5, G-5).
-  - Risk state lives in memory and resets on restart (H-11, G-7).
-  - The entrypoint is a startup stub that exits 0, so supervisors restart it in a loop (H-4, G-3).
-  - `.env.example` fails to load as shipped (H-14, G-4).
-  - Backtest costs default to 0 bps, which flatters results (H-7, G-11).
+- [ ] Code hazards still open; each is in [audit-docs-drift.md](audit-docs-drift.md) and [scrutiny-silverbot.md](scrutiny-silverbot.md):
+  - The entrypoint is a startup stub that exits 0, so supervisors restart it in a loop (H-4, G-3). Because nothing calls `build_risk_engine`, the batch 1 risk fixes below reach no running bot.
+  - Settings risk limits reach the engine only through `build_risk_engine`, which has no runtime caller; daily-loss and leverage bounds are checked in demo mode only (D-11, H-5, G-5 partial).
+  - The kill switch is armed only through `build_risk_engine` and does not close positions; reset is deleting the file (D-12, H-9, G-6 partial).
+  - Risk state persists only for an engine built with SQLite storage, and `open_positions` can outlive a paper position after a crash (H-11, G-7 partial).
+  - Readiness is consulted by nothing, and a live-ready result needs settings the app refuses to load (D-10, H-3).
   - Model and registry pickles are loaded without trust checks (H-8).
+- [x] Fixed in the HIGH safety fixes batch 1 (2026-10-09, `70ccaec`): NaN model probability approval (H-1, G-8, `8e66054`); testnet URL substring match (D-13, G-10, `0a76564`); `.env.example` failing to load (H-14, G-4, `c6d909d`); 0 bps backtest cost defaults (H-7, G-11, `59ed6d5`); 0-byte reports passing readiness (H-2, G-2, `88220e6`); 5% `RiskConfig` per-trade ceiling (H-5, `5e4acc5`); kill switch existence-only with no automatic trip (H-9, `08c81ad`); risk state lost on restart for a store-backed engine (H-11, `2d7f713`).
 
 ## 5. Notes
 
@@ -136,7 +137,7 @@ Owner decisions that shaped this suite (OD-1 to OD-7, from the [design spec](sup
 - OD-6: A small safety subagent roster, materialized to `.claude/agents/`.
 - OD-7: Code-first audit, then write. Code wins over old docs.
 
-Doc count: 17 suite docs (16 in the first table plus this index), 4 RFCs, 3 runbooks and 1 audit, which is 25 files under `docs/`, plus 2 tracked process records under `docs/superpowers/` (the design spec and the implementation plan). The root holds README.md, CLAUDE.md, AGENTS.md and MODEL_CARD.md.
+Doc count: 17 suite docs (16 in the first table plus this index), 4 RFCs, 3 runbooks and 1 audit, which is 25 files under `docs/`, plus 4 tracked process records under `docs/superpowers/` (two design specs and two implementation plans: the 2026-10-08 canonical docs pair and the 2026-10-09 HIGH safety fixes pair). The root holds README.md, CLAUDE.md, AGENTS.md and MODEL_CARD.md.
 
 Excluded: GTM, PITCH and WRAP. This is a personal trading bot with no customers, no pitch audience and no external product launch, so market, investor and launch-wrap docs do not apply.
 

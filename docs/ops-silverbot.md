@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 4.1, 4.4 and 4.7 and the kill-switch and risk-state statements re-checked 2026-10-09 against `70ccaec`
 
 This runbook says how to run, watch and stop Silver Bot, and what to do when something goes wrong. It absorbs the operational parts of the old `DEPLOYMENT.md` (VPS setup, emergency commands, security checklist). Only commands that work with the code as built are given as steps. Where the intended action is not supported by the code, the runbook says so and gives the manual alternative.
 
@@ -45,7 +45,7 @@ Targets are the owner's to set (BRD OI-5, monitoring hours per day). The code me
 | Process uptime | Time the bot runs without exit | No. The process exits right after start; there is nothing to measure (H-4) | `main.py:27-50` | Open |
 | Market stream uptime | Share of time the candle stream delivers closed candles | No. The stream has a reconnect wrapper in the library but no metric, and the container does not start it (G-13, H-12) | `data/stream.py` | Open |
 | Alert delivery | Time from an alert-worthy event to a message reaching the owner | No. Telegram has no network transport, so delivery is never achieved (D-3, G-15, QAD-T69) | `monitoring/telegram.py:96-103` | Open |
-| Kill-switch reaction | Time from the kill file appearing to the next entry being rejected | In library code only: checked on every `evaluate`, so reaction is at most one candle interval; the first rejection is recorded as a `KILL_SWITCH_ACTIVE` event. Inert unless a path is configured (D-12, G-6) | `risk/engine.py:30-31`; `execution/paper_trading.py:74-84` | Open |
+| Kill-switch reaction | Time from the kill file appearing to the next entry being rejected | In library code only: checked on every `evaluate`, so reaction is at most one candle interval; the first rejection is recorded as a `KILL_SWITCH_ACTIVE` event. Inert unless the engine is built with a path, which only `build_risk_engine` does and nothing calls yet (D-12, G-6) | `risk/engine.py:43-44`; `execution/paper_trading.py:74-84` | Open |
 | Audit completeness | Every decision has an `audit.jsonl` line | Partially: engines write when given a logger; `main()` writes only start and stop. A failed write raises into the caller (QAD-T67) | `monitoring/audit.py:72-75` | Open |
 | Report freshness | Daily and weekly reports produced on time | No. The builders have no caller and no schedule (S-31, G-16, QAD-T70) | `monitoring/reports.py:18,52,92` | Open |
 
@@ -88,7 +88,7 @@ The last command counts restarts; a large number confirms the restart loop (H-4)
 - **Trade journal** (CSV) per trade: ids, symbol, timeframe, session, direction, entry and exit times and prices, stop, target, size, risk amount, realized pnl and R, fees, slippage, exit reason, quality score, ML probability and decision, notes (`monitoring/reports.py:244-272`). The exporter has no caller.
 - **Daily report** keys: date, trades taken, rejected setups, pnl, drawdown, win rate, average R, best and worst trade, rule failures, ML decisions (`reports.py:77-89`). **Weekly report** keys: week start and end, total trades, net pnl, win rate, profit factor, average R, max drawdown, best and worst session, repeated rejection reasons (`reports.py:119-131`). The window starts at the first trade, not at a calendar week. Neither is produced automatically.
 - **Dashboard JSON** has four keys: `daily`, `weekly`, `recent_trades`, `recent_rejections`. It is a JSON export only: no web page, server or redaction (`monitoring/dashboard.py:19-33`).
-- **Readiness reports**: `python -m silver_bot.demo_readiness` and `python -m silver_bot.readiness` write JSON under `reports/`. They are advisory; nothing reads them (D-10). The "report exists" checks pass 0-byte files (H-2).
+- **Readiness reports**: `python -m silver_bot.demo_readiness` and `python -m silver_bot.readiness` write JSON under `reports/`. They are advisory; nothing reads them (D-10). The three report checks fail an empty, non-JSON or non-object file (`readiness.py:150-177`, H-2 fixed), so the committed 0-byte reports fail live readiness.
 - **Container health**: `docker inspect --format '{{.State.Health.Status}}' silver-bot-paper` shows the Dockerfile health check state (`starting`, `healthy`, `unhealthy`) for the `bot` service. Compose defines no check of its own (D-82).
 
 ## 3. Alerting
@@ -128,7 +128,9 @@ flowchart TD
     H -- "yes" --> I["4.2 Outage"]
     H -- "no" --> J{"Started after a deploy or change?"}
     J -- "yes" --> K["4.6 Roll back"]
-    J -- "no" --> L["Collect logs, stop the service, review"]
+    J -- "no" --> M{"Every entry rejected by persisted risk state after a restart?"}
+    M -- "yes" --> N["4.7 Reset risk_state"]
+    M -- "no" --> L["Collect logs, stop the service, review"]
 ```
 
 Common first moves, in order of safety:
@@ -141,13 +143,13 @@ Common first moves, in order of safety:
 
 **Trigger.** Anything that says trading must stop now: a loss limit reached, an unexplained trade, a bad signal stream, a suspected compromise, a deploy gone wrong.
 
-**What the kill switch is, as built.** A file whose existence blocks new entries. It is inert unless a path is configured in code (`RiskConfig.kill_switch_path` defaults to `None`); `KILL_SWITCH_PATH` from `.env` is never passed to the risk engine; the default engines have no path; nothing creates the file, nothing trips it automatically and nothing closes positions or stops the process (`risk/kill_switch.py:11-17`, `risk/models.py:26`, `execution/paper_trading.py:49`, D-12, D-22, G-6). The compose `demo` service sets `KILL_SWITCH_PATH=/app/data/KILL_SWITCH`, but the risk engine never receives it: settings parse and require `KILL_SWITCH_PATH` in demo mode (`config/settings.py:171-183`) and the paper loop builds its engine without a path (H-9). The kill switch is therefore **not a reliable emergency stop** in the deployed system. The reliable stop is stopping the process.
+**What the kill switch is, as built.** A file at `KILL_SWITCH_PATH` that blocks new entries. It fails closed: a file with any content, a directory, a path that cannot be checked (`OSError`), or a path whose nearest existing parent is a file all count as active (`risk/kill_switch.py:22-51`). The risk engine writes it itself when it rejects on the daily-loss or consecutive-loss limit, as JSON `{"reason": ..., "tripped_at": ...}`, and keeps the first reason if it trips again (`risk/kill_switch.py:53-60`, `risk/engine.py:78,81,123`). It does not close positions or stop the process (G-6, G-21). It is armed only when the engine is built by `build_risk_engine` with `KILL_SWITCH_ENABLED=true` (`risk/factory.py:26`); `load_config` rejects `KILL_SWITCH_ENABLED=true` without a path in every mode (`config/settings.py:174-175`). Nothing calls `build_risk_engine` yet: the entrypoint is a stub and the paper loop builds its engine without a path (`execution/paper_trading.py:49`, G-3). The compose `demo` service sets `KILL_SWITCH_PATH=/app/data/KILL_SWITCH`, but no running engine receives it. The kill switch is therefore **not a reliable emergency stop** in the deployed system. The reliable stop is stopping the process.
 
 **Immediate steps.**
 
 1. Stop the process (this works today): `sudo systemctl stop silver-bot`. If you are running compose by hand without systemd: `docker compose down`.
    - Warning: when the systemd unit is enabled, do not use `docker compose down` or `docker stop silver-bot-paper` alone. The unit has `Restart=always` with `RestartSec=10`, so systemd starts the container again about 10 seconds later (`deploy/systemd/silver-bot.service:13-14`). Stop through `systemctl stop`.
-2. Create the lock file as the standing intent, for any code path that has a configured path: `touch data/KILL_SWITCH` from the repository directory (the path used by compose `demo`, `/app/data/KILL_SWITCH`, maps to `./data/KILL_SWITCH`). Its effect depends on a runtime that passes the path to the risk engine; today it has none. Do this anyway so that the readiness checkers also see an active switch and block (`readiness.py:190-227`, `demo_readiness.py:160-178`).
+2. Create the lock file as the standing intent, for any code path that has a configured path: `touch data/KILL_SWITCH` from the repository directory (the path used by compose `demo`, `/app/data/KILL_SWITCH`, maps to `./data/KILL_SWITCH`). Its effect depends on a runtime that passes the path to the risk engine; today it has none. Do this anyway so that the readiness checkers also see an active switch and block (`readiness.py:202-239`, `demo_readiness.py:160-178`).
 3. If positions exist on an exchange account, close them in the exchange's own interface. The bot cannot (`execution/paper_trading.py:59-122`); there is no emergency shutdown function (D-22).
 
 **Verification.**
@@ -157,9 +159,17 @@ Common first moves, in order of safety:
 - `tail -n 5 logs/audit.jsonl` shows no new lines after the stop time.
 - In a library run with the path configured, an entry attempt records `risk_rejected` with reason `Kill switch is active` and a `kill_switch_active` event.
 
-**Reset.** Delete the file by hand (`rm data/KILL_SWITCH`). No command exists; the switch is not latched and has no reset logic (`risk/kill_switch.py:14-17`). Do not reset until the cause is understood.
+**Clear a tripped kill switch.** No command exists; the switch re-reads the file on every check and has no reset logic beyond the file (`risk/kill_switch.py:22-33`). Do not clear it until the cause is understood.
 
-**Follow-up.** Record a postmortem (§6). The planned changes (armed by default from settings, automatic triggers on loss limits, position close on trip, reset step) are specified in RFC-002 and are `Planned`.
+1. Stop the process (§4.1 step 1). Expected: `sudo systemctl status silver-bot` shows `inactive (dead)`.
+2. Read the reason: `cat data/KILL_SWITCH`. Expected: an automatic trip shows one line such as `{"reason": "Max daily loss limit reached", "tripped_at": "2026-10-09T14:00:00+00:00"}`; a file created with `touch` is empty. A directory at the path also counts as active: `ls -ld data/KILL_SWITCH`.
+3. Check that the limit that tripped it is no longer breached, or the engine trips it again on the next request:
+   - `Max daily loss limit reached`: the daily PnL resets only when the trading day changes. Clear it on a later day, not the same day.
+   - `Max consecutive losses limit reached`: the streak resets only on a winning trade, and a store-backed engine reloads it from `risk_state` after a restart (gate 11 then trips the switch again). Reset `risk_state` first (§4.7).
+4. Delete the file: `rm data/KILL_SWITCH` (or `rmdir` for a directory). Expected: `ls data/KILL_SWITCH` reports no such file.
+5. Start the service: `sudo systemctl start silver-bot`. Expected: `systemctl status` shows `active`.
+
+**Follow-up.** Record a postmortem (§6) with the JSON reason and `tripped_at`. Position close on trip and a reset command are `Planned` (RFC-002, G-6, G-21).
 
 ### 4.2 Exchange or stream outage
 
@@ -171,7 +181,7 @@ Common first moves, in order of safety:
 
 1. Check the venue's status page and your own network from the host.
 2. Look for the symptom in the log: `docker compose logs --tail 100 bot` or `sudo journalctl -u silver-bot -n 100`.
-3. If a paper or demo loop was running under a custom driver, stop it (§4.1 step 1) rather than letting it run blind. Never switch to a different endpoint in `.env` to "work around" an outage; demo mode accepts only a URL containing `testnet.binancefuture.com` and that check is a substring match (D-13).
+3. If a paper or demo loop was running under a custom driver, stop it (§4.1 step 1) rather than letting it run blind. Never switch to a different endpoint in `.env` to "work around" an outage; demo mode accepts only `https` with host exactly `testnet.binancefuture.com` (`config/settings.py:348-365`, D-13 fixed).
 
 **Verification.** Candles resume with increasing timestamps; the audit log shows `strategy_decision` lines again; `docker inspect --format '{{.State.Health.Status}}' silver-bot-paper` is `healthy` (configuration check only).
 
@@ -195,23 +205,23 @@ Common first moves, in order of safety:
 
 **Verification.** The event history explains the position (signal, risk approval, order, fill). `grep '"event_type": "paper_trade_opened"' logs/audit.jsonl` shows the opening and the matching entry in `strategy_decision`.
 
-**Follow-up.** If no signal explains it, treat it as a defect: preserve the files, open a Change Record, add a test scenario (QAD-T register). Risk state is in memory and lost on restart, so counters reset after a restart (H-11).
+**Follow-up.** If no signal explains it, treat it as a defect: preserve the files, open a Change Record, add a test scenario (QAD-T register). An engine without a store keeps risk state in memory and loses it on restart. A store-backed engine (`build_risk_engine` with storage) keeps `open_positions` in `risk_state` while paper positions are lost on restart, so after a crash with an open paper trade it rejects every entry with `Max open positions limit reached` until `risk_state` is reset (§4.7, H-11, G-7).
 
 ### 4.4 Daily-loss or consecutive-loss limit hit
 
-**Trigger.** A risk rejection with reason `Max daily loss limit reached` (2% of current equity by default) or `Max consecutive losses limit reached` (3 by default); a `risk_rejected` audit event (`risk/engine.py:63-65`).
+**Trigger.** A risk rejection with reason `Max daily loss limit reached` (2% of current equity by default) or `Max consecutive losses limit reached` (3 by default); a `risk_rejected` audit event (`risk/engine.py:76-79`).
 
-**What exists.** The limits only block new entries for the rest of the evaluation; they do not trip the kill switch, close positions or alert (G-6, D-22). The counters live in memory, so a restart clears them (H-11, G-7). Settings limits are not wired to the engine; the engine uses its own defaults (G-5).
+**What exists.** Either rejection also trips the kill switch when the engine has a path: it writes `data/KILL_SWITCH` with the reason, so the halt outlasts the day roll and a restart (`risk/engine.py:76-82`, `08c81ad`). It does not close positions or alert (G-6, G-21). An engine built with SQLite storage persists the counters in `risk_state`, so a restart does not clear them; an engine without a store keeps them in memory and a restart clears them (H-11, G-7). Settings limits reach the engine only through `build_risk_engine`, which nothing calls yet; the paper and backtest engines use `RiskConfig` defaults (G-5).
 
 **Immediate steps.**
 
-1. Do not restart the service to "clear" the block: a restart resets the counters and removes the protection.
-2. Stop the process for the rest of the trading day (§4.1 step 1) and create `data/KILL_SWITCH` as the owner's standing instruction.
+1. Do not restart the service or delete `risk_state` to "clear" the block: that removes the protection.
+2. Stop the process for the rest of the trading day (§4.1 step 1). Expected: `systemctl status` shows `inactive (dead)`. If `data/KILL_SWITCH` does not exist (no engine had a path), create it as the owner's standing instruction: `touch data/KILL_SWITCH`.
 3. Review the day: `grep '"event_type": "paper_trade_closed"' logs/audit.jsonl`.
 
 **Verification.** No new `paper_trade_opened` lines after the stop; the rejection reason is present in the audit log.
 
-**Follow-up.** Decide with the owner's drawdown tolerance (BRD OI-3) whether to resume. Record the cause in a postmortem. Resume only after deleting the kill file deliberately.
+**Follow-up.** Decide with the owner's drawdown tolerance (BRD OI-3) whether to resume. Record the cause in a postmortem. Resume only by following "Clear a tripped kill switch" in §4.1.
 
 ### 4.5 API key compromise
 
@@ -226,7 +236,7 @@ Common first moves, in order of safety:
 
 **Verification.** The old key is rejected by the exchange; `git log -p -S '<first characters of the key>'` and a search of `logs/audit.jsonl` and the database find no copy (do not paste the whole secret into a command); the `.env` file mode is 600 (`ls -l .env`). Audit redaction is key-based, so a secret placed in a free-text message is not hidden.
 
-**Follow-up.** Record the exposure window and what the key could do. Review the host. Note that the adapter keeps the key as a plain attribute (`exchange/binance_futures.py:32-33`).
+**Follow-up.** Record the exposure window and what the key could do. Review the host. Note that the adapter keeps the key as a plain attribute (`exchange/binance_futures.py:33-34`).
 
 ### 4.6 Bad deploy and rollback
 
@@ -243,6 +253,25 @@ Common first moves, in order of safety:
 **Verification.** `docker compose ps` shows the `bot` container up; `docker inspect --format '{{.State.Health.Status}}' silver-bot-paper` becomes `healthy`; the last audit lines are `bot_started`/`bot_stopped` at the new time; `python -m pytest` passes on the rolled-back commit before it goes back to the host.
 
 **Follow-up.** Add the failure to the QAD gap register if a test would have caught it; update BUILD notes.
+
+### 4.7 Reset `risk_state`
+
+**Trigger.** A store-backed engine is blocked by persisted state that no longer matches reality. Two cases need it: `open_positions` is 1 or more after a crash or restart with an open paper trade (paper positions are not persisted, so nothing will release it; every entry is rejected with `Max open positions limit reached`), or the row is unreadable and every request is rejected with `Risk state could not be loaded; trading halted` (`risk/engine.py:36-37`, `storage/sqlite.py:283-319`). A consecutive-loss streak the owner has reviewed and accepted (§4.1, clear step 3) is the third case. Do not reset to escape a daily-loss limit on the same day.
+
+**What the reset does.** Deleting row 1 makes the next engine start from a fresh `RiskState`: daily PnL 0, streak 0, trades today 0, open positions 0 (`storage/sqlite.py:297-298`, `risk/engine.py:31`). It removes today's daily-loss record too. A running engine keeps its in-memory state and writes it back on its next save, so the bot must be stopped first. Today no runtime uses a store (G-3), so this applies to library runs that call `build_risk_engine(config, storage)`.
+
+**Steps.**
+
+1. Stop the process (§4.1 step 1). Expected: `sudo systemctl status silver-bot` shows `inactive (dead)`.
+2. Back up the database (§5.3): `cp data/silver_bot.sqlite3 data/silver_bot.sqlite3.bak`. Expected: the copy exists.
+3. Inspect the row: `sqlite3 data/silver_bot.sqlite3 "SELECT * FROM risk_state;"`. Expected: one row `1|<day>|<pnl>|<losses>|<trades>|<open>|<updated_at>`, or nothing. Without the `sqlite3` CLI: `python -c "import sqlite3; print(sqlite3.connect('data/silver_bot.sqlite3').execute('SELECT * FROM risk_state').fetchall())"`.
+4. Delete it: `sqlite3 data/silver_bot.sqlite3 "DELETE FROM risk_state WHERE id = 1;"`. Without the CLI: `python -c "import sqlite3; c=sqlite3.connect('data/silver_bot.sqlite3'); c.execute('DELETE FROM risk_state WHERE id = 1'); c.commit()"`. Expected: step 3 now prints nothing.
+5. If `data/KILL_SWITCH` exists, clear it as in §4.1 only once its cause is resolved.
+6. Start the service: `sudo systemctl start silver-bot`. Expected: `systemctl status` shows `active`.
+
+Use the path in `DATABASE_PATH` if it is not the default `data/silver_bot.sqlite3`.
+
+**Follow-up.** Record the old row values and the reason in a postmortem (§6).
 
 ## 5. Routine Operations
 
@@ -321,14 +350,14 @@ Corrective actions: owner, due date, linked G-# or Change Record
 Tests or docs added (QAD-T# or section)
 ```
 
-Incidents to date: none yet. The repository has no live or paper runtime incident history. Known standing hazards that would have been incidents are tracked as gaps: kill switch inert (G-6), restart loop (G-3), no alert transport (G-15), NaN approves (G-8).
+Incidents to date: none yet. The repository has no live or paper runtime incident history. Known standing hazards that would have been incidents are tracked as gaps: kill switch not armed at runtime (G-6), restart loop (G-3), no alert transport (G-15). NaN approval (G-8) was fixed in `8e66054`.
 
 ## 7. Self-Check
 
 - [x] Every runbook step uses a command that matches a file in the repository (compose service names `bot`, `paper`, `demo`, `backtest`, `research`; container `silver-bot-paper`; unit `silver-bot.service`; `deploy/` paths).
-- [x] The kill switch is described as a file-exists check that is inert without a configured path, has no automatic trigger and no emergency shutdown.
+- [x] The kill switch is described as a fail-closed file check that is inert without a configured path, trips itself on the daily-loss and consecutive-loss limits, and has no emergency shutdown; clearing it and resetting `risk_state` are numbered steps (§4.1, §4.7).
 - [x] Telegram is described as having no transport and not wired; no SLO claims alert delivery.
-- [x] The restart loop, the in-memory risk state and the lost-on-restart counters are called out where they change the procedure.
+- [x] The restart loop, the in-memory versus persisted risk state and the `open_positions` reset case are called out where they change the procedure.
 - [x] SLIs the code does not measure are marked `Open`; no number was invented.
 - [x] The incident flowchart is a Mermaid block; no other diagram was added.
 - [ ] The runbook has been exercised on a VPS; it has not (no runtime exists), so the steps are verified against files only.

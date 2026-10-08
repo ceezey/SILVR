@@ -6,8 +6,8 @@
 **Version:** 0.1
 **Author:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 3.2, 3.4, 4 to 8 and every `ml/filter.py` line re-checked 2026-10-09 against `70ccaec` (G-8 fix `8e66054`)
 **PRD Reference:** [prd-silverbot.md](prd-silverbot.md) PRD-F6
 **SDD Reference:** [sdd-silverbot.md](sdd-silverbot.md) §8 (ML architecture) and §8.1 (leakage and misuse surface), §3.4 (configuration reference)
 
@@ -15,14 +15,14 @@ This RFC is the single source of the ML filter rules, thresholds, reason strings
 
 ## 1. Context & Objective
 
-ML is optional and subordinate. The rule-based engine ([RFC-001](rfc-silverbot-signal-engine.md)) finds a candidate; an ML probability filter may then judge it. The filter may do exactly three things: approve the signal unchanged, reject it, or reduce risk. It cannot create a trade, place an order, move a stop, raise risk above the configured maximum, or bypass the risk engine ([RFC-002](rfc-silverbot-risk-kill-switch.md)) or the kill switch. This is a project rule (`AGENTS.md`) and the code structure enforces it: the filter's `evaluate` takes an existing `SilverBulletSignal`, and both consumers return before calling it on `NO_TRADE` (`ml/filter.py:98-109`, `backtest/engine.py:110-128`, `execution/paper_trading.py:127-140`).
+ML is optional and subordinate. The rule-based engine ([RFC-001](rfc-silverbot-signal-engine.md)) finds a candidate; an ML probability filter may then judge it. The filter may do exactly three things: approve the signal unchanged, reject it, or reduce risk. It cannot create a trade, place an order, move a stop, raise risk above the configured maximum, or bypass the risk engine ([RFC-002](rfc-silverbot-risk-kill-switch.md)) or the kill switch. This is a project rule (`AGENTS.md`) and the code structure enforces it: the filter's `evaluate` takes an existing `SilverBulletSignal`, and both consumers return before calling it on `NO_TRADE` (`ml/filter.py:99-110`, `backtest/engine.py:110-128`, `execution/paper_trading.py:127-140`).
 
 Objectives:
 
 1. State the decision logic and the two thresholds exactly as coded.
 2. State the guarantee that ML can only lower risk, and where that guarantee is conditional.
 3. Record the model registry, promotion policy and rollback rules as built, and the fact that they are not coupled to each other or to the runtime.
-4. Record the known flaw that a NaN probability approves a signal (H-1, G-8).
+4. Record the invalid-probability rule: a NaN, infinite or out-of-range probability rejects the signal (H-1, G-8; fixed in `8e66054`).
 
 Non-goals: this RFC does not describe a trained or shipped model. The `models/` directory is empty and no model is registered (G-9). No model accuracy, calibration or trading-result claim is made.
 
@@ -49,61 +49,62 @@ Wiring facts:
 
 - The backtest builds the filter from `BacktestConfig.ml_filter`, whose default is `MLFilterConfig()`, which is **disabled** (`backtest/engine.py:42`, `backtest/models.py:41`).
 - The paper loop builds `MLProbabilityFilter()` with no config when none is injected, which is also disabled (`execution/paper_trading.py:53`).
-- The settings keys `ML_FILTER_ENABLED`, `ML_REGISTRY_PATH`, `ML_MIN_PROBABILITY` and `ML_REDUCE_RISK_THRESHOLD` are parsed and validated at config load but **no code converts them into an `MLFilterConfig`**, so they have no runtime effect (`config/settings.py:79-82,151-169`; D-4, G-9).
+- The settings keys `ML_FILTER_ENABLED`, `ML_REGISTRY_PATH`, `ML_MIN_PROBABILITY` and `ML_REDUCE_RISK_THRESHOLD` are parsed and validated at config load but **no code converts them into an `MLFilterConfig`**, so they have no runtime effect (`config/settings.py:80-83,152-170`; D-4, G-9).
 - No code outside `ml/` and the tests calls `train_baseline_models`, `build_calibration_report`, `evaluate_model_promotion`, `MLDatasetBuilder` or `ModelRegistry.register_model`; there is no command-line entry point for the offline pipeline (G-22).
 
 ## 3. Technical Details & Contracts
 
-### 3.1 Filter configuration (`MLFilterConfig`, `ml/filter.py:26-43`)
+### 3.1 Filter configuration (`MLFilterConfig`, `ml/filter.py:27-44`)
 
 | Field | Default | Validation (raises `ValueError` with this text) | Source |
 |-------|---------|-----------------------------------------------|--------|
-| `enabled` | `False` | none | `ml/filter.py:29` |
-| `registry_path` | `models/model_registry.json` | none | `ml/filter.py:30` |
-| `min_probability` | 0.60 | outside `[0, 1]`: `min_probability must be between 0 and 1` | `ml/filter.py:31,38-39` |
-| `reduce_risk_threshold` | 0.55 | outside `[0, 1]`: `reduce_risk_threshold must be between 0 and 1` | `ml/filter.py:32,36-37` |
-| `reduced_risk_multiplier` | 0.5 | outside `(0, 1]`: `reduced_risk_multiplier must be greater than 0 and no more than 1` | `ml/filter.py:33,42-43` |
-| (relation) | | `reduce_risk_threshold > min_probability`: `reduce_risk_threshold must be less than or equal to min_probability` | `ml/filter.py:40-41` |
+| `enabled` | `False` | none | `ml/filter.py:30` |
+| `registry_path` | `models/model_registry.json` | none | `ml/filter.py:31` |
+| `min_probability` | 0.60 | outside `[0, 1]`: `min_probability must be between 0 and 1` | `ml/filter.py:32,39-40` |
+| `reduce_risk_threshold` | 0.55 | outside `[0, 1]`: `reduce_risk_threshold must be between 0 and 1` | `ml/filter.py:33,37-38` |
+| `reduced_risk_multiplier` | 0.5 | outside `(0, 1]`: `reduced_risk_multiplier must be greater than 0 and no more than 1` | `ml/filter.py:34,43-44` |
+| (relation) | | `reduce_risk_threshold > min_probability`: `reduce_risk_threshold must be less than or equal to min_probability` | `ml/filter.py:41-42` |
 
-The environment keys carry the same defaults and checks, with `ConfigError` instead of `ValueError`: `ML_FILTER_ENABLED` (alias `ML_ENABLED`) false; `ML_REGISTRY_PATH` `models/model_registry.json` (rejects an empty name, `..` and a directory); `ML_MIN_PROBABILITY` 0.60; `ML_REDUCE_RISK_THRESHOLD` 0.55 (`config/settings.py:151-169`). The multiplier has no environment key.
+The environment keys carry the same defaults and checks, with `ConfigError` instead of `ValueError`: `ML_FILTER_ENABLED` (alias `ML_ENABLED`) false; `ML_REGISTRY_PATH` `models/model_registry.json` (rejects an empty name, `..` and a directory); `ML_MIN_PROBABILITY` 0.60; `ML_REDUCE_RISK_THRESHOLD` 0.55 (`config/settings.py:152-170`). The multiplier has no environment key.
 
-### 3.2 Decision logic (`MLProbabilityFilter.evaluate`, `ml/filter.py:77-158`)
+### 3.2 Decision logic (`MLProbabilityFilter.evaluate`, `ml/filter.py:78-172`)
 
 Checks run in this order and the first match returns:
 
 | Step | Condition | Decision | Probability | Multiplier | Reason (verbatim) | Source |
 |------|-----------|----------|-------------|-----------|-------------------|--------|
-| 1 | `enabled` is false | APPROVE | `None` | 1.0 | `ML filter disabled; rule-based signal unchanged` | `ml/filter.py:86-97` |
-| 2 | signal is `NO_TRADE` | APPROVE | `None` | 1.0 | `ML filter only processes existing rule-based trade signals` | `ml/filter.py:98-109` |
-| 3 | no active model, or the registry read raises `FileNotFoundError`, `KeyError` or `ValueError` (including malformed JSON) | APPROVE | `None` | 1.0 | `No active ML model found; rule-based signal unchanged` | `ml/filter.py:111-123,160-164` |
-| 4 | probability `>= min_probability` (0.60) | APPROVE | p | 1.0 | `ML approved setup` | `ml/filter.py:134-137` |
-| 5 | `reduce_risk_threshold` (0.55) `<=` probability `< min_probability` | REDUCE_RISK | p | `reduced_risk_multiplier` (0.5) | `ML reduced risk for lower-confidence setup` | `ml/filter.py:138-141` |
-| 6 | probability `< reduce_risk_threshold` | REJECT | p | 0.0 | `ML rejected setup below probability threshold` | `ml/filter.py:142-145` |
+| 1 | `enabled` is false | APPROVE | `None` | 1.0 | `ML filter disabled; rule-based signal unchanged` | `ml/filter.py:87-98` |
+| 2 | signal is `NO_TRADE` | APPROVE | `None` | 1.0 | `ML filter only processes existing rule-based trade signals` | `ml/filter.py:99-110` |
+| 3 | no active model, or the registry read raises `FileNotFoundError`, `KeyError` or `ValueError` (including malformed JSON) | APPROVE | `None` | 1.0 | `No active ML model found; rule-based signal unchanged` | `ml/filter.py:112-124,174-178` |
+| 4 | probability is NaN, `inf`, `-inf`, below 0.0 or above 1.0 | REJECT | `None` | 0.0 | `ML model returned an invalid probability` | `ml/filter.py:134-146` |
+| 5 | probability `>= min_probability` (0.60) | APPROVE | p | 1.0 | `ML approved setup` | `ml/filter.py:148-151` |
+| 6 | `reduce_risk_threshold` (0.55) `<=` probability `< min_probability` | REDUCE_RISK | p | `reduced_risk_multiplier` (0.5) | `ML reduced risk for lower-confidence setup` | `ml/filter.py:152-155` |
+| 7 | probability `< reduce_risk_threshold` | REJECT | p | 0.0 | `ML rejected setup below probability threshold` | `ml/filter.py:156-159` |
 
 Steps 1 to 3 are fail-open **to the unchanged rule-based signal**. That means a missing model or a disabled filter never blocks a rule-based trade; the risk engine still applies afterwards. This is deliberate and is the reason a broken registry cannot stop the bot, but it also means a missing model cannot be told apart from an approval except by the reason text.
 
-Scoring (steps 4 to 6): features are built from the signal and the candles up to the signal (`ml/features.py`), the pickled artifact is loaded for the active model id, the feature row is ordered by the entry's `features_used` (else pipeline order) with unknown names filled with 0.0, and the probability is read with `predict_proba` (`ml/filter.py:125-132`). Extraction accepts a bare estimator or a dict with an `estimator` key, takes the last column of the first row, and clamps the result to `[0, 1]` (`ml/filter.py:166-179`). An estimator without `predict_proba` raises `ValueError("Active ML model must expose predict_proba")` (`ml/filter.py:170`).
+Scoring (steps 4 to 7): features are built from the signal and the candles up to the signal (`ml/features.py`), the pickled artifact is loaded for the active model id, the feature row is ordered by the entry's `features_used` (else pipeline order) with unknown names filled with 0.0, and the probability is read with `predict_proba` (`ml/filter.py:126-133`). Extraction accepts a bare estimator or a dict with an `estimator` key, takes the last column of the first row as a `float` and returns it unclamped (`ml/filter.py:180-193`). Step 4 then rejects any value that is not finite or not in `[0, 1]`; the boundaries 0.0 and 1.0 are valid and go to steps 5 to 7. The invalid-probability result keeps `model_id`, `model_name` and `features_snapshot`, so the paper loop still records it in `ml_predictions` with a NULL probability. An estimator without `predict_proba` raises `ValueError("Active ML model must expose predict_proba")` (`ml/filter.py:184`).
 
-The result object carries `signal_id` (`symbol|timeframe|direction|generated_at`), `probability`, both thresholds, `risk_multiplier`, `model_id`, `model_name`, `reason`, `features_snapshot` and `created_at` (`ml/filter.py:46-60,182-192`).
+The result object carries `signal_id` (`symbol|timeframe|direction|generated_at`), `probability`, both thresholds, `risk_multiplier`, `model_id`, `model_name`, `reason`, `features_snapshot` and `created_at` (`ml/filter.py:47-61,196-206`).
 
 ### 3.3 The guarantee that risk only goes down
 
 | Layer | What it guarantees | Source |
 |-------|--------------------|--------|
-| Multiplier values | The filter returns only 1.0, a config-validated value in `(0, 1]`, or 0.0 | `ml/filter.py:42-43,136-144` |
+| Multiplier values | The filter returns only 1.0, a config-validated value in `(0, 1]`, or 0.0 (including the invalid-probability rejection) | `ml/filter.py:43-44,141,150-158` |
 | Order | ML REJECT ends the signal before the risk engine; ML REDUCE_RISK is applied after risk approval | `backtest/engine.py:133,196`; `execution/paper_trading.py:181,252` |
 | Backtest clamp | The backtest clamps the multiplier to `[0, 1]` and multiplies only on REDUCE_RISK | `backtest/engine.py:493-506` |
 | Paper loop | The multiplier is applied with no clamp, relying on the config validation above | `execution/paper_trading.py:252-259` (D-62) |
 | What is multiplied | `position_size`, `risk_amount` and `leverage` only; the stop loss and take profit are untouched | `backtest/engine.py:500-506` |
-| Cannot add trades | The filter cannot turn a `NO_TRADE` into a trade; both consumers return on `NO_TRADE` before calling it | `ml/filter.py:98-109` |
+| Cannot add trades | The filter cannot turn a `NO_TRADE` into a trade; both consumers return on `NO_TRADE` before calling it | `ml/filter.py:99-110` |
 
 The guarantee therefore holds for every value the filter can produce. It is conditional in one place: the paper loop trusts the filter's own validated multiplier rather than clamping again. Because `MLFilterConfig` validates `0 < multiplier <= 1`, a value above 1 is rejected at construction. A subclass or a replaced filter could return a larger multiplier and the paper loop would apply it (D-62).
 
-### 3.4 Known flaw: NaN probability approves (H-1, G-8)
+### 3.4 Invalid probability rejects (H-1, G-8; fixed in `8e66054`)
 
-`max(0.0, min(1.0, probability))` is the only clamp (`ml/filter.py:179`). In Python, `min(1.0, nan)` returns `1.0` because the comparison `nan < 1.0` is false, so `max(0.0, 1.0)` is `1.0`. A model that returns NaN is therefore read as probability 1.0, which is at or above 0.60, so the decision is APPROVE with multiplier 1.0 and reason `ML approved setup`. The risk engine still applies afterwards, so a NaN cannot raise risk above the configured maximum, but a broken model approves instead of failing closed. This was confirmed by executing the expression. No test covers NaN output (H-13, G-28). The required behaviour is: a NaN or non-finite probability must reject. This is `Planned`.
+Before `8e66054`, `_predict_probability` returned `max(0.0, min(1.0, probability))`. In Python, `min(1.0, nan)` returns `1.0`, so a model that returned NaN was read as 1.0 and approved. As built now, `_predict_probability` returns the raw value (`ml/filter.py:193`) and `evaluate` checks `math.isfinite(probability)` and `0.0 <= probability <= 1.0` before the thresholds (`ml/filter.py:134`). A failing value returns REJECT, probability `None`, multiplier 0.0, reason `ML model returned an invalid probability` (`ml/filter.py:135-146`). Values below 0 or above 1 are rejected rather than clamped. Tests: `tests/test_ml_probability_filter.py:197` `test_ml_filter_rejects_invalid_probability` (NaN, `inf`, `-inf`, `-0.1`, `1.3`) and `:210` `test_ml_filter_boundary_probabilities_keep_threshold_logic` (0.0 rejects below threshold, 1.0 approves).
 
-Other errors are **not** caught and propagate out of `evaluate`: a missing or corrupt artifact (`FileNotFoundError`, `UnpicklingError`), a feature-build `ValueError`, a predict error, or a row-length mismatch (`ml/filter.py:125-132`). There is no staleness check: model age, `created_at` expiry and training-window freshness are never evaluated at inference.
+Other errors are **not** caught and propagate out of `evaluate`: a missing or corrupt artifact (`FileNotFoundError`, `UnpicklingError`), a feature-build `ValueError`, a predict error, or a row-length mismatch (`ml/filter.py:126-133`). There is no staleness check: model age, `created_at` expiry and training-window freshness are never evaluated at inference.
 
 ### 3.5 Registry (`ml/registry.py`)
 
@@ -207,7 +208,7 @@ Leakage control is name-based plus prefix slicing, and the dataset builder passe
 |-------------|--------------------|
 | ML generates signals | Rejected by project policy; the filter takes an existing signal and cannot create one. |
 | Fail closed when no model is active | Not chosen: a missing model leaves the rule-based signal unchanged, so the bot works without ML. The trade-off is that a failed registry is not treated as an alarm. Open. |
-| Reject on NaN or non-finite probability | The required behaviour, not built (H-1, G-8). Planned. |
+| Clamp an out-of-range probability into `[0, 1]` | The old behaviour; replaced by rejection in `8e66054` because clamping turned NaN into 1.0 and an out-of-range value signals a broken model. |
 | Calibrated probabilities (Platt or isotonic) before thresholding | Not built; calibration is report-only (`ml/calibration.py:90-119`). Planned. |
 | Promotion enforced inside the registry | Not built (D-37). Planned. |
 | Safer artifact format than pickle | Not built (H-8, G-23). Open. |
@@ -218,27 +219,27 @@ Leakage control is name-based plus prefix slicing, and the dataset builder passe
 **Safety.**
 
 - ML cannot increase risk, create a trade or bypass the risk engine (section 3.3). The filter is disabled by default in both loops, so with no change the bot behaves as the rule-based strategy plus the risk engine.
-- The NaN flaw (section 3.4) means a broken model approves instead of failing closed. The risk engine still bounds the consequence.
+- A NaN, infinite or out-of-range probability now rejects (section 3.4). An exception raised while loading or calling the model still propagates out of `evaluate` rather than rejecting.
 - Pickle loading of an untrusted file is code execution (H-8). Keep the registry and artifact files local and self-generated; do not load artifacts from elsewhere.
 - Model promotion and activation are manual steps with no enforced policy gate (D-37).
 
-**Privacy.** Features are derived from market data and the signal only. No personal data is used. The prediction log stores the decision, probability, thresholds, multiplier, model id and reason in SQLite `ml_predictions`, and in the audit log (`execution/paper_trading.py:140-160`, `storage/sqlite.py:100-113,228-244`).
+**Privacy.** Features are derived from market data and the signal only. No personal data is used. The prediction log stores the decision, probability, thresholds, multiplier, model id and reason in SQLite `ml_predictions`, and in the audit log (`execution/paper_trading.py:140-160`, `storage/sqlite.py:103-116,240-256`).
 
 **Performance.** Inference is one feature build, one unpickle and one `predict_proba` call per signal; the artifact is loaded on every evaluation with no cache. Training is pure-Python batch gradient descent over up to 500 iterations. No latency or accuracy figure exists and none is claimed.
 
-**Evidence of behaviour (tests).** 25 ML tests across `tests/test_ml_dataset.py`, `tests/test_ml_training_registry.py`, `tests/test_ml_calibration.py`, `tests/test_ml_promotion.py` and `tests/test_ml_probability_filter.py` pin approve, reject, reduce, missing model, disabled filter, SQLite storage, the backtest multiplier, promotion cases (promote, worse validation, test degradation, poor calibration, low samples, no active model, no candidate, tie with failure, final-test flag), calibration, registry register and rollback, and the leakage name check. There is no test for NaN output, a stale model, a corrupt artifact, `MLFilterConfig` invalid values or the scikit-learn models (H-13, G-28).
+**Evidence of behaviour (tests).** 27 ML test functions across `tests/test_ml_dataset.py`, `tests/test_ml_training_registry.py`, `tests/test_ml_calibration.py`, `tests/test_ml_promotion.py` and `tests/test_ml_probability_filter.py` pin approve, reject, reduce, invalid probability (NaN, infinities, out of range) and the 0.0 and 1.0 boundaries, missing model, disabled filter, SQLite storage, the backtest multiplier, promotion cases (promote, worse validation, test degradation, poor calibration, low samples, no active model, no candidate, tie with failure, final-test flag), calibration, registry register and rollback, and the leakage name check. There is no test for a stale model, a corrupt artifact, `MLFilterConfig` invalid values or the scikit-learn models (H-13, G-28).
 
 ## 6. Execution Status
 
 | Capability | Status | Evidence |
 |-----------|--------|----------|
-| Filter decision logic with thresholds 0.60 and 0.55 and multiplier 0.5 | Built | `ml/filter.py:77-158`; 7 filter tests |
+| Filter decision logic with thresholds 0.60 and 0.55 and multiplier 0.5 | Built | `ml/filter.py:78-172`; 9 filter test functions |
 | Filter used by backtest and paper loops (disabled by default) | Built | `backtest/engine.py:42`, `execution/paper_trading.py:53` |
 | Dataset, features, split, training, calibration report | Built | `ml/dataset.py`, `ml/features.py`, `ml/training.py`, `ml/calibration.py` |
 | Promotion policy and audit export | Built | `ml/promotion.py`; 9 promotion tests |
 | Registry with register, activate and rollback | Built | `ml/registry.py:40-124`; registry test |
 | Settings-to-filter wiring (ML env keys take effect) | Planned | No code builds `MLFilterConfig` from settings (D-4, G-9) |
-| NaN rejection | Planned | H-1, G-8 |
+| Invalid-probability rejection (NaN, infinite, outside `[0, 1]`) | Built | `ml/filter.py:134-146`; `8e66054` (H-1, G-8) |
 | Promotion enforced on the registry | Planned | D-37 |
 | Offline pipeline entry point | Planned | G-22 |
 | Shipped trained model | Planned | `models/` is empty; no model exists |
@@ -250,11 +251,11 @@ Leakage control is name-based plus prefix slicing, and the dataset builder passe
 
 | Ref | Item | Status |
 |-----|------|--------|
-| G-8 | NaN model probability becomes 1.0 and approves a signal (H-1). | Open |
+| G-8 | NaN model probability becomes 1.0 and approves a signal (H-1). Fixed: invalid probabilities reject. | Closed (`8e66054`) |
 | G-9 | ML filter not wired to settings (D-4); no model is shipped. Safe because the filter is disabled, but the documented control does not work. | Open |
 | G-22 | Pipeline gaps: no entry point, calibration report-only, promotion narrower and not enforced, 23 features, name-based leakage control, no purge or embargo, possible HTF lookahead (D-36 to D-39, D-68 to D-76, U-6). | Open |
 | G-23 | Pickle artifact load is arbitrary code execution if the registry or artifacts are untrusted (H-8). | Open |
-| G-28 | No tests for NaN, stale model, corrupt artifact, invalid `MLFilterConfig`. | Open |
+| G-28 | No tests for stale model, corrupt artifact, invalid `MLFilterConfig` (NaN is tested since `8e66054`). | Open |
 | Fail-open policy | Whether a missing active model should alarm rather than silently approve. | Open |
 | U-6 | Whether the dataset builder leaks future HTF data into features and labels. | Open |
 | Success bar for ML | What measurable improvement would justify enabling the filter. | Owner input required |
@@ -264,7 +265,7 @@ Leakage control is name-based plus prefix slicing, and the dataset builder passe
 - [x] Thresholds 0.60, 0.55 and multiplier 0.5 are stated as coded, with `ml/filter.py` lines.
 - [x] Every filter reason and every promotion reason is copied verbatim with its source line, including the two "Current active ... missing" reasons.
 - [x] The "risk only goes down" guarantee lists each layer and the one conditional (unclamped paper loop, D-62).
-- [x] The NaN-approves flaw is stated precisely with the code line (H-1, G-8).
+- [x] The invalid-probability rejection and the old NaN-approves flaw it replaced are stated with code lines and tests (H-1, G-8).
 - [x] ML environment keys are recorded as parsed but unwired (D-4); readiness and promotion are recorded as advisory (D-37).
 - [x] Each dropped or changed old-plan rule in section 3.8 carries a `D-#`.
 - [ ] A trained model exists, is calibrated and passes the promotion policy on real evidence (not yet; Planned).

@@ -4,7 +4,7 @@
 
 ## 1. Model / System Card
 
-This section stands alone: it is the source of the root `MODEL_CARD.md`. Evidence for every statement is cited to code at commit `62037d1`. Related documents: [sdd-silverbot.md](docs/sdd-silverbot.md) (design, section 8), [rfc-silverbot-ml-filter-gate.md](docs/rfc-silverbot-ml-filter-gate.md), the Risk Register in [aia-silverbot.md](docs/aia-silverbot.md), [scrutiny-silverbot.md](docs/scrutiny-silverbot.md) (gaps, `G-n`), [audit-docs-drift.md](docs/audit-docs-drift.md) (drift findings `D-n` and hazards `H-n`; open questions `U-n`), [qad-silverbot.md](docs/qad-silverbot.md) (test scenarios, `QAD-Tn`) and [brd-silverbot.md](docs/brd-silverbot.md) (owner-input rows, `OI-n`).
+This section stands alone: it is the source of the root `MODEL_CARD.md`. Evidence for every statement is cited to code at commit `70ccaec`. Related documents: [sdd-silverbot.md](docs/sdd-silverbot.md) (design, section 8), [rfc-silverbot-ml-filter-gate.md](docs/rfc-silverbot-ml-filter-gate.md), the Risk Register in [aia-silverbot.md](docs/aia-silverbot.md), [scrutiny-silverbot.md](docs/scrutiny-silverbot.md) (gaps, `G-n`), [audit-docs-drift.md](docs/audit-docs-drift.md) (drift findings `D-n` and hazards `H-n`; open questions `U-n`), [qad-silverbot.md](docs/qad-silverbot.md) (test scenarios, `QAD-Tn`) and [brd-silverbot.md](docs/brd-silverbot.md) (owner-input rows, `OI-n`).
 
 | Field | Value |
 |---|---|
@@ -26,8 +26,10 @@ flowchart TD
     B -- "no" --> C["APPROVE unchanged, multiplier 1.0"]
     B -- "yes" --> D{"Active model in registry?"}
     D -- "no or registry unreadable" --> C
-    D -- "yes" --> E["Build 23 features, unpickle model, predict probability p, clamp to 0..1"]
-    E --> F{"p >= min_probability (0.60)?"}
+    D -- "yes" --> E["Build 23 features, unpickle model, predict probability p"]
+    E --> V{"p finite and in 0..1?"}
+    V -- "no" --> J
+    V -- "yes" --> F{"p >= min_probability (0.60)?"}
     F -- "yes" --> G["APPROVE, multiplier 1.0"]
     F -- "no" --> H{"p >= reduce_risk_threshold (0.55)?"}
     H -- "yes" --> I["REDUCE_RISK, multiplier 0.5"]
@@ -37,7 +39,7 @@ flowchart TD
     C --> K
 ```
 
-The thresholds are code defaults (`ml/filter.py:26-43,134-145`). The disabled, no-model and `NO_TRADE` paths approve the unchanged signal (`filter.py:86-123`).
+The thresholds are code defaults (`ml/filter.py:27-44,148-159`). A NaN, infinite, negative or above-1 probability rejects with multiplier 0.0, probability None and reason `ML model returned an invalid probability` (`ml/filter.py:134-146`). The disabled, no-model and `NO_TRADE` paths approve the unchanged signal (`filter.py:87-124`).
 
 **Permitted effects.** Approve a rule-based signal; reject it; reduce its risk (position size, risk amount and leverage multiplied by the multiplier after the risk engine approved, `backtest/engine.py:492-506`, `execution/paper_trading.py:252-259`).
 
@@ -81,11 +83,11 @@ scikit-learn is not a declared dependency (`pyproject.toml:10-15`, `dependencies
 
 - **No model, no performance claim.** `models/` is empty. No accuracy, AUC, calibration or trading result exists to cite, and none may be inferred from the code. Test fixtures use stand-in probabilities (for example 0.72, 0.57, 0.40) that say nothing about real behaviour.
 - **Not wired.** The ML environment settings have no runtime effect (D-4, G-9). There is no command for the offline pipeline (G-22).
-- **NaN approves.** A NaN model probability becomes 1.0 and approves the signal, because `max(0.0, min(1.0, nan))` evaluates to 1.0 (`ml/filter.py:179`, H-1, G-8). The risk engine still applies. No test covers it (QAD-T145).
-- **Errors propagate.** A corrupt artifact, a feature-build error or a row-length mismatch is not caught by `evaluate` (`filter.py:125-132`). Only registry read errors fall back (`filter.py:111-123,160-164`).
+- **Invalid probability rejects (H-1, G-8 fixed in `8e66054`).** The raw `predict_proba` value is no longer clamped (`ml/filter.py:193`); NaN, infinite or out-of-[0, 1] output rejects the signal (`ml/filter.py:134-146`). Before the fix NaN became 1.0 and approved. Pinned by `tests/test_ml_probability_filter.py:197,210` (QAD-T145).
+- **Errors propagate.** A corrupt artifact, a feature-build error or a row-length mismatch is not caught by `evaluate` (`filter.py:126-133`). Only registry read errors fall back (`filter.py:112-124,174-178`).
 - **Fail-open when no model.** A missing registry silently returns the unchanged rule-based signal, so an enabled filter with no model is indistinguishable from a disabled one except by the reason string.
 - **Pickle.** Loading a registered artifact executes code if the registry or artifact file is untrusted (`registry.py:126-131`, H-8, G-23). Artifacts are expected to be self-generated and local.
-- **No staleness or drift handling.** Model age, training window and live feature drift are not checked; there is no retraining schedule (`filter.py:111-132`).
+- **No staleness or drift handling.** Model age, training window and live feature drift are not checked; there is no retraining schedule (`filter.py:112-133`).
 - **Leakage controls are weak.** The check is a keyword test on names only; higher-timeframe candles are passed to every strategy call unsliced in the dataset builder, and whether the strategy uses only candles up to the signal time is `Open` (`dataset.py:87-90`, U-6, G-22); there is no purge or embargo.
 - **Promotion not enforced.** An unpromoted model can be made active; it can still only approve, reject or reduce (D-37).
 - **Small and noisy labels.** Overlapping setups are not de-duplicated, entry fill is not required, the label window is a fixed 100 candles, and the policy minimum of 30 samples is far below what a reliable classifier needs. The minimum the owner accepts is `Owner input required` (BRD OI-9).

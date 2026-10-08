@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the cost defaults and risk rows re-checked 2026-10-09 against `70ccaec`
 
 This document answers "what does one trade cost, and what win rate is needed to pay for it". It is arithmetic on the coded cost model, not a forecast: no win rate, return or profit is claimed, and the three evidence reports are 0 bytes (G-1, D-86). Requirements and owner inputs are in [brd-silverbot.md](brd-silverbot.md); the kill criteria that use these numbers are in [val-silverbot.md](val-silverbot.md) §4; gaps are in [scrutiny-silverbot.md](scrutiny-silverbot.md).
 
@@ -21,12 +21,12 @@ This is a personal-trading framing of unit economics. There are no customers, su
 |---|---|---|---|
 | Maker fee (entry) | 0.0002 (0.02% of notional) | 0.0002 | `src/silver_bot/backtest/models.py:32`; `src/silver_bot/execution/models.py:30` |
 | Taker fee (all exits) | 0.0005 (0.05% of notional) | 0.0005 | `backtest/models.py:33`; `execution/models.py:31` |
-| Slippage | 0.0 bps | 1.0 bps | `backtest/models.py:34`; `execution/models.py:32` |
-| Spread | 0.0 bps | 1.0 bps | `backtest/models.py:35`; `execution/models.py:33` |
+| Slippage | 5.0 bps (0.0 before `59ed6d5`) | 1.0 bps | `backtest/models.py:34`; `execution/models.py:32` |
+| Spread | 3.0 bps (0.0 before `59ed6d5`) | 1.0 bps | `backtest/models.py:35`; `execution/models.py:33` |
 
 How the backtester applies them: entry fee uses the maker rate and every exit (stop, take-profit, partial, end of data) uses the taker rate, even for take-profit limit exits (`backtest/engine.py:274,352,376`). Slippage per side is `price * slippage_bps / 10_000` and half-spread per side is `price * (spread_bps / 10_000) / 2`; entry and exit prices are each worsened by both (`engine.py:426-440`). Funding fees, gap-through-stop fills and margin effects are not modelled (`engine.py:314,326`; G-20, G-21).
 
-**Honest status.** The backtest defaults of 0 bps slippage and 0 bps spread apply no cost unless the caller overrides them, which is unrealistic for 1m crypto futures; the old BACKTESTING.md claimed these costs were modelled conservatively (D-5, G-11). The break-even table below therefore uses only the coded fees, and the fee-only case is a floor on cost, not an estimate of it.
+**Honest status.** Until `59ed6d5` the backtest defaults were 0 bps slippage and 0 bps spread, which applied no cost unless the caller overrode them (D-5, G-11). The defaults are now 5.0 bps slippage and 3.0 bps spread, so each side is worsened by about 6.5 bps (5.0 plus half of 3.0), about 0.13% of notional per round trip. Whether these values match real fills is unverified; no fill data exists. The break-even table below still uses only the coded fees, so the fee-only case is a floor on cost, not an estimate of it.
 
 ### 1.2 Cost per trade as a fraction of notional
 
@@ -56,7 +56,7 @@ Illustrative assumption, not a measurement and not a recommended setting: a stop
 
 - Cost as a fraction of notional: `f = 0.0007` (0.07%), fees only, coded backtest defaults.
 - Cost in R: `c = 0.0007 / 0.005 = 0.14R`.
-- Check with sizing: risk per trade of 0.5% of equity (`risk/models.py:18`) at `d = 0.5%` gives notional equal to 1.0 times equity (0.005 / 0.005), well inside the 3.0 leverage default (`risk/models.py:25`). Fees are 0.07% of that notional, which is 0.07% of equity, which is 0.14 of the 0.5% risked. This agrees with `c = 0.14R`.
+- Check with sizing: risk per trade of 0.5% of equity (`risk/models.py:21`) at `d = 0.5%` gives notional equal to 1.0 times equity (0.005 / 0.005), well inside the 3.0 leverage default (`risk/models.py:28`). Fees are 0.07% of that notional, which is 0.07% of equity, which is 0.14 of the 0.5% risked. This agrees with `c = 0.14R`.
 
 So on this illustrative stop, every trade, win or lose, gives up 0.14R to fees before slippage and spread. No money amounts are needed: they follow from capital, which is Owner input required (OI-1).
 
@@ -88,7 +88,7 @@ At `c = 0` this reduces to the familiar `1 / (1 + RR)`. Each unit of cost in R r
 
 ### 2.2 Table
 
-`c = 0` is the no-cost reference (the slippage and spread defaults contribute 0, but the coded fees are not zero, so c = 0 is a lower bound that no coded configuration reaches). `c = 0.14R` is the illustrative fee-only value from section 1.4 (coded fees, `d = 0.5%`), the only illustrative cost used here.
+`c = 0` is the no-cost reference (the coded fees are not zero, so c = 0 is a lower bound that no coded configuration reaches). At `d = 0.5%`, the default slippage and spread add about 0.13% / 0.5% = 0.26R per trade on top of fees; that case is not tabulated here. `c = 0.14R` is the illustrative fee-only value from section 1.4 (coded fees, `d = 0.5%`), the only illustrative cost used here.
 
 | RR | Formula at c = 0: 1 / (1 + RR) | Break-even win rate at c = 0 | Formula at c = 0.14R: 1.14 / (1 + RR) | Break-even win rate at c = 0.14R |
 |---|---|---|---|---|
@@ -98,7 +98,7 @@ At `c = 0` this reduces to the familiar `1 / (1 + RR)`. Each unit of cost in R r
 
 Arithmetic check (expectancy must be zero at each break-even): RR 1.5, c = 0: 0.4 x 1.5 - 0.6 x 1 = 0.6 - 0.6 = 0. RR 2, c = 0.14: 0.38 x 1.86 - 0.62 x 1.14 = 0.7068 - 0.7068 = 0. RR 3, c = 0.14: 0.285 x 2.86 - 0.715 x 1.14 = 0.8151 - 0.8151 = 0. RR 1.5, c = 0.14: 0.456 x 1.36 - 0.544 x 1.14 = 0.62016 - 0.62016 = 0. RR 2, c = 0: 0.3333 x 2 - 0.6667 x 1 = 0. RR 3, c = 0: 0.25 x 3 - 0.75 x 1 = 0.
 
-The minimum reward-to-risk the risk engine accepts is 2.0 by default (`risk/models.py:20`), so the RR 2 and RR 3 rows are the ones reachable under default risk settings; RR 1.5 is shown for reference and would be rejected at the default.
+The minimum reward-to-risk the risk engine accepts is 2.0 by default (`risk/models.py:23`), so the RR 2 and RR 3 rows are the ones reachable under default risk settings; RR 1.5 is shown for reference and would be rejected at the default.
 
 What the table does not say: whether the strategy achieves any of these win rates. That is the question the evidence reports must answer (G-1).
 
@@ -122,17 +122,17 @@ Percentages below are the coded defaults, with their exact scope. Money values n
 
 | Item | Default | Where | Scope and caveat |
 |---|---|---|---|
-| Risk per trade (RiskConfig) | 0.005 (0.5% of equity) | `src/silver_bot/risk/models.py:18` | `RiskConfig` accepts up to 0.05 (5%) at `risk/models.py:29-30`. Not wired to Settings (D-11, G-5). |
-| Risk per trade (Settings cap) | 0.005 | `src/silver_bot/config/settings.py:51,174,186` | Validated only in demo mode; any float is accepted in other modes. |
-| Max daily loss (RiskConfig) | 0.02 (2% of equity) | `risk/models.py:21`; check at `risk/engine.py:63-65` | Daily state is in memory and resets on restart (G-7). |
-| Max daily loss (Settings cap) | 0.02 | `settings.py:175,188` | Demo mode only. |
-| Max leverage (RiskConfig) | 3.0 | `risk/models.py:25`; check at `risk/engine.py:77-78` | |
-| Max leverage (Settings cap) | 3 | `settings.py:176,190` | Demo mode only. |
-| Max consecutive losses / trades per day / open positions | 3 / 3 / 1 | `risk/models.py:22-24` | |
+| Risk per trade (RiskConfig) | 0.005 (0.5% of equity) | `src/silver_bot/risk/models.py:21` | `RiskConfig` rejects more than 0.005 at `risk/models.py:10,32-33`, and `load_config` caps `MAX_RISK_PER_TRADE` at 0.005 in every mode (`5e4acc5`). `build_risk_engine` maps the setting; nothing calls it yet (D-11, G-5 partial). |
+| Risk per trade (Settings cap) | 0.005 | `src/silver_bot/config/settings.py:52,177,180-181` | Must be in (0, 0.005] in every mode since `5e4acc5`. |
+| Max daily loss (RiskConfig) | 0.02 (2% of equity) | `risk/models.py:24`; check at `risk/engine.py:76-79` | Daily state persists across restarts only for an engine built with SQLite storage; otherwise it is in memory (G-7 partial). |
+| Max daily loss (Settings cap) | 0.02 | `settings.py:178,191` | Demo mode only. |
+| Max leverage (RiskConfig) | 3.0 | `risk/models.py:28`; check at `risk/engine.py:92-93` | |
+| Max leverage (Settings cap) | 3 | `settings.py:179,193` | Demo mode only. |
+| Max consecutive losses / trades per day / open positions | 3 / 3 / 1 | `risk/models.py:25-27` | |
 | Money at risk per trade | Owner input required (OI-1) | | = risk fraction x capital. |
 | Money loss that triggers a stop | Owner input required (OI-3) | | Owner drawdown tolerance. |
 
-Worked bound in percent of equity (no money assumed): at the defaults, each full stop-out loses about 0.5% of equity plus costs, and at most 3 trades per day are allowed (`risk/models.py:23`), so a day of three full stop-outs loses about 1.5% of equity plus costs, below the 2% daily loss cap. If `risk_per_trade` is raised towards the 0.05 ceiling, one stop-out alone is about 5% of equity, which already exceeds the 2% daily cap; the cap can then only block the next request, not prevent the loss. This is why a single risk source of truth matters (G-5).
+Worked bound in percent of equity (no money assumed): at the defaults, each full stop-out loses about 0.5% of equity plus costs, and at most 3 trades per day are allowed (`risk/models.py:26`), so a day of three full stop-outs loses about 1.5% of equity plus costs, below the 2% daily loss cap. If `risk_per_trade` is raised towards the 0.05 ceiling, one stop-out alone is about 5% of equity, which already exceeds the 2% daily cap; the cap can then only block the next request, not prevent the loss. This is why a single risk source of truth matters (G-5).
 
 ## 5. Owner Input
 
@@ -140,10 +140,10 @@ All money values and the running-budget figure come from the Owner Input Registe
 
 ## Self-Check
 
-- [x] Cost defaults (fee, slippage, spread) are quoted exactly as coded with file and line, and the 0 bps backtest default is flagged as unrealistic (D-5, G-11).
+- [x] Cost defaults (fee, slippage, spread) are quoted exactly as coded with file and line, and the former 0 bps backtest default and the new 5.0 and 3.0 bps defaults are both stated (D-5, G-11).
 - [x] The break-even formula p = (1 + c) / (1 + RR) is derived algebraically from the cost model, with c in R as a variable, and the table is checked by substituting back into the expectancy.
 - [x] The only illustrative cost is c = 0.14R, labelled as such, derived from the coded fees and a stated stop distance assumption of 0.5%.
-- [x] Risk percentages state their scope: Settings caps apply in demo mode only, and RiskConfig allows up to 0.05 per trade (D-11, G-5).
+- [x] Risk percentages state their scope: the 0.005 per-trade cap applies in every mode and in `RiskConfig`; the daily-loss and leverage caps apply in demo mode only (D-11, G-5).
 - [x] No money amount is stated; running costs and capital are Owner input required (OI-#) or Open.
 - [x] No performance or profit claim is made; G-1 and D-86 are cited.
 - [ ] Section 3 and section 4 money rows are filled (open until the owner answers OI-1, OI-2 and OI-3).
