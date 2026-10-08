@@ -7,7 +7,7 @@
 **Last updated:** 2026-10-08
 **Last reconciled:** 2026-10-08 against code at commit `62037d1`
 
-This document is the source of truth for what Silver Bot must do, what is built, and in which phases the rest is delivered. It defines the ids `PRD-F1` to `PRD-F12` (features) and `US-01` onward (user stories), and it replaces the old `TODO.md` and `PROGRESS.md` as the feature and phase record. Business context is in [brd-silverbot.md](brd-silverbot.md); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). SDD, RFCs, QAD, AIA, CLR and OPS are not yet written and are plain-text references. Status values: Built, Built (caveats), Partial, Stub, Planned, Planned, blocked. No row states a strategy performance result; none exists because the three evidence reports are 0 bytes (G-1, D-86).
+This document is the source of truth for what Silver Bot must do, what is built, and in which phases the rest is delivered. It defines the ids `PRD-F1` to `PRD-F12` (features) and `US-01` onward (user stories), and it replaces the old `TODO.md` and `PROGRESS.md` as the feature and phase record. Business context is in [brd-silverbot.md](brd-silverbot.md); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). SDD, RFCs, QAD, AIA, CLR and OPS are not yet written and are plain-text references. Status values: Built; Built (caveats); Partial; Stub; Planned; Planned, blocked. No row states a strategy performance result; none exists because the three evidence reports are 0 bytes (G-1, D-86).
 
 ## 1. Purpose & Value Proposition
 
@@ -43,7 +43,7 @@ Priority is MoSCoW for this release. Status comes from the code-verified fact sh
 | PRD-F3 | Risk engine and kill switch | Must | Built (caveats) | 14 gates in order with verbatim reasons (`risk/engine.py:30-87`), 10 risk tests. Caveats: Settings limits unwired and `RiskConfig` allows 5% per trade (D-11, H-5, G-5); kill switch inert unless a path is injected (D-12, H-9, G-6); state in memory (H-11, G-7); no emergency shutdown (D-22) | RFC-002 |
 | PRD-F4 | Paper trading: market stream, reconnect, REST fallback, paper executor, trade management | Must | Partial | `PaperExecutionEngine`, `PaperTradingEngine`, mock and reconnecting stream, storage and alerts built and tested (4 tests). No WebSocket; polling skeleton depends on a stubbed adapter; not constructed by any entry point (D-8, G-3, G-13, G-21) | RFC-001 |
 | PRD-F5 | Binance Futures demo/testnet mode | Should | Partial | Config rules, 18-check demo readiness, adapter URL guard and compose `demo` service built and tested. All network I/O is a stub (`exchange/binance_futures.py:71`); no demo runtime; URL guard is a substring match (D-13, D-46, G-3, G-10, G-17) | RFC-001 |
-| PRD-F6 | ML probability filter (approve / reject / reduce risk only) | Could | Partial | Dataset, features, training, calibration, promotion, registry and filter built and tested (23 ML tests). Not wired to settings (D-4, G-9); no pipeline entry point and no shipped model; NaN probability approves (H-1, G-8); promotion not enforced on registry (D-37, G-22) | RFC-003 |
+| PRD-F6 | ML probability filter (approve / reject / reduce risk only) | Could | Partial | Dataset, features, training, calibration, promotion, registry and filter built and tested (25 ML tests). Not wired to settings (D-4, G-9); no pipeline entry point and no shipped model; NaN probability approves (H-1, G-8); promotion not enforced on registry (D-37, G-22) | RFC-003 |
 | PRD-F7 | Monitoring and alerting: structured logs, audit log, journal, Telegram, daily/weekly reports, dashboard JSON | Must | Partial | Audit JSONL with secret redaction, journal, daily and weekly report builders, dashboard JSON builder and 6 tests exist. Reports, journal and dashboard have no caller (D-48, D-49, G-16); Telegram has no network transport (D-3, D-47, G-15); app log is plain text (D-81) | none |
 | PRD-F8 | Readiness gates: demo and live readiness checkers and reports | Must | Built (caveats) | Live (15 checks) and demo (18 checks) checkers, report export and 15 tests. Report-only and never consulted (D-10, G-2); "report exists" passes 0-byte files (H-2, D-86); a live-ready result needs `LIVE_TRADING=true`, which the app refuses to load (H-3) | RFC-002 |
 | PRD-F9 | Safe configuration: typed loading, fail-closed validation, safe defaults | Must | Built | Typed `load_config`, fail-closed live rejection, demo rules, path checks and 16 config tests. Caveats: `.env.example` fails to load (D-2, H-14, G-4); risk limits checked only in demo mode (D-11); `MODE` override and yaml parser quirks (D-42, D-43, D-44, G-24) | none |
@@ -63,8 +63,8 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 - AC-01.2 Given the mirrored bearish setup, when the strategy evaluates, then it returns SHORT with entry, stop and target. Test: `tests/test_silver_bullet_strategy.py::test_strategy_generates_short_signal_for_complete_silver_bullet_setup`.
 - AC-01.3 Given a candle outside every enabled window, when the strategy evaluates, then it returns NO_TRADE with reason "Outside enabled Silver Bullet session". Test: `tests/test_silver_bullet_strategy.py::test_strategy_rejects_outside_session_with_clear_reason`.
 - AC-01.4 Given a sweep, MSS and FVG but a latest candle that has not retraced into the FVG, when the strategy evaluates, then it returns NO_TRADE with reason "No retracement into matching Fair Value Gap". Test: `tests/test_silver_bullet_strategy.py::test_strategy_rejects_when_latest_candle_has_not_retraced_into_fvg`.
-- AC-01.5 Given a setup whose quality score is below the minimum, or whose reward-to-risk is below the minimum, when the strategy evaluates, then it returns NO_TRADE naming the score or reward-to-risk reason. Not covered (G-19).
-- AC-01.6 Given a NO_TRADE signal built without a reason, when it is constructed, then construction raises "NO_TRADE signals require a reason". Not covered (G-19).
+- AC-01.5 Given a setup whose quality score is below the minimum, or whose reward-to-risk is below the minimum, when the strategy evaluates, then it returns NO_TRADE naming the score or reward-to-risk reason. Not covered by any test (no gap id tracks this; recorded for QAD §3).
+- AC-01.6 Given a NO_TRADE signal built without a reason, when it is constructed, then construction raises "NO_TRADE signals require a reason". Not covered by any test (no gap id tracks this; recorded for QAD §3).
 
 **US-02** As the owner, I want session windows evaluated in New York time with daylight saving handled, so that the 10:00 window is correct all year.
 
@@ -93,8 +93,8 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 - AC-04.5 Given non-zero slippage, when the backtest runs, then net profit is lower. Test: `tests/test_backtest_engine.py::test_slippage_reduces_net_profit`.
 - AC-04.6 Given a limit order whose entry price is never touched, when the backtest runs, then no trade is recorded. Test: `tests/test_backtest_engine.py::test_limit_order_not_filled_if_price_never_reaches_entry`.
 - AC-04.7 Given the default configuration, when a backtest runs, then slippage and spread are non-zero. Not covered (G-11); defaults are 0 bps (D-5).
-- AC-04.8 Given partial take profit or breakeven enabled, when a trade reaches 1R, then the position is partly closed and the stop moves to breakeven. Not covered (G-28); the logic exists but no test pins it.
-- AC-04.9 Given the same candles twice, when the backtest runs twice, then the results are identical. Not covered (G-28); the engine sorts candles by `open_time` before replay.
+- AC-04.8 Given partial take profit or breakeven enabled, when a trade reaches 1R, then the position is partly closed and the stop moves to breakeven. Not covered by any test (no gap id tracks this; recorded for QAD §3); the logic exists but no test pins it.
+- AC-04.9 Given the same candles twice, when the backtest runs twice, then the results are identical. Not covered by any test (no gap id tracks this; recorded for QAD §3); the engine sorts candles by `open_time` before replay.
 
 **US-05** As the owner, I want out-of-sample validation, so that I can judge whether results generalise.
 
@@ -185,7 +185,7 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 
 - AC-13.1 Given an event whose context holds API keys, secrets or a Telegram token, when it is logged, then the JSONL line has an `event_type` and the secret values are replaced by "[REDACTED]" and absent from the file. Test: `tests/test_monitoring_reports.py::test_structured_log_generation_and_secret_redaction`.
 - AC-13.2 Given demo credentials in the environment, when demo readiness logs an event, then they are redacted. Test: `tests/test_monitoring_reports.py::test_demo_credentials_are_redacted_from_logs`.
-- AC-13.3 Given an audit file that cannot be written, when an event is logged, then the failure is handled without crashing a trading loop. Not covered (G-28); I/O errors propagate today.
+- AC-13.3 Given an audit file that cannot be written, when an event is logged, then the failure is handled without crashing a trading loop. Not covered by any test (no gap id tracks this; recorded for QAD §3); I/O errors propagate today.
 - AC-13.4 Given the application logger, when it emits a record, then the record is structured JSON with context fields. Not covered (G-16, D-81); the logger is plain text.
 
 **US-14** As the owner, I want daily and weekly reports and Telegram alerts, so that I can check the bot without reading raw logs.
@@ -395,7 +395,7 @@ The application logger (`utils/logging.py`) writes plain text (`asctime level na
 | Area | Requirement | Status |
 |---|---|---|
 | Safety | Default mode is paper; live trading rejected at load; no trade without a stop loss; no martingale; no averaging down; ML and the risk engine cannot be bypassed; no real orders (adapter methods raise) | Enforced in code and tests for the points covered in §4; kill switch, risk-limit unification and persistence are open (G-5, G-6, G-7) |
-| Determinism of backtests | Same candles and configuration give the same result; candles are sorted by `open_time`; the strategy and ML see only candles up to the current one; at most one pending or open trade | Implemented (`backtest/engine.py:48,103-106`); determinism is not pinned by a test (AC-04.9, G-28) |
+| Determinism of backtests | Same candles and configuration give the same result; candles are sorted by `open_time`; the strategy and ML see only candles up to the current one; at most one pending or open trade | Implemented (`backtest/engine.py:48,103-106`); determinism is not pinned by a test (AC-04.9, recorded for QAD §3) |
 | No real API keys in tests | Tests use mocks and in-memory clients; the suite needs no keys or network | Holds for the 19 test files |
 | Python version | Python 3.11 or newer; `requires-python = ">=3.11"`; Docker image `python:3.11-slim` | Holds; no runtime dependencies are declared (`dependencies = []`, G-25) |
 | Timezone correctness | Session windows are evaluated in America/New_York with daylight saving; audit timestamps are UTC | Session tests cover June and January (AC-02.1, AC-02.2); tzdata availability in deployment is Open (U-8, G-29) |
@@ -499,8 +499,8 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 - [x] Add spread simulation (mechanism exists; defaults are 0 bps, D-5, G-11)
 - [x] Add stop-loss simulation
 - [x] Add take-profit simulation
-- [x] Add partial TP simulation (untested; G-28)
-- [x] Add breakeven simulation (untested; G-28)
+- [x] Add partial TP simulation (untested; no gap id tracks this, recorded for QAD §3)
+- [x] Add breakeven simulation (untested; no gap id tracks this, recorded for QAD §3)
 - [x] Export trades.csv
 - [x] Export equity_curve.csv
 - [x] Export backtest_report.json
@@ -584,6 +584,18 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 - [x] Add demo readiness report export
 - [x] Add demo/testnet documentation (carried into OPS and SDD, not yet written)
 - [x] Add demo/testnet tests
+
+### Standing rules (Never Do)
+
+Carried from the old `TODO.md` "Never Do" list. These are permanent constraints, not deliverables, so they stay unchecked; enforcement status is in section 5.5.
+
+- [ ] Do not enable live trading by default
+- [ ] Do not hardcode API keys
+- [ ] Do not use martingale
+- [ ] Do not average down
+- [ ] Do not trade without stop loss
+- [ ] Do not let ML place trades directly
+- [ ] Do not bypass the risk engine
 
 ### Next
 
