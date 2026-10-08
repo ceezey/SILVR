@@ -174,6 +174,8 @@ def load_config(
     max_risk_per_trade = _parse_float(raw.get("MAX_RISK_PER_TRADE", "0.005"), "MAX_RISK_PER_TRADE")
     max_daily_loss = _parse_float(raw.get("MAX_DAILY_LOSS", "0.02"), "MAX_DAILY_LOSS")
     max_leverage = _parse_float(raw.get("MAX_LEVERAGE", "3"), "MAX_LEVERAGE")
+    if not 0 < max_risk_per_trade <= 0.005:
+        raise ConfigError("MAX_RISK_PER_TRADE must be greater than 0 and no more than 0.005")
     if demo_trading:
         if not risk_engine_enabled:
             raise ConfigError("RISK_ENGINE_ENABLED must be true in demo mode")
@@ -183,8 +185,6 @@ def load_config(
             raise ConfigError("KILL_SWITCH_PATH is required in demo mode")
         if not stop_loss_required:
             raise ConfigError("STOP_LOSS_REQUIRED must be true in demo mode")
-        if not 0 < max_risk_per_trade <= 0.005:
-            raise ConfigError("MAX_RISK_PER_TRADE must be greater than 0 and no more than 0.005 in demo mode")
         if not 0 < max_daily_loss <= 0.02:
             raise ConfigError("MAX_DAILY_LOSS must be greater than 0 and no more than 0.02 in demo mode")
         if not 0 < max_leverage <= 3:

@@ -1,6 +1,9 @@
 from datetime import date
 
-from silver_bot.risk import KillSwitch, RiskConfig, RiskManagementEngine, RiskRequest, RiskState
+import pytest
+
+from silver_bot.config import load_config
+from silver_bot.risk import KillSwitch, RiskConfig, RiskManagementEngine, RiskRequest, RiskState, build_risk_engine
 
 
 def request(
@@ -22,13 +25,13 @@ def request(
 
 
 def test_valid_position_sizing() -> None:
-    engine = RiskManagementEngine(RiskConfig(risk_per_trade=0.01))
+    engine = RiskManagementEngine(RiskConfig(risk_per_trade=0.005))
 
     decision = engine.evaluate(request())
 
     assert decision.approved is True
-    assert decision.position_size == 20
-    assert decision.risk_amount == 100
+    assert decision.position_size == 10
+    assert decision.risk_amount == 50
     assert decision.reward_to_risk == 2
 
 
@@ -100,7 +103,7 @@ def test_max_open_positions_lockout() -> None:
 
 
 def test_maximum_leverage_rejection() -> None:
-    engine = RiskManagementEngine(RiskConfig(risk_per_trade=0.05, max_leverage=0.5))
+    engine = RiskManagementEngine(RiskConfig(risk_per_trade=0.005, max_leverage=0.4))
 
     decision = engine.evaluate(request(entry=100, stop=99, target=103))
 
@@ -117,3 +120,46 @@ def test_kill_switch_active(tmp_path) -> None:
 
     assert decision.approved is False
     assert decision.reason == "Kill switch is active"
+
+
+def test_risk_per_trade_above_half_percent_is_rejected() -> None:
+    with pytest.raises(ValueError, match="risk_per_trade"):
+        RiskConfig(risk_per_trade=0.006)
+
+
+def test_risk_per_trade_at_half_percent_is_allowed() -> None:
+    assert RiskConfig(risk_per_trade=0.005).risk_per_trade == 0.005
+
+
+def test_build_risk_engine_carries_settings_caps(tmp_path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "MAX_RISK_PER_TRADE=0.004",
+                "MAX_DAILY_LOSS=0.01",
+                "MAX_LEVERAGE=2",
+                "KILL_SWITCH_ENABLED=true",
+                f"KILL_SWITCH_PATH={tmp_path / 'KILL_SWITCH'}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+    engine = build_risk_engine(config)
+
+    assert engine.config.risk_per_trade == 0.004
+    assert engine.config.max_daily_loss == 0.01
+    assert engine.config.max_leverage == 2
+    assert engine.kill_switch.path == tmp_path / "KILL_SWITCH"
+
+
+def test_build_risk_engine_ignores_kill_switch_path_when_disabled(tmp_path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text(f"KILL_SWITCH_PATH={tmp_path / 'KILL_SWITCH'}\n", encoding="utf-8")
+    config = load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+    engine = build_risk_engine(config)
+
+    assert engine.kill_switch.path is None

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+MAX_RISK_PER_TRADE = 0.005
+
 
 @dataclass(frozen=True, slots=True)
 class RiskConfig:
@@ -26,8 +28,8 @@ class RiskConfig:
     kill_switch_path: Path | None = None
 
     def __post_init__(self) -> None:
-        if not 0 < self.risk_per_trade <= 0.05:
-            raise ValueError("risk_per_trade must be greater than 0 and no more than 5%")
+        if not 0 < self.risk_per_trade <= MAX_RISK_PER_TRADE:
+            raise ValueError("risk_per_trade must be greater than 0 and no more than 0.5%")
         if self.minimum_stop_distance <= 0:
             raise ValueError("minimum_stop_distance must be positive")
         if self.minimum_reward_to_risk <= 0:
