@@ -32,13 +32,13 @@ No performance claim is made. The evidence reports are 0 bytes (G-1).
 
 ## 2. Proposed Solution, as built
 
-`RiskManagementEngine.evaluate(request)` is a sequential check. If the engine was given a state store and loading it failed, it rejects every request with `Risk state could not be loaded; trading halted` (`risk/engine.py:36-37`). Otherwise it rolls the trading day (saving state if the day changed), then runs the 14 gates in the order of section 3.2. The first failing gate returns a rejected `RiskDecision` and no later gate runs (`risk/engine.py:33-102`). Gates 10 and 11 also trip the kill switch (section 3.6).
+`RiskManagementEngine.evaluate(request)` is a sequential check. If the engine was given a state store and loading it failed, it rejects every request with `Risk state could not be loaded; trading halted` (`risk/engine.py:41-42`). Otherwise it rolls the trading day (saving state if the day changed), then runs the 14 gates in the order of section 3.2. The first failing gate returns a rejected `RiskDecision` and no later gate runs (`risk/engine.py:38-107`). Gates 10 and 11 also trip the kill switch (section 3.6).
 
 Two further methods keep the engine's counters:
 
-- `reserve_trade(day)` rolls the day, then increments `trades_today` and `open_positions`, then saves state (`risk/engine.py:104-110`).
-- `release_trade(realized_pnl, day)` rolls the day, decrements `open_positions` (never below 0), adds the PnL to `daily_realized_pnl`, increments `consecutive_losses` on a loss, resets it to 0 on a win and leaves it unchanged on a flat result. If the streak reaches `max_consecutive_losses` it trips the kill switch. It then saves state (`risk/engine.py:112-124`).
-- Saving is a no-op without a store, and after a failed load (`risk/engine.py:126-128`).
+- `reserve_trade(day)` rolls the day, then increments `trades_today` and `open_positions`, then saves state (`risk/engine.py:109-115`).
+- `release_trade(realized_pnl, day)` rolls the day, decrements `open_positions` (never below 0), adds the PnL to `daily_realized_pnl`, increments `consecutive_losses` on a loss, resets it to 0 on a win and leaves it unchanged on a flat result. If the streak reaches `max_consecutive_losses` it trips the kill switch. It then saves state (`risk/engine.py:117-127`).
+- Saving is a no-op without a store, and after a failed load (`risk/engine.py:131-133`).
 
 `roll_day` resets `daily_realized_pnl` and `trades_today` when the signal day differs from the current day. It does **not** reset `consecutive_losses` or `open_positions` (`risk/models.py:60-66`).
 
@@ -69,43 +69,43 @@ The default engine in both callers is built with a default `RiskConfig`, which h
 | `max_trades_per_day` | 3 | `< 1`: `max_trades_per_day must be at least 1` | `risk/models.py:26,42-43` |
 | `max_open_positions` | 1 | `< 1`: `max_open_positions must be at least 1` | `risk/models.py:27,44-45` |
 | `max_leverage` | 3.0 | `<= 0`: `max_leverage must be positive` | `risk/models.py:28,46-47` |
-| `kill_switch_path` | `None` | none; `None` means the kill switch is never active | `risk/models.py:29`, `risk/engine.py:23` |
+| `kill_switch_path` | `None` | none; `None` means the kill switch is never active | `risk/models.py:29`, `risk/engine.py:27` |
 
 The risk-per-trade ceiling inside `RiskConfig` is **0.005 (0.5 percent)**, equal to the default, in every context including backtests (`5e4acc5`; before it the ceiling was 0.05). `tests/test_risk_engine.py:129` `test_risk_per_trade_above_half_percent_is_rejected` and `:134` `test_risk_per_trade_at_half_percent_is_allowed` pin both sides.
 
-### 3.2 Gates in evaluation order (`risk/engine.py:33-102`)
+### 3.2 Gates in evaluation order (`risk/engine.py:38-107`)
 
-Direction is `request.direction.upper()`. Any value other than `LONG` or `SHORT` gives a stop distance of 0 and is rejected at gate 6 (`risk/engine.py:54-61,130-136`).
+Direction is `request.direction.upper()`. Any value other than `LONG` or `SHORT` gives a stop distance of 0 and is rejected at gate 6 (`risk/engine.py:59-66,135-141`).
 
 | # | Gate | Rejects when | Reason string (verbatim) | Source |
 |---|------|--------------|--------------------------|--------|
-| 0 | State load | a state store was given and `load_risk_state` raised | `Risk state could not be loaded; trading halted` | `risk/engine.py:26-30,36-37` |
-| 1 | Kill switch | `KillSwitch.is_active()` is true (section 3.6) | `Kill switch is active` | `risk/engine.py:43-44` |
-| 2 | Equity | `equity <= 0` | `Account equity must be positive` | `risk/engine.py:45-46` |
-| 3 | Entry present | `entry_price is None` | `Entry price is required` | `risk/engine.py:47-48` |
-| 4 | Stop present | `stop_loss is None` | `Stop loss is required` | `risk/engine.py:49-50` |
-| 5 | Take profit present | `take_profit is None` | `Take profit is required` | `risk/engine.py:51-52` |
-| 6 | Stop side | stop distance `<= 0` (stop on the wrong side, or direction not LONG or SHORT) | `Invalid stop loss for trade direction` | `risk/engine.py:60-61` |
-| 7 | Minimum stop distance | `stop_distance < minimum_stop_distance` | `Stop-loss distance below configured minimum` | `risk/engine.py:62-63` |
-| 8 | Take-profit side | reward distance `<= 0` | `Invalid take profit for trade direction` | `risk/engine.py:70-71` |
-| 9 | Reward-to-risk | `reward_distance / stop_distance < minimum_reward_to_risk` | `Reward-to-risk below configured minimum` | `risk/engine.py:73-74` |
-| 10 | Daily loss | `daily_realized_pnl <= -(equity * max_daily_loss)`; also trips the kill switch | `Max daily loss limit reached` | `risk/engine.py:76-79` |
-| 11 | Consecutive losses | `consecutive_losses >= max_consecutive_losses`; also trips the kill switch | `Max consecutive losses limit reached` | `risk/engine.py:80-82` |
-| 12 | Trades per day | `trades_today >= max_trades_per_day` | `Max trades per day limit reached` | `risk/engine.py:83-84` |
-| 13 | Open positions | `open_positions >= max_open_positions` | `Max open positions limit reached` | `risk/engine.py:85-86` |
-| 14 | Leverage | `notional / equity > max_leverage` (sizing is computed first) | `Maximum leverage exceeded` | `risk/engine.py:88-93` |
-| - | Approve | all gates passed | `Risk approved` | `risk/engine.py:95-102` |
+| 0 | State load | a state store was given and `load_risk_state` raised | `Risk state could not be loaded; trading halted` | `risk/engine.py:30-34,41-42` |
+| 1 | Kill switch | `KillSwitch.is_active()` is true (section 3.6) | `Kill switch is active` | `risk/engine.py:48-49` |
+| 2 | Equity | `equity <= 0` | `Account equity must be positive` | `risk/engine.py:50-51` |
+| 3 | Entry present | `entry_price is None` | `Entry price is required` | `risk/engine.py:52-53` |
+| 4 | Stop present | `stop_loss is None` | `Stop loss is required` | `risk/engine.py:54-55` |
+| 5 | Take profit present | `take_profit is None` | `Take profit is required` | `risk/engine.py:56-57` |
+| 6 | Stop side | stop distance `<= 0` (stop on the wrong side, or direction not LONG or SHORT) | `Invalid stop loss for trade direction` | `risk/engine.py:65-66` |
+| 7 | Minimum stop distance | `stop_distance < minimum_stop_distance` | `Stop-loss distance below configured minimum` | `risk/engine.py:67-68` |
+| 8 | Take-profit side | reward distance `<= 0` | `Invalid take profit for trade direction` | `risk/engine.py:75-76` |
+| 9 | Reward-to-risk | `reward_distance / stop_distance < minimum_reward_to_risk` | `Reward-to-risk below configured minimum` | `risk/engine.py:78-79` |
+| 10 | Daily loss | `daily_realized_pnl <= -(equity * max_daily_loss)`; also trips the kill switch | `Max daily loss limit reached` | `risk/engine.py:81-84` |
+| 11 | Consecutive losses | `consecutive_losses >= max_consecutive_losses`; also trips the kill switch | `Max consecutive losses limit reached` | `risk/engine.py:85-87` |
+| 12 | Trades per day | `trades_today >= max_trades_per_day` | `Max trades per day limit reached` | `risk/engine.py:88-89` |
+| 13 | Open positions | `open_positions >= max_open_positions` | `Max open positions limit reached` | `risk/engine.py:90-91` |
+| 14 | Leverage | `notional / equity > max_leverage` (sizing is computed first) | `Maximum leverage exceeded` | `risk/engine.py:93-98` |
+| - | Approve | all gates passed | `Risk approved` | `risk/engine.py:100-107` |
 
-Reward-to-risk and leverage values are attached to a rejection only when already computed; earlier gates return 0.0 for them (`risk/engine.py:146-158`).
+Reward-to-risk and leverage values are attached to a rejection only when already computed; earlier gates return 0.0 for them (`risk/engine.py:151-163`).
 
 Rules that follow from the code:
 
-- **Daily-loss base.** The limit is measured against the **current request equity**, not start-of-day equity: `equity * max_daily_loss` (`risk/engine.py:76-77`). The check uses `<=`, so reaching exactly the limit blocks.
-- **Distances.** Stop distance and reward distance are direction-aware (LONG: `entry - stop` and `take_profit - entry`; SHORT: `stop - entry` and `entry - take_profit`) and are in absolute price units (`risk/engine.py:130-144`; D-63).
+- **Daily-loss base.** The limit is measured against the **current request equity**, not start-of-day equity: `equity * max_daily_loss` (`risk/engine.py:81-82`). The check uses `<=`, so reaching exactly the limit blocks.
+- **Distances.** Stop distance and reward distance are direction-aware (LONG: `entry - stop` and `take_profit - entry`; SHORT: `stop - entry` and `entry - take_profit`) and are in absolute price units (`risk/engine.py:135-149`; D-63).
 - **A stop loss is mandatory.** Gates 4, 6 and 7 together reject a missing stop, a wrong-side stop and a too-close stop.
-- **No martingale or averaging down.** Position size depends only on equity, `risk_per_trade` and stop distance; no gate or method increases size after a loss (`risk/engine.py:88-91`).
+- **No martingale or averaging down.** Position size depends only on equity, `risk_per_trade` and stop distance; no gate or method increases size after a loss (`risk/engine.py:93-96`).
 
-### 3.3 Position sizing (`risk/engine.py:88-91`)
+### 3.3 Position sizing (`risk/engine.py:93-96`)
 
 ```text
 risk_amount   = equity * risk_per_trade
@@ -114,7 +114,7 @@ notional      = position_size * entry_price
 leverage      = notional / equity
 ```
 
-An approved `RiskDecision` carries `position_size`, `risk_amount`, `reward_to_risk` and `leverage` with reason `Risk approved` (`risk/engine.py:95-102`). Sizing does not round to an exchange quantity step, minimum notional or lot size, and does not include fees. The paper executor charges fees on top of the risk amount (`execution/paper_executor.py:119-122`).
+An approved `RiskDecision` carries `position_size`, `risk_amount`, `reward_to_risk` and `leverage` with reason `Risk approved` (`risk/engine.py:100-107`). Sizing does not round to an exchange quantity step, minimum notional or lot size, and does not include fees. The paper executor charges fees on top of the risk amount (`execution/paper_executor.py:119-122`).
 
 ### 3.4 ML interaction with risk
 
@@ -139,10 +139,10 @@ The Settings fields reach `RiskConfig` only through `build_risk_engine` (`risk/f
 | Property | As built | Source |
 |----------|----------|--------|
 | Active when | Fail closed. With `path` None: never (backtests). Otherwise active when `os.stat(path)` succeeds (a file with any content, or a directory), when it raises any `OSError` other than `FileNotFoundError` (for example permission denied), or when the file is missing and the nearest existing ancestor is not a directory. The ancestor check exists because Windows reports a regular-file parent as "path not found" rather than `NotADirectoryError` | `risk/kill_switch.py:22-51`; D-80 |
-| Automatic trip | `trip(reason)` creates parent directories and writes `{"reason": <reason>, "tripped_at": <UTC ISO-8601>}` as sorted-key JSON. If the switch is already active it writes nothing, so the first reason is kept. With no path it does nothing. The engine calls it on gate 10 (`Max daily loss limit reached`), gate 11 (`Max consecutive losses limit reached`, which also covers a streak loaded from `risk_state`) and in `release_trade` when the streak reaches the limit. A failed write raises `OSError` out of the engine call | `risk/kill_switch.py:53-60`; `risk/engine.py:78,81,122-123` |
-| File | The path comes from `RiskConfig.kill_switch_path` (default `None`) unless a `KillSwitch` instance is injected. `build_risk_engine` passes `Settings.kill_switch_path` when `KILL_SWITCH_ENABLED=true`; nothing calls it at runtime | `risk/engine.py:23`; `risk/factory.py:26` |
+| Automatic trip | `trip(reason)` creates parent directories and writes `{"reason": <reason>, "tripped_at": <UTC ISO-8601>}` as sorted-key JSON. If the switch is already active it writes nothing, so the first reason is kept. With no path it does nothing. The engine calls it on gate 10 (`Max daily loss limit reached`), gate 11 (`Max consecutive losses limit reached`, which also covers a streak loaded from `risk_state`) and in `release_trade` when the streak reaches the limit. A failed write raises `OSError` out of the engine call; `release_trade` saves `risk_state` first, so the loss and released position are persisted even then (`tests/test_risk_engine.py::test_loss_is_persisted_even_if_kill_switch_trip_fails`) | `risk/kill_switch.py:53-60`; `risk/engine.py:83,86,128-129` |
+| File | The path comes from `RiskConfig.kill_switch_path` (default `None`) unless a `KillSwitch` instance is injected. `build_risk_engine` passes `Settings.kill_switch_path` when `KILL_SWITCH_ENABLED=true`; nothing calls it at runtime | `risk/engine.py:27`; `risk/factory.py:26` |
 | Default | Inert: with no path the switch is never active, so the default backtest and paper engines have no working kill switch | `risk/models.py:29`; `execution/paper_trading.py:49` |
-| Check timing | On every `evaluate`, after the state-load check and the day roll, as gate 1; not latched in memory, but a tripped file outlasts the day roll and a restart | `risk/engine.py:36-44` |
+| Check timing | On every `evaluate`, after the state-load check and the day roll, as gate 1; not latched in memory, but a tripped file outlasts the day roll and a restart | `risk/engine.py:41-49` |
 | Effect | Rejects new entries with `Kill switch is active`. Open paper positions keep being managed; the stream is not stopped | `execution/paper_trading.py:68-108` |
 | Creation | The owner by hand, or `trip` on gates 10 and 11 | D-22 (Partial) |
 | Reset | Read the JSON reason, then delete the file by hand with the bot stopped; no command exists ([ops-silverbot.md](ops-silverbot.md)) | G-6 |
@@ -156,7 +156,7 @@ The paper-loop alert text is sent through the Telegram client, which has no netw
 `RiskState` holds `current_day`, `daily_realized_pnl`, `consecutive_losses`, `trades_today` and `open_positions` (`risk/models.py:50-58`). Since `2d7f713` it can persist:
 
 - `RiskStateStore` is a Protocol with `load_risk_state() -> RiskState | None` and `save_risk_state(state)` (`risk/models.py:73-78`). `SQLiteStorage` implements it with a single-row `risk_state` table (`storage/sqlite.py:117-125,261-319`; columns in [SDD §3.2](sdd-silverbot.md)).
-- With `state_store` set and no explicit `state`, the engine loads the row at construction. No row means a fresh `RiskState`. Any exception from the load (including `RiskStateError` for a bad date, a non-finite PnL, a negative or non-integer count, or an `sqlite3.Error`) locks the engine: every `evaluate` returns `Risk state could not be loaded; trading halted` and nothing is saved (`risk/engine.py:24-31,36-37,126-128`).
+- With `state_store` set and no explicit `state`, the engine loads the row at construction. No row means a fresh `RiskState`. Any exception from the load (including `RiskStateError` for a bad date, a non-finite PnL, a negative or non-integer count, or an `sqlite3.Error`) locks the engine: every `evaluate` returns `Risk state could not be loaded; trading halted` and nothing is saved (`risk/engine.py:28-36,41-42,131-133`). The cause is logged at ERROR as `risk state could not be loaded; trading halted: <error>` (`risk/engine.py:35`).
 - The engine saves after `reserve_trade`, after `release_trade`, and in `evaluate` when the day rolls.
 - Without a store (backtests, the default paper engine) state is in memory only, as before.
 
@@ -197,7 +197,7 @@ These are not risk gates but also stop a candidate before an order exists:
 | Kill switch armed by default, with automatic triggers on the daily-loss and consecutive-loss limits | Triggers built (`08c81ad`). Armed only when `build_risk_engine` runs with `KILL_SWITCH_ENABLED=true`; `RiskConfig` still defaults to no path so backtests are unaffected. |
 | Persisted risk state across restarts | Built as the `risk_state` table (`2d7f713`); used only by a store-backed engine. |
 | Persisting `open_positions` reconciled against actual positions | Not built: the paper executor keeps positions in memory, so the saved count can outlive them. Manual reset is the workaround (OPS). Planned with G-21. |
-| Daily loss measured on start-of-day equity | The code uses current equity (`risk/engine.py:76-77`). This is a different, looser measure after profits; the choice is Open. |
+| Daily loss measured on start-of-day equity | The code uses current equity (`risk/engine.py:81-82`). This is a different, looser measure after profits; the choice is Open. |
 | Latching the kill switch | Not built in memory: the switch re-reads the file on every call, so deleting the file re-enables entries immediately. A trip writes the file, so an automatic halt persists until the owner deletes it. |
 | Closing or reducing open exposure on a trip | Not built; no emergency shutdown exists. Planned. |
 | Stop distance as a percentage or ATR multiple | Not built (D-63); absolute price units are used. |
@@ -221,10 +221,10 @@ These are not risk gates but also stop a candidate before an order exists:
 
 | Capability | Status | Evidence |
 |-----------|--------|----------|
-| 14-gate risk engine with sizing and verbatim reasons | Built | `risk/engine.py:33-102`; 28 risk test functions |
+| 14-gate risk engine with sizing and verbatim reasons | Built | `risk/engine.py:38-107`; 28 risk test functions |
 | `RiskConfig` validation, 0.5 percent per-trade cap | Built | `risk/models.py:10,31-47`; `5e4acc5` |
 | Fail-closed file kill switch with paper-loop event and alert | Built | `risk/kill_switch.py:22-51`; `execution/paper_trading.py:74-84`; `08c81ad` |
-| Automatic kill-switch trip on daily-loss and consecutive-loss limits | Built | `risk/kill_switch.py:53-60`; `risk/engine.py:78,81,123`; `08c81ad` |
+| Automatic kill-switch trip on daily-loss and consecutive-loss limits | Built | `risk/kill_switch.py:53-60`; `risk/engine.py:83,86,129`; `08c81ad` |
 | Kill switch armed from settings | Partial | `build_risk_engine` passes the path (`risk/factory.py:26`); no runtime caller (G-3, G-6) |
 | Emergency shutdown (close positions, stop the loop) | Planned | None exists (G-6, G-21) |
 | Kill-switch reset tooling | Planned | Manual file delete only ([ops-silverbot.md](ops-silverbot.md)) |

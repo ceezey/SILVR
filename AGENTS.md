@@ -121,7 +121,7 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
 
 ### (b) An order request passes through the risk engine and kill switch
 
-`src/silver_bot/risk/engine.py:33-50` (an unreadable persisted risk state halts first; the kill switch is the first gate) and `src/silver_bot/execution/paper_trading.py:207-216` (the caller must ask the risk engine before any fill):
+`src/silver_bot/risk/engine.py:38-55` (an unreadable persisted risk state halts first; the kill switch is the first gate) and `src/silver_bot/execution/paper_trading.py:207-216` (the caller must ask the risk engine before any fill):
 
 ```python
     def evaluate(self, request: RiskRequest) -> RiskDecision:

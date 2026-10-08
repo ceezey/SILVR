@@ -30,7 +30,7 @@ Full proposal conditions: [RFC-004 §7.1](docs/rfc-silverbot-readiness-gates.md)
 
 Honest summary at commit `70ccaec` on `dev` (see [docs/prd-silverbot.md](docs/prd-silverbot.md) section 3 for the per-feature table):
 
-- Built and tested: signal engine, risk engine, config loading, readiness checkers (`python -m pytest -q`: 167 passed).
+- Built and tested: signal engine, risk engine, config loading, readiness checkers (`python -m pytest -q`: 169 passed).
 - HIGH safety fixes batch 1 (2026-10-09): a NaN or out-of-range ML probability now rejects; the testnet URL guard is an exact `https` host match; `.env.example` loads as paper mode; readiness rejects empty or non-JSON reports; backtests default to 5 bps slippage and 3 bps spread; risk per trade is capped at 0.5% everywhere; the kill switch fails closed and trips itself on the daily-loss and consecutive-loss limits; risk state can persist in SQLite. The last three are not used by any running bot until the entrypoint builds its risk engine with `build_risk_engine` (G-3). Details: [docs/scrutiny-silverbot.md](docs/scrutiny-silverbot.md) section 3.
 - Partial: backtester, paper trading, demo/testnet mode, ML filter, monitoring, market data, deployment files.
 - Not working end to end: `main()` is a startup stub. There is no runnable backtest, paper or demo mode from the entrypoint yet (G-3).

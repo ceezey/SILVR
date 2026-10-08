@@ -5,9 +5,9 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-09 against code at commit `70ccaec` (HIGH safety fixes batch 1 added 34 test functions; rows outside that batch are unchanged since `62037d1`)
+**Last reconciled:** 2026-10-09 against code at commit `70ccaec` (HIGH safety fixes batch 1 added 36 test functions; rows outside that batch are unchanged since `62037d1`)
 
-This document is the test plan for Silver Bot. It maps all 143 existing test functions (167 collected tests) to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. Related documents: [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [build-silverbot.md](build-silverbot.md) and the [index](index.md).
+This document is the test plan for Silver Bot. It maps all 145 existing test functions (169 collected tests) to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. Related documents: [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [build-silverbot.md](build-silverbot.md) and the [index](index.md).
 
 Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`), [sdd-silverbot.md](sdd-silverbot.md), [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) and [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (RFC-004, the mode-gate conditions).
 
@@ -45,12 +45,12 @@ Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`
 ........................................................................ [ 43%]
 ........................................................................ [ 86%]
 .......................                                                  [100%]
-167 passed in 4.40s
+169 passed in 2.11s
 ```
 
 The 2026-10-08 baseline at `62037d1` was `108 passed in 1.57s`, run with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` in the original checkout path.
 
-The count is 143 test functions in 20 files (`^def test_` over `tests/`); parametrized cases make 167 collected tests. At `62037d1` it was 108 functions in 19 files. The elapsed time is a single observation, not a benchmark.
+The count is 145 test functions in 20 files (`^def test_` over `tests/`); parametrized cases make 169 collected tests. At `62037d1` it was 108 functions in 19 files. The elapsed time is a single observation, not a benchmark.
 
 Rows below cite tests as `tests/<file>.py::<name>`; every cited name was checked to exist (section 8).
 
@@ -217,6 +217,8 @@ Unsafe configuration, live-trading attempts, missing stop loss, kill switch acti
 | QAD-T158 | `trip` writes JSON with `reason` and `tripped_at`; a second trip keeps the first reason | PRD-F3 | `tests/test_risk_engine.py::test_kill_switch_trip_writes_reason_and_timestamp`, `tests/test_risk_engine.py::test_kill_switch_second_trip_keeps_first_reason` |
 | QAD-T159 | With no path, `trip` writes nothing and the switch stays inactive | PRD-F3 | `tests/test_risk_engine.py::test_kill_switch_without_path_trip_is_noop` |
 | QAD-T160 | An unreadable persisted risk state halts trading ("Risk state could not be loaded; trading halted") | PRD-F3 | `tests/test_risk_engine.py::test_corrupt_risk_state_halts_trading` |
+| QAD-T172 | A kill-switch trip that fails to write still leaves the loss, streak and released position saved in `risk_state` | PRD-F3 | `tests/test_risk_engine.py::test_loss_is_persisted_even_if_kill_switch_trip_fails` |
+| QAD-T173 | An unreadable persisted risk state is logged at ERROR with its cause | PRD-F3, PRD-F7 | `tests/test_risk_engine.py::test_risk_state_load_error_is_logged` |
 | QAD-T161 | A kill-switch trip closes or reduces open positions | PRD-F3 | Not covered (G-6) |
 
 ### 3.4 Invalid configuration (13 scenarios)
@@ -266,7 +268,7 @@ A scenario that lists several features appears under each. "Automated" rows have
 |---|---|---|---|
 | PRD-F1 | Signal engine | QAD-T1, QAD-T2, QAD-T3, QAD-T4, QAD-T5, QAD-T6, QAD-T7, QAD-T8, QAD-T9, QAD-T47, QAD-T48, QAD-T50, QAD-T128, QAD-T129 | QAD-T49, QAD-T51, QAD-T81, QAD-T140 |
 | PRD-F2 | Backtester | QAD-T11, QAD-T12, QAD-T13, QAD-T14, QAD-T44, QAD-T52, QAD-T53, QAD-T54, QAD-T105 | QAD-T15, QAD-T16, QAD-T78, QAD-T79, QAD-T80 |
-| PRD-F3 | Risk engine and kill switch | QAD-T10, QAD-T55, QAD-T97, QAD-T98, QAD-T99, QAD-T100, QAD-T101, QAD-T102, QAD-T103, QAD-T104, QAD-T105, QAD-T106, QAD-T108, QAD-T109, QAD-T110, QAD-T112, QAD-T113, QAD-T119, QAD-T154, QAD-T155, QAD-T156, QAD-T157, QAD-T158, QAD-T159, QAD-T160, QAD-T162, QAD-T166, QAD-T167, QAD-T168, QAD-T170 | QAD-T107, QAD-T161 |
+| PRD-F3 | Risk engine and kill switch | QAD-T10, QAD-T55, QAD-T97, QAD-T98, QAD-T99, QAD-T100, QAD-T101, QAD-T102, QAD-T103, QAD-T104, QAD-T105, QAD-T106, QAD-T108, QAD-T109, QAD-T110, QAD-T112, QAD-T113, QAD-T119, QAD-T154, QAD-T155, QAD-T156, QAD-T157, QAD-T158, QAD-T159, QAD-T160, QAD-T162, QAD-T166, QAD-T167, QAD-T168, QAD-T170, QAD-T172, QAD-T173 | QAD-T107, QAD-T161 |
 | PRD-F4 | Paper trading | QAD-T17, QAD-T18, QAD-T57, QAD-T106 | QAD-T71, QAD-T72, QAD-T73 |
 | PRD-F5 | Demo/testnet mode | QAD-T23, QAD-T24, QAD-T25, QAD-T90, QAD-T91, QAD-T92, QAD-T93, QAD-T94, QAD-T95, QAD-T96, QAD-T111, QAD-T164 | QAD-T82 |
 | PRD-F6 | ML probability filter | QAD-T33, QAD-T34, QAD-T35, QAD-T36, QAD-T37, QAD-T38, QAD-T39, QAD-T40, QAD-T41, QAD-T42, QAD-T43, QAD-T44, QAD-T45, QAD-T46, QAD-T60, QAD-T61, QAD-T62, QAD-T63, QAD-T64, QAD-T65, QAD-T66, QAD-T133, QAD-T135, QAD-T141, QAD-T142, QAD-T143, QAD-T144, QAD-T145, QAD-T146, QAD-T171 | QAD-T147, QAD-T148, QAD-T149, QAD-T150, QAD-T151, QAD-T152, QAD-T153 |
@@ -421,7 +423,7 @@ Entering paper requires a runtime that runs the paper engine through the entrypo
 - [ ] Risk limits come from one source capped at 0.005 per trade (built, QAD-T109, QAD-T139, QAD-T154), 0.02 daily loss and 3x leverage (demo only today, QAD-T163), and risk state survives a restart in the running bot (built for a store-backed engine, QAD-T110; RFC-004 condition 5, G-5, G-7).
 - [ ] No order was placed without a stop loss and none bypassed the risk engine (BRD-M10, zero); checked in the audit log.
 - [ ] Daily and weekly reports are produced without manual calls (G-16).
-- [ ] The full suite passes (baseline: 167 passed at `70ccaec`) and no S1 or S2 bug is open (section 5).
+- [ ] The full suite passes (baseline: 169 passed on `dev`, 2026-10-09) and no S1 or S2 bug is open (section 5).
 
 ### 6.3 Gate 3: demo (Binance Futures testnet; entering and leaving)
 
@@ -467,7 +469,7 @@ ML is optional and may only approve, reject or reduce risk (PRD-F6, [RFC-003](rf
 
 ## 8. Self-Check
 
-- [x] Every one of the 143 test functions in `tests/*.py` appears in at least one QAD-T# row (verified by script on 2026-10-09: 143 of 143).
+- [x] Every one of the 145 test functions in `tests/*.py` appears in at least one QAD-T# row (verified by script on 2026-10-09: 145 of 145).
 - [x] Every `tests/<file>.py::<name>` reference names a test that exists (verified by grep for `def <name>`).
 - [x] Every Not covered row cites an existing `G-#` and is listed in section 3.8 (37 rows).
 - [x] Section 3.7 records zero measured performance numbers; every metric is Not yet measured with a `G-#`.

@@ -158,7 +158,7 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** ARCHITECTURE.md:273 "Trigger kill switch"
 - **Code does:** `risk/kill_switch.py:8-17` read-only file-exists check
 - **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
-- **Resolved:** Partial, `08c81ad` (G-6, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). `KillSwitch.trip` writes the file (`risk/kill_switch.py:53-60`); the engine trips it on the daily-loss and consecutive-loss limits (`risk/engine.py:78,81,123`). Remaining: no position close (G-21) and no reset tooling beyond deleting the file.
+- **Resolved:** Partial, `08c81ad` (G-6, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). `KillSwitch.trip` writes the file (`risk/kill_switch.py:53-60`); the engine trips it on the daily-loss and consecutive-loss limits (`risk/engine.py:83,86,129`). Remaining: no position close (G-21) and no reset tooling beyond deleting the file.
 
 ### D-23. Execution responsibilities overstated
 
@@ -406,7 +406,7 @@ This audit records findings, not decisions. It compares the old root documents (
 ### D-63. Stop distance units
 
 - **Old doc said:** RISK_POLICY.md:130-132
-- **Code does:** `risk/models.py:19`, `risk/engine.py:49` absolute price units
+- **Code does:** `risk/models.py:19`, `risk/engine.py:54` absolute price units
 - **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
 
 ### D-64. simulator.py
@@ -621,7 +621,7 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Evidence:** `risk/kill_switch.py:11-17`; `execution/paper_trading.py:49` builds a default engine with no path. See D-12 and D-22.
 - **Gap row:** G-6 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Partial, `08c81ad`.
-- **Resolved:** `KillSwitch.is_active` fails closed: active when the path exists (file or directory), when `os.stat` raises any `OSError` other than not-found, or when the nearest existing ancestor is not a directory (`risk/kill_switch.py:22-51`). `trip` writes `{"reason", "tripped_at"}` JSON and keeps the first reason (`risk/kill_switch.py:53-60`); the engine trips on the daily-loss and consecutive-loss limits (`risk/engine.py:78,81,123`). Remaining: the engine default path is still None outside `build_risk_engine`, which has no runtime caller until G-3; no position close; no reset tooling beyond deleting the file ([ops-silverbot.md](ops-silverbot.md)).
+- **Resolved:** `KillSwitch.is_active` fails closed: active when the path exists (file or directory), when `os.stat` raises any `OSError` other than not-found, or when the nearest existing ancestor is not a directory (`risk/kill_switch.py:22-51`). `trip` writes `{"reason", "tripped_at"}` JSON and keeps the first reason (`risk/kill_switch.py:53-60`); the engine trips on the daily-loss and consecutive-loss limits (`risk/engine.py:83,86,129`). Remaining: the engine default path is still None outside `build_risk_engine`, which has no runtime caller until G-3; no position close; no reset tooling beyond deleting the file ([ops-silverbot.md](ops-silverbot.md)).
 
 
 ### H-10. Pending order reservation leaks risk capacity if never filled
@@ -638,7 +638,7 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Evidence:** `risk/models.py:47-63`. Combined with the H-4 restart loop, restarts would reset those gates repeatedly.
 - **Gap row:** G-7 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Partial, `2d7f713`.
-- **Resolved:** `storage/sqlite.py:117-125` adds the single-row `risk_state` table; `save_risk_state` and `load_risk_state` (`storage/sqlite.py:261-319`) persist it and raise `RiskStateError` on an unreadable row. `RiskManagementEngine` loads it at construction, saves after `reserve_trade`, `release_trade` and a day roll, and rejects every request with "Risk state could not be loaded; trading halted" if loading fails (`risk/engine.py:24-41,110,124-128`). Remaining: only an engine built with a store persists; `build_risk_engine` attaches one but has no runtime caller until G-3. `open_positions` survives a restart while paper positions do not, so a crash with an open trade needs a manual reset ([ops-silverbot.md](ops-silverbot.md)).
+- **Resolved:** `storage/sqlite.py:117-125` adds the single-row `risk_state` table; `save_risk_state` and `load_risk_state` (`storage/sqlite.py:261-319`) persist it and raise `RiskStateError` on an unreadable row. `RiskManagementEngine` loads it at construction, saves after `reserve_trade`, `release_trade` and a day roll, and rejects every request with "Risk state could not be loaded; trading halted" if loading fails (`risk/engine.py:28-46,115,127-133`). Remaining: only an engine built with a store persists; `build_risk_engine` attaches one but has no runtime caller until G-3. `open_positions` survives a restart while paper positions do not, so a crash with an open trade needs a manual reset ([ops-silverbot.md](ops-silverbot.md)).
 
 
 ### H-12. Polling stream may yield a still-forming candle once; reconnect wrapper catches only ConnectionError
@@ -742,7 +742,7 @@ Areas checked that matched the old documents (no finding raised):
 
 - Backtest fee defaults: BACKTESTING.md:178-183 (maker 0.0002, taker 0.0005) match `backtest/models.py:32-33`.
 - AGENTS.md ML rules (ML may approve, reject or reduce risk only) match `ml/filter.py` and the paper loop; an unpromoted model still cannot raise risk (see the D-37 note).
-- AGENTS.md risk rules are a subset of the 14 gates in `risk/engine.py:30-87`.
+- AGENTS.md risk rules are a subset of the 14 gates in `risk/engine.py:34-92`.
 - README.md:387-388 (`.env` is not copied into the image) matches `Dockerfile:15-17`.
 - CONFIGURATION.md:3-5 configuration load order (defaults, config.yaml, .env, process env) matches `config/settings.py:67-93`.
 - ML_MODEL.md:336-339 default thresholds (0.60 approve, 0.55 reduce) match `ml/filter.py`.

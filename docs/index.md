@@ -99,6 +99,7 @@ No Change Records yet. Records start once a doc is Locked.
 
 | Date | Change | Reference |
 |---|---|---|
+| 2026-10-09 | Batch 1 safety review: no blocking findings; `release_trade` saves risk state before tripping, and load errors are logged. Tests 169 passed. | [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [log-silverbot.md](log-silverbot.md) |
 | 2026-10-09 | HIGH safety fixes batch 1 merged to `dev` at `70ccaec` (G-2 `88220e6`, G-4 `c6d909d`, G-5 `5e4acc5`, G-6 `08c81ad`, G-7 `2d7f713`, G-8 `8e66054`, G-10 `0a76564`, G-11 `59ed6d5`; 109 to 167 passing tests). Docs reconciled: G-2, G-4, G-8, G-10 and G-11 Closed, G-5 to G-7 Partial; Resolved lines in the audit; OPS kill-switch clearing and `risk_state` reset steps; QAD scenarios for the 34 new test functions; citations into the changed files re-pointed; SAD cards and the materialized files regenerated. | [design spec](superpowers/specs/2026-10-09-high-safety-fixes-design.md), [plan](superpowers/plans/2026-10-09-high-safety-fixes.md), [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3 |
 | 2026-10-09 | Linked the Figma design file from the DSD header. | [dsd-silverbot.md](dsd-silverbot.md) |
 | 2026-10-09 | Added the tech stack table, SDD section 2.4, verified against `2b916d1`; README links to it. | [sdd-silverbot.md](sdd-silverbot.md) section 2.4 |

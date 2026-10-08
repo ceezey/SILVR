@@ -124,9 +124,9 @@ Percentages below are the coded defaults, with their exact scope. Money values n
 |---|---|---|---|
 | Risk per trade (RiskConfig) | 0.005 (0.5% of equity) | `src/silver_bot/risk/models.py:21` | `RiskConfig` rejects more than 0.005 at `risk/models.py:10,32-33`, and `load_config` caps `MAX_RISK_PER_TRADE` at 0.005 in every mode (`5e4acc5`). `build_risk_engine` maps the setting; nothing calls it yet (D-11, G-5 partial). |
 | Risk per trade (Settings cap) | 0.005 | `src/silver_bot/config/settings.py:52,177,180-181` | Must be in (0, 0.005] in every mode since `5e4acc5`. |
-| Max daily loss (RiskConfig) | 0.02 (2% of equity) | `risk/models.py:24`; check at `risk/engine.py:76-79` | Daily state persists across restarts only for an engine built with SQLite storage; otherwise it is in memory (G-7 partial). |
+| Max daily loss (RiskConfig) | 0.02 (2% of equity) | `risk/models.py:24`; check at `risk/engine.py:81-84` | Daily state persists across restarts only for an engine built with SQLite storage; otherwise it is in memory (G-7 partial). |
 | Max daily loss (Settings cap) | 0.02 | `settings.py:178,191` | Demo mode only. |
-| Max leverage (RiskConfig) | 3.0 | `risk/models.py:28`; check at `risk/engine.py:92-93` | |
+| Max leverage (RiskConfig) | 3.0 | `risk/models.py:28`; check at `risk/engine.py:97-98` | |
 | Max leverage (Settings cap) | 3 | `settings.py:179,193` | Demo mode only. |
 | Max consecutive losses / trades per day / open positions | 3 / 3 / 1 | `risk/models.py:25-27` | |
 | Money at risk per trade | Owner input required (OI-1) | | = risk fraction x capital. |

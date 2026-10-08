@@ -68,7 +68,7 @@ Source: the old BACKTESTING.md §Pass/Fail Criteria (lines 487-504) and §Red Fl
 | K9 | Out-of-sample results are not acceptable | Open; the split helper is unwired (G-12) | BACKTESTING.md:501 |
 | K10 | Paper trading does not match backtest behaviour | Open (no tolerance defined) | BACKTESTING.md:519 |
 | K11 | Any evidence report is empty or missing | Any of the three report files is 0 bytes | G-1, D-86; the live readiness report checks fail on an empty file since `88220e6` |
-| K12 | Any safety rule is broken in a test or run | Any order without a stop loss, any bypass of the risk engine or kill switch | AGENTS.md safety rules; risk engine rejection at `src/silver_bot/risk/engine.py:49-50` |
+| K12 | Any safety rule is broken in a test or run | Any order without a stop loss, any bypass of the risk engine or kill switch | AGENTS.md safety rules; risk engine rejection at `src/silver_bot/risk/engine.py:54-55` |
 
 Mode order for proceeding: backtest, then paper, then demo/testnet, then (blocked) live. A stop on any row means fix or rework, not skip ahead.
 

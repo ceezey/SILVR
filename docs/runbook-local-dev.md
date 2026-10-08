@@ -96,7 +96,7 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
    python -m pytest -q
    ```
 
-   Expected: `167 passed`. The tests use mocks and in-memory clients; they need no API keys and no network.
+   Expected: `169 passed`. The tests use mocks and in-memory clients; they need no API keys and no network.
 
 5. **Check the configuration loads and live is off** (this is also what the container health check runs):
 
@@ -130,7 +130,7 @@ Each check below was run against a temporary working folder containing only the 
 
 | Check | Command | Observed result |
 |-------|---------|-----------------|
-| Tests | `python -m pytest -q` (repository root) | `167 passed` (2026-10-09, `70ccaec`) |
+| Tests | `python -m pytest -q` (repository root) | `169 passed` (2026-10-09, `dev`) |
 | Config loads | `python -c "from silver_bot.config import load_config; c=load_config(); print(c.mode, c.live_trading, c.paper_trading, c.demo_trading)"` | `TradingMode.PAPER False True False` |
 | Example loads | load `.env.example` with `load_config(env_path=".env.example", yaml_path="none.yaml", environ={})` | `TradingMode.PAPER False True False` (mode, live, paper, demo; 2026-10-09) |
 | Health | `python -m silver_bot.health; echo $?` | no output, `0` |
