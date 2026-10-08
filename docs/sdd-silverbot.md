@@ -145,7 +145,7 @@ Verified 2026-10-09 against commit `2b916d1`. Version pins and the deprecations 
 | Host supervision | systemd unit running `docker compose up bot`; logrotate (daily, 14 kept) | Partial | `deploy/systemd/silver-bot.service`, `deploy/logrotate/silver-bot`, `deploy/scripts/prepare-host.sh`; the unit runs as `User=silverbot`, which nothing creates on the host, and hardening is missing (G-26) |
 | Tests | pytest `>=8.0` (optional extra `dev`), 20 test files | Built | `pyproject.toml`, `tests/`; gaps are G-28 |
 | Continuous integration | None | Planned | No CI configuration in the repo |
-| Doc tooling | `tools/materialize_docs.py` builds `AGENTS.md`, `MODEL_CARD.md` and `.claude/agents/*.md`; `--check` verifies | Built | `tools/materialize_docs.py`, `tests/test_materialize_docs.py` |
+| Doc tooling | `tools/materialize_docs.py` builds `AGENTS.md`, `MODEL_CARD.md`, `BRAND.md`, `DESIGN.md` and `.claude/agents/*.md`; `--check` verifies | Built | `tools/materialize_docs.py`, `tests/test_materialize_docs.py` |
 
 When a row's technology changes, update this table and BUILD section 3 in the same change.
 

@@ -420,6 +420,8 @@ None. The bot has no public web surface; crawler policy is not applicable.
 | `AGENTS.md` | this doc (with a banner; links rewritten to `docs/...`) | generated |
 | `CLAUDE.md` | hand-maintained pointer to `AGENTS.md` | hand |
 | `MODEL_CARD.md` | [aia-silverbot.md](docs/aia-silverbot.md) section 1 | generated |
+| `BRAND.md` | [dsd-silverbot.md](docs/dsd-silverbot.md) sections 0 and 1 | generated |
+| `DESIGN.md` | [dsd-silverbot.md](docs/dsd-silverbot.md) sections 2 to 7 | generated |
 | `.claude/agents/*` | [sad-silverbot.md](docs/sad-silverbot.md) section 3 | generated |
 
 The generator is `tools/materialize_docs.py`. Run `python tools/materialize_docs.py` to regenerate and `python tools/materialize_docs.py --check` to verify (also run by `tests/test_materialize_docs.py`). Never edit generated files directly; edit the source doc and re-materialize.

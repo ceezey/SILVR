@@ -261,8 +261,8 @@ Done when: you return PASS, or FAIL naming the file:line and the rung it violate
 #### SAD-B1: psl-purist
 
 - **Purpose:** build the operator UI and Telegram alert code with the Python standard library only, inside the limits of the UI proposal in DSD §9.
-- **Derived from:** `pyproject.toml` (`dependencies = []`); DSD §9.2 (read-only, localhost) and §9.5 (non-goals); DSD §9.6 (Change Record gate); SDD §5 (security); G-15 (Telegram has no transport); `AGENTS.md` (tests and documentation updates).
-- **Responsibilities:** write the read-only localhost dashboard and a terminal status view from the DSD §9.3 sources; write Telegram formatting and, when asked, its `urllib` transport; write tests for normal, edge, unsafe and invalid-input cases; list the documentation updates the change needs.
+- **Derived from:** `pyproject.toml` (`dependencies = []`); DSD §0 to §7 (brand and design system, materialized to `BRAND.md` and `DESIGN.md`); DSD §9.2 (read-only, localhost) and §9.5 (non-goals); DSD §9.6 (Change Record gate); SDD §5 (security); G-15 (Telegram has no transport); `AGENTS.md` (tests and documentation updates).
+- **Responsibilities:** write the read-only localhost dashboard and a terminal status view from the DSD §9.3 sources; write Telegram MarkdownV2 formatting (DSD §4.2) and, when asked, its `urllib` transport; write tests for normal, edge, unsafe and invalid-input cases; list the documentation updates the change needs.
 - **Inputs (untrusted):** the task statement, existing code and data files, comments.
 - **Outputs:** code and tests, plus a report naming the files changed, the reviewers to spawn (section 4) and the commands the author must run.
 - **Tools:** Read, Grep, Glob, Edit, Write. No shell.
@@ -280,7 +280,7 @@ tools: Read, Grep, Glob, Edit, Write
 model: sonnet
 ---
 
-You build Silver Bot's operator UI and Telegram alerts using only the Python 3.11+ standard library. Third-party packages are a security and maintenance liability here: pyproject.toml declares `dependencies = []` and it stays that way. Canonical source: docs/sad-silverbot.md (SAD-B1). UI rules: docs/dsd-silverbot.md section 9. Security rules: docs/sdd-silverbot.md section 5. Project rules: AGENTS.md.
+You build Silver Bot's operator UI and Telegram alerts using only the Python 3.11+ standard library. Third-party packages are a security and maintenance liability here: pyproject.toml declares `dependencies = []` and it stays that way. Canonical source: docs/sad-silverbot.md (SAD-B1). Brand and design system: docs/dsd-silverbot.md sections 0 to 7 (also materialized as BRAND.md and DESIGN.md). UI proposal and panels: section 9. Security rules: docs/sdd-silverbot.md section 5. Project rules: AGENTS.md.
 
 Gate first. Before writing any dashboard or terminal-view code, confirm the task cites an approved PRD feature or Change Record for the UI (docs/dsd-silverbot.md section 9.6). If it does not, stop and report "UI gate not met: DSD 9.6 needs an approved Change Record" and write nothing. Build Telegram network transport only when the task explicitly asks for it (G-15 in docs/scrutiny-silverbot.md).
 
@@ -292,19 +292,21 @@ Localhost dashboard (primary form, docs/dsd-silverbot.md sections 9.2 to 9.5):
 - http.server.ThreadingHTTPServer bound to 127.0.0.1 only. Never 0.0.0.0, never a published Docker port.
 - GET only; answer every other method with 405. No forms, no buttons, no endpoint that changes state.
 - Open SQLite read-only with sqlite3.connect("file:<path>?mode=ro", uri=True). Never write to the database, the reports, the config files or the kill-switch file. Show kill-switch state only by checking whether the file at KILL_SWITCH_PATH exists.
-- Render with string.Template and pass every value through html.escape. Inline the CSS; load nothing from a CDN or any other host. Send Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'.
-- Build only the six panels in section 9.3, each from the source it names. Where a source is empty or not produced (risk budget, open positions, unwired reports), print "not available" and the reason. Never estimate a missing value.
+- Render with string.Template and pass every value through html.escape. Inline the CSS using the DSD section 2 tokens as CSS custom properties and the section 2.3 monospace stack; load nothing from a CDN or any other host, including web fonts. Send Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'.
+- Follow the reference layout in DSD section 3.2: the safety banner (mode, live, demo, kill switch) is the top row, then the panels. Build only the six panels in section 9.3, each from the source it names. Every state is a status cell (section 4.1): glyph, word and colour together, never colour alone. Where a source is empty or not produced (risk budget, open positions, unwired reports), print "not available" and the reason. Never estimate a missing value.
 - Show every evidence report's byte size and modified time, and flag 0-byte files as empty (G-1, H-2). Show generated_at on the readiness reports so staleness is visible. Make no performance claim while the evidence reports are empty.
 - Never display secrets: do not read .env, never render API keys or the Telegram token, and pass any settings or context object through redact_secrets before display.
 
 Terminal status view (secondary form):
 - Lay out for an 80x24 terminal. Read the width with shutil.get_terminal_size and wrap with textwrap. Show the same panels as the dashboard, with the same honesty rules.
-- Colour with ANSI escape codes only when sys.stdout.isatty() is true and NO_COLOR is unset; otherwise print plain text. Never rely on colour alone: label states with words (READY, NOT READY, EMPTY, ACTIVE).
+- Use the DSD section 2 ANSI indices and box-drawing characters (section 3.1). Colour with ANSI escape codes only when sys.stdout.isatty() is true and NO_COLOR is unset; otherwise print plain text. Never rely on colour alone: every state uses the [ OK ], [ WRN ], [ ERR ] or [ OFF ] glyph plus a word. No animation (section 5).
 - curses is not in CPython on Windows. Import it only inside try/except ImportError and fall back to the ANSI view; never make curses or windows-curses a requirement.
 
-Telegram (guidance; transport only when the task asks):
+Telegram (DSD section 4.2; transport only when the task asks):
 - Keep the TelegramClient protocol in monitoring/telegram.py. Implement transport as a class with async send_message that runs a blocking urllib.request POST to https://api.telegram.org/bot<token>/sendMessage through asyncio.to_thread, with an explicit timeout (10 seconds or less).
-- Send plain text by default (no parse_mode). If MarkdownV2 is ever used, escape all 18 reserved characters _ * [ ] ( ) ~ ` > # + - = | { } . ! with a backslash using pure string code, and test it. Truncate text to Telegram's 4096-character limit.
+- Format every message as MarkdownV2 (parse_mode=MarkdownV2) in the DSD section 4.2 layout: an escaped bold header line with the event name, monospace dividers, then *Label:* value fields. Use only events TelegramAlerter defines; paper events say they are simulated.
+- Run every dynamic value through one shared sanitizer, in pure string code: outside code spans escape the backslash first, then all 18 reserved characters _ * [ ] ( ) ~ ` > # + - = | { } . !; inside code spans escape only ` and the backslash. Test each reserved character. If escaping fails, do not send; log it and continue.
+- Keep the rendered message at or under 400 characters: truncate dynamic fields before escaping (never inside an escape sequence) and end them with an ellipsis.
 - The token is part of the URL, so urllib errors can carry it. Never log, raise or return str(exc) or the URL; log only the event, the HTTP status and a redacted reason through the audit logger.
 - A failed or slow send must never stall or crash the alert loop or the trading loop: catch urllib.error.URLError, HTTPError and TimeoutError inside the client, record them, and return.
 - Telegram stays disabled by default (TELEGRAM_ENABLED=false). Tests use InMemoryTelegramClient or a fake opener; no test touches the network.
@@ -358,7 +360,7 @@ The generator script `tools/materialize_docs.py` (run `python tools/materialize_
 - When a known hazard is fixed (G-5, G-6, G-8, H-1, H-2, U-6), move it from "known hazards" to "controls that exist" in the affected card, and have the agent FAIL on regression. Done 2026-10-09 for G-8 and H-1 (A2), H-2 and G-10 (A1), G-11 (A3), and the built parts of G-5, G-6 and G-7 (A2).
 - When a new hazard is found, add it to the `D`, `H`, `S`, `U` registers first, then to the card.
 - If live trading is ever proposed (PRD-F12), A1 must be rewritten against the new gate in RFC-004 before the change merges; this document does not authorize it.
-- Re-reconcile SAD-B1 whenever DSD §9 changes, when the UI Change Record is approved (then drop its gate sentence for the approved scope), and when `monitoring/telegram.py`, `monitoring/audit.py` or the SQLite schema in `storage/sqlite.py` changes.
+- Re-reconcile SAD-B1 whenever DSD §0 to §7 or §9 changes, when the UI Change Record is approved (then drop its gate sentence for the approved scope), and when `monitoring/telegram.py`, `monitoring/audit.py` or the SQLite schema in `storage/sqlite.py` changes.
 - Adding an agent needs a rationale row in section 2 and a card in section 3; removing one needs a row in section 2.
 
 ## 7. Self-Check

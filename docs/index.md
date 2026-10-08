@@ -20,7 +20,7 @@ All suite docs were reconciled against code at commit `62037d1`, except the four
 | Business Requirements (BRD) | [brd-silverbot.md](brd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
 | Unit Economics (UES) | [ues-silverbot.md](ues-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
 | Product Requirements (PRD) | [prd-silverbot.md](prd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
-| Design System (DSD) | [dsd-silverbot.md](dsd-silverbot.md) | 0.1 | Draft (design system not started) | 2026-10-09 | N/A |
+| Design System (DSD) | [dsd-silverbot.md](dsd-silverbot.md) | 0.1 | Draft (design system specified, UI not built) | 2026-10-09 | N/A |
 | System Design (SDD) | [sdd-silverbot.md](sdd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
 | QA and Test Plan (QAD) | [qad-silverbot.md](qad-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`) |
 | Subagent Roster (SAD) | [sad-silverbot.md](sad-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
@@ -61,6 +61,8 @@ All suite docs were reconciled against code at commit `62037d1`, except the four
 | [CLAUDE.md](../CLAUDE.md) | Hand-maintained pointer | Itself; points here |
 | [AGENTS.md](../AGENTS.md) | Materialized | [build-silverbot.md](build-silverbot.md) |
 | [MODEL_CARD.md](../MODEL_CARD.md) | Materialized | [aia-silverbot.md](aia-silverbot.md) section 1 |
+| [BRAND.md](../BRAND.md) | Materialized | [dsd-silverbot.md](dsd-silverbot.md) sections 0 and 1 |
+| [DESIGN.md](../DESIGN.md) | Materialized | [dsd-silverbot.md](dsd-silverbot.md) sections 2 to 7 |
 | `.claude/agents/*.md` (5 files) | Materialized | [sad-silverbot.md](sad-silverbot.md) section 3 |
 
 Edit the source of truth, never the materialized file.
@@ -138,7 +140,7 @@ Owner decisions that shaped this suite (OD-1 to OD-7, from the [design spec](sup
 - OD-6: A small safety subagent roster, materialized to `.claude/agents/`.
 - OD-7: Code-first audit, then write. Code wins over old docs.
 
-Doc count: 17 suite docs (16 in the first table plus this index), 4 RFCs, 3 runbooks and 1 audit, which is 25 files under `docs/`, plus 4 tracked process records under `docs/superpowers/` (two design specs and two implementation plans: the 2026-10-08 canonical docs pair and the 2026-10-09 HIGH safety fixes pair). The root holds README.md, CLAUDE.md, AGENTS.md and MODEL_CARD.md.
+Doc count: 17 suite docs (16 in the first table plus this index), 4 RFCs, 3 runbooks and 1 audit, which is 25 files under `docs/`, plus 4 tracked process records under `docs/superpowers/` (two design specs and two implementation plans: the 2026-10-08 canonical docs pair and the 2026-10-09 HIGH safety fixes pair). The root holds README.md, CLAUDE.md, AGENTS.md, MODEL_CARD.md, BRAND.md and DESIGN.md.
 
 Excluded: GTM, PITCH and WRAP. This is a personal trading bot with no customers, no pitch audience and no external product launch, so market, investor and launch-wrap docs do not apply.
 
