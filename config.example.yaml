@@ -1,0 +1,39 @@
+# Safe config.yaml example. This file is not loaded unless copied to config.yaml.
+# Environment variables and .env override these values.
+
+trading:
+  mode: paper
+  live_trading: false
+  paper_trading: true
+  demo_trading: false
+
+database_path: data/silver_bot.sqlite3
+exchange_name: binance_futures
+
+exchange:
+  symbol: BTCUSDT
+  timeframe: 1m
+  binance_api_key: ""
+  binance_api_secret: ""
+  binance_testnet: false
+  binance_futures_base_url: ""
+
+risk:
+  engine_enabled: true
+  kill_switch_enabled: false
+  kill_switch_path: ""
+  stop_loss_required: true
+  max_risk_per_trade: 0.005
+  max_daily_loss: 0.02
+  max_leverage: 3
+
+telegram:
+  enabled: false
+  bot_token: ""
+  chat_id: ""
+
+ml:
+  filter_enabled: false
+  registry_path: models/model_registry.json
+  min_probability: 0.60
+  reduce_risk_threshold: 0.55

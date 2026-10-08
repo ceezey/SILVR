@@ -1,0 +1,19 @@
+[Unit]
+Description=ICT Silver Bullet Bot paper-mode container
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/silver-bot
+Environment=COMPOSE_PROJECT_NAME=silver-bot
+ExecStart=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up bot
+ExecStop=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml down
+Restart=always
+RestartSec=10
+User=silverbot
+Group=docker
+
+[Install]
+WantedBy=multi-user.target

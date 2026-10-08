@@ -1,0 +1,958 @@
+[
+{
+"task_id": "project_scaffold",
+"description": "Create the base Python trading bot repository with modular folders for data, strategy, risk, execution, ML, backtesting, monitoring, deployment, and tests.",
+"inputs": [
+"Python 3.11+",
+"Project name: ict_silver_bullet_bot",
+"Target exchange: Binance Futures or exchange-agnostic adapter"
+],
+"outputs": [
+"Structured repository",
+"pyproject.toml or requirements.txt",
+".env.example",
+"README.md",
+"main.py entrypoint"
+],
+"dependencies": [],
+"priority": 1
+},
+{
+"task_id": "configuration_system",
+"description": "Build a centralized configuration system for API credentials, symbols, timeframe settings, risk limits, Silver Bullet session windows, paper/live mode, and ML model toggles.",
+"inputs": [
+".env file",
+"config.yaml",
+"Trading pair list such as BTCUSDT, ETHUSDT",
+"Mode: backtest, paper, live"
+],
+"outputs": [
+"Typed config loader",
+"Validation errors for missing or unsafe settings",
+"Environment-specific configs"
+],
+"dependencies": [
+"project_scaffold"
+],
+"priority": 2
+},
+{
+"task_id": "exchange_adapter_interface",
+"description": "Create an abstract exchange adapter interface so the bot can support Binance Futures first while remaining extensible to other exchanges later.",
+"inputs": [
+"Exchange API documentation",
+"API key",
+"API secret",
+"Symbol",
+"Order type",
+"Quantity",
+"Leverage",
+"Position mode"
+],
+"outputs": [
+"BaseExchangeAdapter class",
+"BinanceFuturesAdapter implementation",
+"Methods for fetching candles, balances, positions, orders, and placing/canceling orders"
+],
+"dependencies": [
+"configuration_system"
+],
+"priority": 3
+},
+{
+"task_id": "market_data_fetcher",
+"description": "Implement historical OHLCV data acquisition for backtesting and ML dataset creation. Store clean candle data locally using Parquet or SQLite.",
+"inputs": [
+"Exchange adapter",
+"Symbol list",
+"Timeframes: 1m, 3m, 5m, 15m, 1h, 4h, 1d",
+"Start date",
+"End date"
+],
+"outputs": [
+"Historical OHLCV files",
+"Normalized candle schema",
+"Data completeness report"
+],
+"dependencies": [
+"exchange_adapter_interface"
+],
+"priority": 4
+},
+{
+"task_id": "live_market_stream",
+"description": "Build a live candle stream module using exchange WebSocket data with automatic reconnect, heartbeat checks, and fallback REST polling.",
+"inputs": [
+"Exchange WebSocket endpoint",
+"Symbol list",
+"Selected execution timeframe",
+"Fallback polling interval"
+],
+"outputs": [
+"Real-time candle updates",
+"Reconnect logic",
+"Stream health status",
+"Error logs"
+],
+"dependencies": [
+"exchange_adapter_interface",
+"market_data_fetcher"
+],
+"priority": 5
+},
+{
+"task_id": "data_storage_layer",
+"description": "Create a local data storage layer for candles, signals, trades, backtest results, ML features, model predictions, bot logs, and performance metrics.",
+"inputs": [
+"SQLite or PostgreSQL",
+"Candle data",
+"Trade events",
+"Signal events",
+"Model predictions"
+],
+"outputs": [
+"Database schema",
+"Repository classes",
+"CRUD functions",
+"Migration scripts"
+],
+"dependencies": [
+"market_data_fetcher"
+],
+"priority": 6
+},
+{
+"task_id": "time_session_engine",
+"description": "Implement the ICT Silver Bullet session scheduler using America/New_York timezone with DST awareness. The common Silver Bullet windows are London 03:00-04:00, New York AM 10:00-11:00, and New York PM 14:00-15:00 New York time. Sources describe the model as time-based and centered around liquidity and Fair Value Gaps. ",
+"inputs": [
+"Current UTC timestamp",
+"Timezone: America/New_York",
+"Configured session windows",
+"Enabled sessions"
+],
+"outputs": [
+"Boolean: is_inside_silver_bullet_window",
+"Current active session name",
+"Session start and end timestamps",
+"Session conversion to local timezone"
+],
+"dependencies": [
+"configuration_system"
+],
+"priority": 7
+},
+{
+"task_id": "market_structure_module",
+"description": "Build market structure detection for swing highs, swing lows, break of structure, change of character, and market structure shift. This module will support Silver Bullet confirmation after liquidity has been swept.",
+"inputs": [
+"OHLCV candles",
+"Swing lookback length",
+"Minimum displacement threshold",
+"Execution timeframe"
+],
+"outputs": [
+"Swing high and swing low labels",
+"BOS events",
+"CHOCH events",
+"MSS events",
+"Trend state"
+],
+"dependencies": [
+"market_data_fetcher",
+"data_storage_layer"
+],
+"priority": 8
+},
+{
+"task_id": "liquidity_detection_module",
+"description": "Detect external liquidity levels such as previous session high, previous session low, previous day high, previous day low, equal highs, equal lows, and recent swing liquidity.",
+"inputs": [
+"OHLCV candles",
+"Session definitions",
+"Lookback period",
+"Equal high/low tolerance"
+],
+"outputs": [
+"Buy-side liquidity levels",
+"Sell-side liquidity levels",
+"Liquidity sweep events",
+"Nearest liquidity target"
+],
+"dependencies": [
+"market_structure_module",
+"time_session_engine"
+],
+"priority": 9
+},
+{
+"task_id": "fair_value_gap_module",
+"description": "Implement Fair Value Gap detection. For bullish FVG, detect three-candle imbalances where candle 1 high is below candle 3 low. For bearish FVG, detect cases where candle 1 low is above candle 3 high. FVGs are a core component of the Silver Bullet model. ",
+"inputs": [
+"OHLCV candles",
+"Minimum FVG size",
+"Execution timeframe",
+"FVG mitigation rules"
+],
+"outputs": [
+"Bullish FVG zones",
+"Bearish FVG zones",
+"Active FVG list",
+"Mitigated FVG list"
+],
+"dependencies": [
+"market_data_fetcher"
+],
+"priority": 10
+},
+{
+"task_id": "displacement_detection_module",
+"description": "Detect strong displacement candles after liquidity sweeps. Use candle body size, ATR multiple, volume expansion, and directional impulse to confirm that price moved with strength.",
+"inputs": [
+"OHLCV candles",
+"ATR period",
+"Body-size threshold",
+"Volume threshold",
+"Direction"
+],
+"outputs": [
+"Displacement event",
+"Displacement strength score",
+"Impulse candle reference"
+],
+"dependencies": [
+"market_structure_module",
+"fair_value_gap_module"
+],
+"priority": 11
+},
+{
+"task_id": "higher_timeframe_bias_module",
+"description": "Create higher-timeframe bias logic using 1H, 4H, and 1D structure. The bot should avoid low-quality Silver Bullet trades that contradict major market direction unless configured for reversal-only mode.",
+"inputs": [
+"1H candles",
+"4H candles",
+"1D candles",
+"Swing structure",
+"Liquidity levels"
+],
+"outputs": [
+"HTF bias: bullish, bearish, neutral",
+"Premium/discount status",
+"Key HTF liquidity targets",
+"Trade permission flag"
+],
+"dependencies": [
+"market_structure_module",
+"liquidity_detection_module"
+],
+"priority": 12
+},
+{
+"task_id": "silver_bullet_strategy_engine",
+"description": "Implement the full ICT Silver Bullet rule engine. Valid long setup: inside Silver Bullet window, sell-side liquidity swept, bullish displacement/MSS appears, bullish FVG forms, price retraces into FVG, target is nearest buy-side liquidity. Valid short setup is the inverse.",
+"inputs": [
+"Session state",
+"Liquidity sweep events",
+"MSS events",
+"FVG zones",
+"HTF bias",
+"Current price"
+],
+"outputs": [
+"Long signal",
+"Short signal",
+"No-trade signal",
+"Entry zone",
+"Stop-loss level",
+"Take-profit level",
+"Setup invalidation reason"
+],
+"dependencies": [
+"time_session_engine",
+"liquidity_detection_module",
+"fair_value_gap_module",
+"displacement_detection_module",
+"higher_timeframe_bias_module"
+],
+"priority": 13
+},
+{
+"task_id": "signal_quality_scoring",
+"description": "Create a deterministic signal scoring system before ML is introduced. Score each setup based on liquidity quality, FVG size, displacement strength, HTF alignment, session timing, spread, volatility, and reward-to-risk.",
+"inputs": [
+"Strategy signal",
+"Liquidity score",
+"FVG score",
+"Displacement score",
+"HTF bias",
+"ATR",
+"Spread",
+"Reward-to-risk ratio"
+],
+"outputs": [
+"Signal quality score from 0 to 100",
+"Trade allowed or rejected",
+"Rejection reason"
+],
+"dependencies": [
+"silver_bullet_strategy_engine"
+],
+"priority": 14
+},
+{
+"task_id": "risk_management_engine",
+"description": "Build a hard risk management engine that calculates position size, validates stop-loss distance, blocks unsafe trades, and enforces daily risk limits.",
+"inputs": [
+"Account balance",
+"Risk per trade",
+"Entry price",
+"Stop-loss price",
+"Leverage",
+"Symbol precision",
+"Max daily loss",
+"Max consecutive losses"
+],
+"outputs": [
+"Position size",
+"Margin requirement",
+"Liquidation safety estimate",
+"Trade approval or rejection",
+"Risk violation reason"
+],
+"dependencies": [
+"signal_quality_scoring"
+],
+"priority": 15
+},
+{
+"task_id": "trade_management_engine",
+"description": "Implement post-entry trade management, including partial take profit, break-even stop movement, trailing stop option, time-based exit, and session-end exit.",
+"inputs": [
+"Open position",
+"Entry price",
+"Stop-loss",
+"Take-profit levels",
+"Current price",
+"Session end time"
+],
+"outputs": [
+"Updated stop-loss",
+"Partial TP orders",
+"Close position command",
+"Trade lifecycle events"
+],
+"dependencies": [
+"risk_management_engine"
+],
+"priority": 16
+},
+{
+"task_id": "order_execution_engine",
+"description": "Create a safe execution engine for paper and live trading. It must place entries, stop-loss orders, take-profit orders, cancel stale orders, and handle rejected or partially filled orders.",
+"inputs": [
+"Approved trade signal",
+"Position size",
+"Order type",
+"Entry price",
+"Stop-loss",
+"Take-profit",
+"Exchange adapter"
+],
+"outputs": [
+"Order IDs",
+"Execution status",
+"Fill price",
+"Slippage report",
+"Execution error report"
+],
+"dependencies": [
+"exchange_adapter_interface",
+"risk_management_engine",
+"trade_management_engine"
+],
+"priority": 17
+},
+{
+"task_id": "paper_trading_mode",
+"description": "Implement paper trading that simulates live execution using real-time market data without placing real orders. Include realistic slippage, fees, spreads, and partial fill simulation.",
+"inputs": [
+"Live market stream",
+"Strategy signals",
+"Fee rate",
+"Slippage model",
+"Initial paper balance"
+],
+"outputs": [
+"Simulated trades",
+"Paper account balance",
+"Paper equity curve",
+"Execution simulation logs"
+],
+"dependencies": [
+"live_market_stream",
+"order_execution_engine"
+],
+"priority": 18
+},
+{
+"task_id": "event_driven_backtester",
+"description": "Build an event-driven backtesting engine that uses historical candles to simulate the full bot lifecycle, including session windows, entries, exits, fees, slippage, risk limits, and trade management.",
+"inputs": [
+"Historical OHLCV data",
+"Strategy config",
+"Risk config",
+"Fee config",
+"Slippage assumptions"
+],
+"outputs": [
+"Backtest trades",
+"Equity curve",
+"Drawdown curve",
+"Win rate",
+"Profit factor",
+"Expectancy",
+"Max drawdown",
+"Sharpe-like ratio",
+"Session-specific results"
+],
+"dependencies": [
+"silver_bullet_strategy_engine",
+"risk_management_engine",
+"trade_management_engine"
+],
+"priority": 19
+},
+{
+"task_id": "backtest_validation_suite",
+"description": "Add validation tools to reduce false confidence. Include out-of-sample testing, walk-forward testing, Monte Carlo trade reshuffling, fee sensitivity, slippage sensitivity, and symbol-by-symbol analysis.",
+"inputs": [
+"Backtest results",
+"Trade logs",
+"Training date range",
+"Validation date range",
+"Test date range"
+],
+"outputs": [
+"Walk-forward report",
+"Monte Carlo report",
+"Robustness score",
+"Overfitting warning flags"
+],
+"dependencies": [
+"event_driven_backtester"
+],
+"priority": 20
+},
+{
+"task_id": "ml_dataset_builder",
+"description": "Create a supervised ML dataset from historical Silver Bullet setups. Each row should represent one valid or near-valid setup with engineered features and a future outcome label.",
+"inputs": [
+"Historical candles",
+"Detected liquidity events",
+"Detected FVGs",
+"MSS events",
+"Displacement features",
+"HTF bias",
+"Backtest trade outcomes"
+],
+"outputs": [
+"Feature dataset",
+"Labels such as win/loss, max favorable excursion, max adverse excursion, realized R multiple",
+"Train/validation/test split"
+],
+"dependencies": [
+"silver_bullet_strategy_engine",
+"event_driven_backtester"
+],
+"priority": 21
+},
+{
+"task_id": "feature_engineering_pipeline",
+"description": "Engineer ML features for trade filtering. Include session type, time inside session, FVG size, distance to liquidity, ATR, displacement strength, volume expansion, HTF trend, spread, funding rate if available, and recent volatility regime.",
+"inputs": [
+"ML raw dataset",
+"Candle indicators",
+"Session labels",
+"Risk/reward data"
+],
+"outputs": [
+"Clean ML feature matrix",
+"Feature metadata",
+"Missing-value handling",
+"Feature importance-ready dataset"
+],
+"dependencies": [
+"ml_dataset_builder"
+],
+"priority": 22
+},
+{
+"task_id": "baseline_ml_model_training",
+"description": "Train baseline ML models to act only as a probability filter, not as the main trader. Start with Logistic Regression, Random Forest, XGBoost or LightGBM if available. Predict probability that a setup reaches target before stop-loss.",
+"inputs": [
+"Feature matrix",
+"Outcome labels",
+"Train/validation/test split",
+"Model config"
+],
+"outputs": [
+"Trained baseline model",
+"Validation metrics",
+"Precision-recall report",
+"Calibration curve",
+"Saved model artifact"
+],
+"dependencies": [
+"feature_engineering_pipeline"
+],
+"priority": 23
+},
+{
+"task_id": "ml_probability_filter",
+"description": "Integrate the trained ML model into the live strategy pipeline. The model should only approve, reject, or downsize rule-based Silver Bullet signals. It must not generate trades independently.",
+"inputs": [
+"Rule-based signal",
+"Feature vector",
+"Trained ML model",
+"Minimum probability threshold",
+"Risk adjustment rules"
+],
+"outputs": [
+"ML probability score",
+"Approved signal",
+"Rejected signal",
+"Adjusted risk percentage"
+],
+"dependencies": [
+"baseline_ml_model_training",
+"silver_bullet_strategy_engine",
+"risk_management_engine"
+],
+"priority": 24
+},
+{
+"task_id": "model_registry",
+"description": "Create a simple model registry to track ML model versions, training periods, features used, validation results, and deployment status.",
+"inputs": [
+"Trained model artifact",
+"Training metadata",
+"Validation metrics",
+"Feature list"
+],
+"outputs": [
+"Model registry table",
+"Model version ID",
+"Active model pointer",
+"Rollback capability"
+],
+"dependencies": [
+"baseline_ml_model_training"
+],
+"priority": 25
+},
+{
+"task_id": "ai_agent_analyst_module",
+"description": "Build an optional AI analyst module that summarizes bot performance, reviews trade journals, detects repeated failure patterns, and suggests parameter reviews. The AI agent must not place trades directly.",
+"inputs": [
+"Trade journal",
+"Backtest reports",
+"Live performance metrics",
+"Rejected trade logs",
+"Prompt templates"
+],
+"outputs": [
+"Daily summary",
+"Weekly performance review",
+"Mistake pattern analysis",
+"Suggested improvements for human review"
+],
+"dependencies": [
+"data_storage_layer",
+"event_driven_backtester",
+"paper_trading_mode"
+],
+"priority": 26
+},
+{
+"task_id": "telegram_alert_system",
+"description": "Implement Telegram alerts for bot status, detected setups, trade entries, exits, errors, daily loss lockout, exchange disconnects, and performance summaries.",
+"inputs": [
+"Telegram bot token",
+"Telegram chat ID",
+"Signal events",
+"Trade events",
+"Error events"
+],
+"outputs": [
+"Telegram notification messages",
+"Formatted trade cards",
+"Error alerts",
+"Daily summary alerts"
+],
+"dependencies": [
+"data_storage_layer",
+"order_execution_engine"
+],
+"priority": 27
+},
+{
+"task_id": "performance_dashboard",
+"description": "Create a lightweight local dashboard using Streamlit, FastAPI, or a simple web UI to monitor equity curve, open positions, daily PnL, win rate, drawdown, active model version, and recent trades.",
+"inputs": [
+"Trade database",
+"Performance metrics",
+"Open position data",
+"Model registry"
+],
+"outputs": [
+"Dashboard app",
+"Equity curve chart",
+"Trade table",
+"Risk status panel",
+"Model status panel"
+],
+"dependencies": [
+"data_storage_layer",
+"model_registry"
+],
+"priority": 28
+},
+{
+"task_id": "logging_and_audit_system",
+"description": "Build structured logging for all bot decisions. Every trade must record why it was entered, why it was rejected, what rules passed, what rules failed, and what the ML probability was.",
+"inputs": [
+"Strategy decisions",
+"Risk decisions",
+"ML predictions",
+"Execution events",
+"Errors"
+],
+"outputs": [
+"Structured JSON logs",
+"Audit trail",
+"Debug reports",
+"Trade explanation records"
+],
+"dependencies": [
+"silver_bullet_strategy_engine",
+"ml_probability_filter",
+"order_execution_engine"
+],
+"priority": 29
+},
+{
+"task_id": "safety_kill_switch",
+"description": "Implement emergency safety controls. The bot must stop opening new trades after max daily loss, max consecutive losses, API errors, abnormal slippage, repeated rejected orders, or manual kill switch activation.",
+"inputs": [
+"Daily PnL",
+"Consecutive loss count",
+"Exchange error count",
+"Slippage data",
+"Manual override file or command"
+],
+"outputs": [
+"Trading disabled state",
+"Emergency close option",
+"Telegram alert",
+"Safety event log"
+],
+"dependencies": [
+"risk_management_engine",
+"order_execution_engine",
+"telegram_alert_system"
+],
+"priority": 30
+},
+{
+"task_id": "unit_tests",
+"description": "Write unit tests for FVG detection, liquidity sweep detection, MSS detection, position sizing, session conversion, risk lockout, order validation, and ML feature generation.",
+"inputs": [
+"Test candles",
+"Mock exchange adapter",
+"Known strategy scenarios",
+"Expected outputs"
+],
+"outputs": [
+"Pytest test suite",
+"Coverage report",
+"Regression test fixtures"
+],
+"dependencies": [
+"fair_value_gap_module",
+"liquidity_detection_module",
+"market_structure_module",
+"risk_management_engine"
+],
+"priority": 31
+},
+{
+"task_id": "integration_tests",
+"description": "Create integration tests that simulate the complete bot flow from candle input to signal generation, risk approval, paper execution, trade management, and database logging.",
+"inputs": [
+"Historical candle sample",
+"Mock account balance",
+"Mock exchange responses",
+"Strategy config"
+],
+"outputs": [
+"End-to-end test results",
+"Paper trade simulation",
+"Database verification",
+"Execution event verification"
+],
+"dependencies": [
+"unit_tests",
+"paper_trading_mode"
+],
+"priority": 32
+},
+{
+"task_id": "docker_containerization",
+"description": "Containerize the bot using Docker. Include separate commands for backtesting, paper trading, live trading, dashboard, and ML training.",
+"inputs": [
+"Dockerfile",
+"docker-compose.yaml",
+".env file",
+"Bot source code"
+],
+"outputs": [
+"Docker image",
+"Docker Compose services",
+"Reproducible runtime environment"
+],
+"dependencies": [
+"project_scaffold",
+"configuration_system",
+"paper_trading_mode"
+],
+"priority": 33
+},
+{
+"task_id": "vps_deployment_setup",
+"description": "Prepare deployment scripts for running the bot 24/7 on a free or low-cost VPS such as Oracle Cloud Always Free. Include Docker setup, firewall rules, log rotation, restart policy, and environment setup.",
+"inputs": [
+"VPS instance",
+"SSH key",
+"Docker image",
+".env file",
+"Deployment script"
+],
+"outputs": [
+"Running VPS deployment",
+"Auto-restart configuration",
+"Persistent logs",
+"Deployment README"
+],
+"dependencies": [
+"docker_containerization",
+"telegram_alert_system"
+],
+"priority": 34
+},
+{
+"task_id": "systemd_or_supervisor_service",
+"description": "Create a systemd or supervisor service to keep the bot running continuously, restart it after crashes, and start it automatically after VPS reboot.",
+"inputs": [
+"Bot start command",
+"Working directory",
+"Environment file path",
+"Restart policy"
+],
+"outputs": [
+"systemd service file",
+"Service start/stop/restart commands",
+"Startup verification"
+],
+"dependencies": [
+"vps_deployment_setup"
+],
+"priority": 35
+},
+{
+"task_id": "secrets_security",
+"description": "Implement security practices for API keys and environment secrets. Ensure secrets are never committed to GitHub. Support read-only, trade-only, and withdrawal-disabled API keys.",
+"inputs": [
+".env file",
+".gitignore",
+"Exchange API key permissions",
+"Deployment environment"
+],
+"outputs": [
+"Secret loading system",
+"Security checklist",
+"Git ignore rules",
+"API permission validation warning"
+],
+"dependencies": [
+"configuration_system",
+"vps_deployment_setup"
+],
+"priority": 36
+},
+{
+"task_id": "live_readiness_checklist",
+"description": "Create a pre-live checklist that blocks live trading unless all requirements are met: profitable out-of-sample backtest, stable paper trading, kill switch enabled, Telegram alerts working, correct leverage, and withdrawal disabled on API keys.",
+"inputs": [
+"Backtest report",
+"Paper trading report",
+"Risk config",
+"Exchange config",
+"API key permission status"
+],
+"outputs": [
+"Live readiness report",
+"Pass/fail result",
+"Blocked-live-trading reasons"
+],
+"dependencies": [
+"backtest_validation_suite",
+"paper_trading_mode",
+"safety_kill_switch",
+"secrets_security"
+],
+"priority": 37
+},
+{
+"task_id": "live_trading_mode",
+"description": "Enable live trading only after the readiness checklist passes. Live mode must use conservative default risk, isolated margin, strict stop-loss placement, and no martingale logic.",
+"inputs": [
+"Approved live config",
+"Exchange API credentials",
+"Risk settings",
+"Strategy settings",
+"ML filter settings"
+],
+"outputs": [
+"Live trading process",
+"Real orders",
+"Live trade logs",
+"Live performance metrics"
+],
+"dependencies": [
+"live_readiness_checklist",
+"order_execution_engine",
+"safety_kill_switch"
+],
+"priority": 38
+},
+{
+"task_id": "daily_performance_report",
+"description": "Generate an automated daily report showing trades taken, rejected setups, PnL, drawdown, win rate, average R, best trade, worst trade, rule failures, and ML filter decisions.",
+"inputs": [
+"Trade logs",
+"Rejected signal logs",
+"ML predictions",
+"Daily account equity"
+],
+"outputs": [
+"Daily report JSON",
+"Telegram summary",
+"Dashboard update"
+],
+"dependencies": [
+"logging_and_audit_system",
+"telegram_alert_system",
+"performance_dashboard"
+],
+"priority": 39
+},
+{
+"task_id": "weekly_model_retraining_pipeline",
+"description": "Create an optional retraining pipeline that retrains the ML filter using newly collected trade and market data. New models must not replace the active model unless validation metrics improve out-of-sample.",
+"inputs": [
+"Updated market data",
+"Updated trade outcomes",
+"Existing feature pipeline",
+"Current active model"
+],
+"outputs": [
+"Candidate model",
+"Comparison report",
+"Promotion or rejection decision",
+"Updated model registry"
+],
+"dependencies": [
+"model_registry",
+"baseline_ml_model_training",
+"ml_probability_filter"
+],
+"priority": 40
+},
+{
+"task_id": "strategy_parameter_optimizer",
+"description": "Build a constrained optimizer for strategy parameters such as FVG minimum size, liquidity lookback, ATR threshold, stop buffer, RR minimum, and ML probability threshold. The optimizer must use walk-forward validation and must not optimize directly on the final test set.",
+"inputs": [
+"Historical data",
+"Parameter ranges",
+"Backtesting engine",
+"Walk-forward split"
+],
+"outputs": [
+"Best parameter set",
+"Robustness report",
+"Overfitting warnings",
+"Rejected parameter sets"
+],
+"dependencies": [
+"backtest_validation_suite"
+],
+"priority": 41
+},
+{
+"task_id": "multi_symbol_support",
+"description": "Extend the bot to monitor multiple symbols while enforcing portfolio-level risk limits, correlation controls, and maximum simultaneous trades.",
+"inputs": [
+"Symbol list",
+"Per-symbol config",
+"Portfolio risk limit",
+"Correlation threshold"
+],
+"outputs": [
+"Multi-symbol scanner",
+"Portfolio exposure report",
+"Trade prioritization logic",
+"Conflict rejection logic"
+],
+"dependencies": [
+"silver_bullet_strategy_engine",
+"risk_management_engine",
+"live_market_stream"
+],
+"priority": 42
+},
+{
+  "task_id": "documentation_for_codex_and_humans",
+  "description": "Maintain and finalize project documentation as the bot is developed. Documentation should explain architecture, setup, strategy rules, backtesting, paper trading, live deployment, risk rules, ML model usage, monitoring, and emergency shutdown procedures.",
+  "inputs": [
+    "Existing README.md",
+    "Existing ARCHITECTURE.md",
+    "Existing BACKTESTING.md",
+    "Existing STRATEGY_NOTES.md",
+    "Existing RISK_POLICY.md",
+    "Existing ML_MODEL.md",
+    "Existing DEPLOYMENT.md",
+    "Existing PROGRESS.md",
+    "Existing TODO.md",
+    "Final source code",
+    "Configuration examples",
+    "Deployment steps",
+    "Risk policy"
+  ],
+  "outputs": [
+    "Updated README.md",
+    "Updated ARCHITECTURE.md",
+    "Updated BACKTESTING.md",
+    "Updated STRATEGY_NOTES.md",
+    "Updated RISK_POLICY.md",
+    "Updated ML_MODEL.md",
+    "Updated DEPLOYMENT.md",
+    "Updated PROGRESS.md",
+    "Updated TODO.md"
+  ],
+  "dependencies": [
+    "vps_deployment_setup",
+    "live_readiness_checklist"
+  ],
+  "priority": 43
+}
+]

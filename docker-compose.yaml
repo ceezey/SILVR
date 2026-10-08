@@ -1,0 +1,85 @@
+name: silver-bot
+
+x-safe-environment: &safe-environment
+  LIVE_TRADING: "false"
+  DATABASE_PATH: /app/data/silver_bot.sqlite3
+  ML_REGISTRY_PATH: /app/models/model_registry.json
+  TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-false}"
+  ML_FILTER_ENABLED: "${ML_FILTER_ENABLED:-false}"
+
+x-bot-common: &bot-common
+  build:
+    context: .
+  image: silver-bot:local
+  env_file:
+    - path: .env
+      required: false
+  volumes:
+    - ./data:/app/data
+    - ./logs:/app/logs
+    - ./models:/app/models
+    - ./reports:/app/reports
+
+services:
+  bot:
+    <<: *bot-common
+    container_name: silver-bot-paper
+    environment:
+      <<: *safe-environment
+      TRADING_MODE: paper
+      PAPER_TRADING: "true"
+    command: ["python", "-m", "silver_bot"]
+    restart: unless-stopped
+
+  paper:
+    <<: *bot-common
+    profiles: ["paper"]
+    environment:
+      <<: *safe-environment
+      TRADING_MODE: paper
+      PAPER_TRADING: "true"
+    command: ["python", "-m", "silver_bot"]
+    restart: "no"
+
+  demo:
+    <<: *bot-common
+    profiles: ["demo"]
+    environment:
+      <<: *safe-environment
+      MODE: demo
+      TRADING_MODE: demo
+      DEMO_TRADING: "true"
+      BINANCE_TESTNET: "true"
+      BINANCE_FUTURES_BASE_URL: https://testnet.binancefuture.com
+      PAPER_TRADING: "false"
+      RISK_ENGINE_ENABLED: "true"
+      KILL_SWITCH_ENABLED: "true"
+      KILL_SWITCH_PATH: /app/data/KILL_SWITCH
+      STOP_LOSS_REQUIRED: "true"
+      MAX_RISK_PER_TRADE: "0.005"
+      MAX_DAILY_LOSS: "0.02"
+      MAX_LEVERAGE: "3"
+    command: ["python", "-m", "silver_bot"]
+    restart: "no"
+
+  backtest:
+    <<: *bot-common
+    profiles: ["backtest"]
+    environment:
+      <<: *safe-environment
+      TRADING_MODE: backtest
+      PAPER_TRADING: "false"
+      ML_FILTER_ENABLED: "${ML_FILTER_ENABLED:-false}"
+    command: ["python", "-m", "silver_bot"]
+    restart: "no"
+
+  research:
+    <<: *bot-common
+    profiles: ["research"]
+    environment:
+      <<: *safe-environment
+      TRADING_MODE: backtest
+      PAPER_TRADING: "false"
+      ML_FILTER_ENABLED: "false"
+    command: ["python", "-m", "silver_bot"]
+    restart: "no"
