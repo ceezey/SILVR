@@ -6,6 +6,10 @@ from datetime import date
 
 from silver_bot.risk.kill_switch import KillSwitch
 from silver_bot.risk.models import RiskConfig, RiskDecision, RiskRequest, RiskState, RiskStateStore
+from silver_bot.utils.logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class RiskManagementEngine:
@@ -28,6 +32,7 @@ class RiskManagementEngine:
                 state = state_store.load_risk_state()
             except Exception as exc:  # fail closed on any unreadable state
                 self.state_load_error = str(exc)
+                logger.error("risk state could not be loaded; trading halted: %s", exc)
         self.state = state or RiskState()
 
     def evaluate(self, request: RiskRequest) -> RiskDecision:
@@ -119,9 +124,9 @@ class RiskManagementEngine:
             self.state.consecutive_losses += 1
         elif realized_pnl > 0:
             self.state.consecutive_losses = 0
+        self._save_state()
         if self.state.consecutive_losses >= self.config.max_consecutive_losses:
             self.kill_switch.trip("Max consecutive losses limit reached")
-        self._save_state()
 
     def _save_state(self) -> None:
         if self.state_store is not None and self.state_load_error is None:

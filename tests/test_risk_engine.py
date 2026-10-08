@@ -319,3 +319,42 @@ def test_engine_without_store_does_not_persist(tmp_path) -> None:
     engine.reserve_trade(date(2026, 1, 2))
 
     assert engine.state_store is None
+
+
+def test_loss_is_persisted_even_if_kill_switch_trip_fails(tmp_path) -> None:
+    storage = risk_storage(tmp_path)
+    engine = RiskManagementEngine(RiskConfig(max_consecutive_losses=1), state_store=storage)
+
+    def failing_trip(reason: str) -> None:
+        raise OSError("read-only filesystem")
+
+    engine.kill_switch.trip = failing_trip
+    day = date(2026, 1, 2)
+    engine.reserve_trade(day)
+
+    with pytest.raises(OSError):
+        engine.release_trade(realized_pnl=-10, day=day)
+
+    saved = storage.load_risk_state()
+    assert saved.consecutive_losses == 1
+    assert saved.daily_realized_pnl == -10
+    assert saved.open_positions == 0
+
+
+def test_risk_state_load_error_is_logged(tmp_path, caplog) -> None:
+    import sqlite3
+
+    storage = risk_storage(tmp_path)
+    storage.save_risk_state(RiskState(current_day=date(2026, 1, 2)))
+    connection = sqlite3.connect(storage.database_path)
+    try:
+        connection.execute("UPDATE risk_state SET trades_today = -1")
+        connection.commit()
+    finally:
+        connection.close()
+
+    with caplog.at_level("ERROR", logger="silver_bot.risk.engine"):
+        RiskManagementEngine(state_store=storage)
+
+    assert "risk state could not be loaded" in caplog.text
+    assert "trades_today" in caplog.text
