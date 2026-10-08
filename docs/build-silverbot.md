@@ -119,7 +119,7 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
 
 ### (b) An order request passes through the risk engine and kill switch
 
-`src/silver_bot/risk/engine.py:25-34` (kill switch is the first check) and `src/silver_bot/execution/paper_trading.py:207-216` (the caller must ask the risk engine before any fill):
+`src/silver_bot/risk/engine.py:25-36` (kill switch is the first check) and `src/silver_bot/execution/paper_trading.py:207-216` (the caller must ask the risk engine before any fill):
 
 ```python
     def evaluate(self, request: RiskRequest) -> RiskDecision:
@@ -131,6 +131,8 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
             return self._reject("Kill switch is active")
         if request.equity <= 0:
             return self._reject("Account equity must be positive")
+        if request.entry_price is None:
+            return self._reject("Entry price is required")
         if request.stop_loss is None:
             return self._reject("Stop loss is required")
 ```
@@ -150,6 +152,8 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
             ...
             return
 ```
+
+The `...` elides the lines after 216 (the rejection event, audit log and alert).
 
 A rejected decision is recorded and the function returns before any position is opened.
 
