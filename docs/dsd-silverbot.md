@@ -107,7 +107,7 @@ A layout sketch, not a chart. Values are today's real state where one exists (re
 │       generated 2026-06-15 14:31 UTC │ live_readiness_report 2229 B  [ OK ]  │
 │                                      │ demo_readiness_report 2404 B  [ OK ]  │
 ├──────────────────────────────────────┴───────────────────────────────────────┤
-│ RISK BUDGET   not available: risk state is in memory only (G-7, H-11)        │
+│ RISK BUDGET   not available: risk_state table empty, no running bot (G-3)    │
 ├──────────────────────────────────────┬───────────────────────────────────────┤
 │ OPEN POSITIONS / RECENT TRADES       │ ALERTS (logs/audit.jsonl)             │
 ├──────────────────────────────────────┼───────────────────────────────────────┤
@@ -160,7 +160,7 @@ The audit log is the source of record for mode C and the alerts panel. Built for
 
 ### 4.4 Report and file rows
 
-Every evidence or readiness file is a row: name, size in bytes, state. A 0-byte file is `[ ERR ]` and no metric from it is shown (G-1, H-2). Readiness rows add `generated_at` so staleness is visible.
+Every evidence or readiness file is a row: name, size in bytes, state. A 0-byte or non-JSON file is `[ ERR ]` and no metric from it is shown (G-1). Readiness rows add `generated_at` so staleness is visible.
 
 ## 5. Motion
 
