@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Protocol
+
+MAX_RISK_PER_TRADE = 0.005
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,8 +29,8 @@ class RiskConfig:
     kill_switch_path: Path | None = None
 
     def __post_init__(self) -> None:
-        if not 0 < self.risk_per_trade <= 0.05:
-            raise ValueError("risk_per_trade must be greater than 0 and no more than 5%")
+        if not 0 < self.risk_per_trade <= MAX_RISK_PER_TRADE:
+            raise ValueError("risk_per_trade must be greater than 0 and no more than 0.5%")
         if self.minimum_stop_distance <= 0:
             raise ValueError("minimum_stop_distance must be positive")
         if self.minimum_reward_to_risk <= 0:
@@ -61,6 +64,18 @@ class RiskState:
             self.current_day = day
             self.daily_realized_pnl = 0.0
             self.trades_today = 0
+
+
+class RiskStateError(ValueError):
+    """Raised when persisted risk state cannot be trusted."""
+
+
+class RiskStateStore(Protocol):
+    """Persistence for RiskState across restarts."""
+
+    def load_risk_state(self) -> RiskState | None: ...
+
+    def save_risk_state(self, state: RiskState) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)

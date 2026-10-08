@@ -223,3 +223,19 @@ def test_demo_config_rejects_disabled_testnet_flag(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="BINANCE_TESTNET"):
         load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+
+def test_max_risk_per_trade_above_cap_is_rejected_in_paper_mode(tmp_path: Path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("MAX_RISK_PER_TRADE=0.01\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="MAX_RISK_PER_TRADE"):
+        load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+
+def test_kill_switch_enabled_without_path_is_rejected_in_paper_mode(tmp_path: Path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("KILL_SWITCH_ENABLED=true\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="KILL_SWITCH_PATH"):
+        load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})

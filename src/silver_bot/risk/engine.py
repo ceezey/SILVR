@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from silver_bot.risk.kill_switch import KillSwitch
-from silver_bot.risk.models import RiskConfig, RiskDecision, RiskRequest, RiskState
+from silver_bot.risk.models import RiskConfig, RiskDecision, RiskRequest, RiskState, RiskStateStore
 
 
 class RiskManagementEngine:
@@ -17,15 +17,28 @@ class RiskManagementEngine:
         *,
         state: RiskState | None = None,
         kill_switch: KillSwitch | None = None,
+        state_store: RiskStateStore | None = None,
     ) -> None:
         self.config = config or RiskConfig()
-        self.state = state or RiskState()
         self.kill_switch = kill_switch or KillSwitch(self.config.kill_switch_path)
+        self.state_store = state_store
+        self.state_load_error: str | None = None
+        if state is None and state_store is not None:
+            try:
+                state = state_store.load_risk_state()
+            except Exception as exc:  # fail closed on any unreadable state
+                self.state_load_error = str(exc)
+        self.state = state or RiskState()
 
     def evaluate(self, request: RiskRequest) -> RiskDecision:
         """Return a risk decision with an explicit approval or rejection reason."""
 
+        if self.state_load_error is not None:
+            return self._reject("Risk state could not be loaded; trading halted")
+        previous_day = self.state.current_day
         self.state.roll_day(request.signal_day)
+        if self.state.current_day != previous_day:
+            self._save_state()
 
         if self.kill_switch.is_active():
             return self._reject("Kill switch is active")
@@ -62,8 +75,10 @@ class RiskManagementEngine:
 
         max_daily_loss_amount = request.equity * self.config.max_daily_loss
         if self.state.daily_realized_pnl <= -max_daily_loss_amount:
+            self.kill_switch.trip("Max daily loss limit reached")
             return self._reject("Max daily loss limit reached", reward_to_risk=reward_to_risk)
         if self.state.consecutive_losses >= self.config.max_consecutive_losses:
+            self.kill_switch.trip("Max consecutive losses limit reached")
             return self._reject("Max consecutive losses limit reached", reward_to_risk=reward_to_risk)
         if self.state.trades_today >= self.config.max_trades_per_day:
             return self._reject("Max trades per day limit reached", reward_to_risk=reward_to_risk)
@@ -92,6 +107,7 @@ class RiskManagementEngine:
         self.state.roll_day(day)
         self.state.trades_today += 1
         self.state.open_positions += 1
+        self._save_state()
 
     def release_trade(self, *, realized_pnl: float, day: date) -> None:
         """Release open-position capacity and update realized risk state."""
@@ -103,6 +119,13 @@ class RiskManagementEngine:
             self.state.consecutive_losses += 1
         elif realized_pnl > 0:
             self.state.consecutive_losses = 0
+        if self.state.consecutive_losses >= self.config.max_consecutive_losses:
+            self.kill_switch.trip("Max consecutive losses limit reached")
+        self._save_state()
+
+    def _save_state(self) -> None:
+        if self.state_store is not None and self.state_load_error is None:
+            self.state_store.save_risk_state(self.state)
 
     @staticmethod
     def _stop_distance(*, direction: str, entry_price: float, stop_loss: float) -> float:
