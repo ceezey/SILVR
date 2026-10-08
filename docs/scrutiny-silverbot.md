@@ -114,6 +114,7 @@ Status values: Open (answerable from code or work), Planned (roadmap item not bu
 | G-29 | Open code-answerable unknowns: U-5 (scripts building non-default configs), U-6 (HTF lookahead in ML dataset), U-7 (strategy lookahead), U-8 (tzdata in deployment), U-9 (bind-mount UID), U-10 (`.env.example` completeness), U-11 (CONFIGURATION.md completeness), U-12 (compose version), U-13 (sklearn tests in CI), U-14 (newer ML docs under `docs/`), U-15 (other consumers of AppConfig fields), U-16 (real `.env` behaviour; not opened by design), U-17 (callers of `from_config`), U-18 (None session names), U-19 (kill-switch file semantics documentation), U-20 (secret scan outside git). U-21 is resolved (risk multiplier bounded to (0,1]). | MEDIUM. Each could hide a defect; none is answered by current evidence. | SDD (per topic), QAD §3, OPS | Open |
 | G-30 | Owner input required: capital and risk budget, target instruments, tolerance for drawdown, success criteria, jurisdiction, intended venue account, and the owner-only unknowns U-1 (is the restart loop intentional), U-2 (config.yaml in container), U-3 (who builds `MLFilterConfig`), U-4 (reconnect policy configuration). Collected as the owner input register in BRD §8 (docs/brd-silverbot.md). | HIGH for planning. Numeric targets and limits cannot be set without the owner. | BRD §8 | Owner input required |
 | G-31 | LOW-severity documentation drift D-51 to D-85 (file layouts, field names, option lists, metric columns, image names, log globs). | LOW. Documentation only; closed when the canonical docs are written. | SDD, AIA, OPS (per D-# Resolved in line) | Open |
+| G-32 | Uncovered test scenarios; register in QAD §3.8 (docs/qad-silverbot.md). Behaviours the PRD and RFCs state that no test pins and no other gap tracks: quality-score and reward-to-risk rejection in the strategy, the NO_TRADE-needs-a-reason construction error, partial take profit and breakeven, backtest determinism, audit-write failure handling, ML filter probability clamping and registry file errors. | MEDIUM. These paths run in operation but a regression would pass the suite. | QAD §3.8 | Open |
 
 Coverage check: each row shows which stubs (S-#), drift findings (D-#) and hazards (H-#) a gap covers. Every HIGH drift finding (D-1 to D-13, D-86) maps to a HIGH gap row.
 
@@ -150,6 +151,7 @@ Coverage check: each row shows which stubs (S-#), drift findings (D-#) and hazar
 | G-29 | U-5 to U-20 (open unknowns) |
 | G-30 | U-1 to U-4 and missing owner inputs (BRD §8) |
 | G-31 | D-51 to D-85 (LOW drift not named in another row) |
+| G-32 | Test scenarios with no S/D/H finding (PRD-stated behaviour with no test); see QAD §3.8 |
 
 ## 4. Assumption Stress-Test
 
