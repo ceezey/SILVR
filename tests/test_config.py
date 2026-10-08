@@ -234,3 +234,19 @@ def test_demo_config_rejects_lookalike_testnet_url(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="testnet endpoint"):
         load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_shipped_env_example_loads_as_paper(tmp_path: Path) -> None:
+    config = load_config(
+        env_path=REPO_ROOT / ".env.example",
+        yaml_path=tmp_path / "missing.yaml",
+        environ={},
+    )
+
+    assert config.mode == TradingMode.PAPER
+    assert config.paper_trading is True
+    assert config.demo_trading is False
+    assert config.live_trading is False
