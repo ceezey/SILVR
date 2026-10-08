@@ -181,7 +181,7 @@ Limits of the policy, as built:
 | Calibration | Brier score and expected calibration error over equal-width bins (default 10); report only, no calibrator is fitted or applied | `ml/calibration.py:59-119` |
 | Artifacts | `pickle` files plus `feature_list.json` and `<model_name>_validation_metrics.json` | `ml/training.py:202-231` |
 
-Leakage control is name-based plus prefix slicing, and the dataset builder passes the higher-timeframe candles to every strategy call without cutting them to the signal time, which may allow future HTF data into features and labels (D-39, U-6, G-22). Full treatment belongs in the SDD §8.1 and the AI risk assessment (not yet written).
+Leakage control is name-based plus prefix slicing, and the dataset builder passes the higher-timeframe candles to every strategy call without cutting them to the signal time, which may allow future HTF data into features and labels (D-39, U-6, G-22). Full treatment belongs in the SDD §8.1 and the AI risk assessment ([aia-silverbot.md](aia-silverbot.md)).
 
 ### 3.8 Old ML plan: carried and dropped
 

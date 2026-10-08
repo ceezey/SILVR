@@ -537,14 +537,14 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ## Code hazards (not doc drift)
 
-These were found while reading code and contradict no old document. Recorded, not fixed: code changes are out of scope for this pass. Each HIGH and MEDIUM hazard has a gap row in docs/scrutiny-silverbot.md section 3. Hazards are closed by a later code-change plan, not by documentation.
+These were found while reading code and contradict no old document. Recorded, not fixed: code changes are out of scope for this pass. Each HIGH and MEDIUM hazard has a gap row in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3. Hazards are closed by a later code-change plan, not by documentation.
 
 
 ### H-1. NaN model probability becomes 1.0 and approves a signal
 
 - **Severity:** HIGH
 - **Evidence:** `ml/filter.py:179`: `max(0.0, min(1.0, nan))` evaluates to 1.0 (executed). A broken model output would approve a trade; the risk engine still applies afterwards.
-- **Gap row:** G-8 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-8 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -552,7 +552,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** HIGH
 - **Evidence:** `readiness.py:150-165`; committed `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are 0 bytes yet three report checks pass (executed). See also D-86.
-- **Gap row:** G-1, G-2 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-1, G-2 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -560,7 +560,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** MEDIUM
 - **Evidence:** `readiness.py:96-97` requires LIVE_TRADING=true and PAPER_TRADING=false; `config/settings.py:104-105` rejects both. The live readiness report can never be fully green for a loadable configuration.
-- **Gap row:** G-2 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-2 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -568,7 +568,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** MEDIUM
 - **Evidence:** `main.py:50` returns after the start and stop audit events; `docker-compose.yaml:32` (restart: unless-stopped) and `deploy/systemd/silver-bot.service:13` (Restart=always) loop it.
-- **Gap row:** G-3 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-3 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -576,7 +576,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** HIGH
 - **Evidence:** `risk/models.py:29` allows risk_per_trade up to 0.05; `config/settings.py:186-190` limits are checked in demo mode only and never reach RiskConfig. See D-11.
-- **Gap row:** G-5 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-5 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -584,7 +584,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** MEDIUM
 - **Evidence:** `backtest/engine.py:39` and `execution/paper_trading.py:48` call `SilverBulletStrategyEngine()` with defaults everywhere.
-- **Gap row:** G-18 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-18 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -592,7 +592,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** MEDIUM
 - **Evidence:** `backtest/models.py:34-35`. See D-5.
-- **Gap row:** G-11 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-11 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -600,7 +600,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** MEDIUM
 - **Evidence:** `ml/registry.py:126-131`.
-- **Gap row:** G-23 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-23 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -608,7 +608,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** HIGH
 - **Evidence:** `risk/kill_switch.py:11-17`; `execution/paper_trading.py:49` builds a default engine with no path. See D-12 and D-22.
-- **Gap row:** G-6 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-6 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -616,7 +616,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** LOW
 - **Evidence:** `backtest/engine.py:205,220-221`; `execution/paper_trading.py:267`.
-- **Gap row:** G-21 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-21 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -624,7 +624,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** HIGH
 - **Evidence:** `risk/models.py:47-63`. Combined with the H-4 restart loop, restarts would reset those gates repeatedly.
-- **Gap row:** G-7 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-7 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -632,7 +632,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** MEDIUM
 - **Evidence:** `data/stream.py:64,107-111`.
-- **Gap row:** G-13 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-13 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -640,7 +640,7 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** MEDIUM
 - **Evidence:** Test inventory: 19 files, 108 tests (facts sheet 06, test gaps).
-- **Gap row:** G-28 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-28 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
@@ -648,13 +648,13 @@ These were found while reading code and contradict no old document. Recorded, no
 
 - **Severity:** HIGH
 - **Evidence:** `.env.example:5-6` sets PAPER_TRADING=false and DEMO_TRADING=true, which `config/settings.py:96-97,140-141` turns into a demo configuration that demands API keys. Same root cause as D-2.
-- **Gap row:** G-4 in docs/scrutiny-silverbot.md section 3
+- **Gap row:** G-4 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
 ## Stub register (S-#)
 
-Stubs, partial and missing items found while reading the code, with ids as recorded in the fact index. Each row names the gap in docs/scrutiny-silverbot.md section 3 that tracks it.
+Stubs, partial and missing items found while reading the code, with ids as recorded in the fact index. Each row names the gap in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3 that tracks it.
 
 | S-# | What is stubbed or partial | Evidence (file:line) | Gap (G-#) |
 |---|---|---|---|
@@ -742,7 +742,7 @@ No automated check existed for docs-vs-code drift before this pass. The old docu
 
 - [x] Every `D-n` from D-1 to D-86 has its own `###` heading with Old doc said, Code does and Resolved in lines.
 - [x] The empty evidence reports appear as a HIGH finding (D-86) and as hazard H-2.
-- [x] Every hazard H-1 to H-14 has severity, evidence and a gap row pointing into docs/scrutiny-silverbot.md.
+- [x] Every hazard H-1 to H-14 has severity, evidence and a gap row pointing into [scrutiny-silverbot.md](scrutiny-silverbot.md).
 - [x] Severity counts in the opening paragraph (14 HIGH, 37 MEDIUM, 35 LOW) match the headings.
 - [x] No bot code, config or test file was changed to produce this audit.
 - [x] The stub register has 34 rows (S-1 to S-34) and the unknowns register 21 rows (U-1 to U-21), each pointing at a G-# (owner unknowns at G-30 and BRD §8).

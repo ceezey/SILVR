@@ -32,7 +32,7 @@ Conclusion: nothing in the scan proves the project is worth finishing; it shows 
 
 ## 3. Feasibility
 
-Feature ids are from PRD §3 (not yet written); statuses are from [scrutiny-silverbot.md](scrutiny-silverbot.md).
+Feature ids are from PRD §3 of [prd-silverbot.md](prd-silverbot.md); statuses are from [scrutiny-silverbot.md](scrutiny-silverbot.md).
 
 | Item | Built today | Evidence still missing |
 |---|---|---|
@@ -78,5 +78,5 @@ Mode order for proceeding: backtest, then paper, then demo/testnet, then (blocke
 - [x] The alternatives table has four rows (manual, exchange-native bots, TradingView alerts, open-source frameworks) with no vendor performance claims.
 - [x] Every PRD-F1 to PRD-F12 appears in the feasibility table with built and missing evidence.
 - [x] Each kill criterion names its threshold source or is marked Owner input required or Open.
-- [x] Links point only to existing files; unwritten documents are plain text.
+- [x] Links point only to existing files.
 - [ ] Kill-criteria thresholds K5 to K10 are numeric (open until the owner answers OI-3 and OI-9 and the QAD defines the rest).

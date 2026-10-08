@@ -7,7 +7,7 @@
 **Last updated:** 2026-10-08
 **Last reconciled:** 2026-10-08 against code at commit `62037d1`
 
-This document is the source of truth for what Silver Bot must do, what is built, and in which phases the rest is delivered. It defines the ids `PRD-F1` to `PRD-F12` (features) and `US-01` onward (user stories), and it replaces the old `TODO.md` and `PROGRESS.md` as the feature and phase record. Business context is in [brd-silverbot.md](brd-silverbot.md); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design is in [sdd-silverbot.md](sdd-silverbot.md), the design records are the four RFCs linked in section 3, and the test matrix is in [qad-silverbot.md](qad-silverbot.md); AIA, CLR and OPS are not yet written and are plain-text references. Status values: Built; Built (caveats); Partial; Stub; Planned; Planned, blocked. No row states a strategy performance result; none exists because the three evidence reports are 0 bytes (G-1, D-86).
+This document is the source of truth for what Silver Bot must do, what is built, and in which phases the rest is delivered. It defines the ids `PRD-F1` to `PRD-F12` (features) and `US-01` onward (user stories), and it replaces the old `TODO.md` and `PROGRESS.md` as the feature and phase record. Business context is in [brd-silverbot.md](brd-silverbot.md); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design is in [sdd-silverbot.md](sdd-silverbot.md), the design records are the four RFCs linked in section 3, and the test matrix is in [qad-silverbot.md](qad-silverbot.md); AIA, CLR and OPS are [aia-silverbot.md](aia-silverbot.md), [clr-silverbot.md](clr-silverbot.md) and [ops-silverbot.md](ops-silverbot.md). Status values: Built; Built (caveats); Partial; Stub; Planned; Planned, blocked. No row states a strategy performance result; none exists because the three evidence reports are 0 bytes (G-1, D-86).
 
 ## 1. Purpose & Value Proposition
 
@@ -421,7 +421,7 @@ The application logger (`utils/logging.py`) writes plain text (`asctime level na
 
 ## 7. ML Feature Specification
 
-PRD-F6 is optional and `Could` priority. The filter sits after the rule-based signal and before the risk engine in the backtest and paper loops. Detailed lifecycle, features, calibration and risks belong to the AIA (not yet written) and the design to [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md).
+PRD-F6 is optional and `Could` priority. The filter sits after the rule-based signal and before the risk engine in the backtest and paper loops. Detailed lifecycle, features, calibration and risks belong to the AIA ([aia-silverbot.md](aia-silverbot.md)) and the design to [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md).
 
 **Allowed powers** (enforced by `ml/filter.py` and pinned by US-11):
 
@@ -562,8 +562,8 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 - [~] Add deployment script (`prepare-host.sh` does not create the `silverbot` user and is untested; D-50, G-26, G-28)
 - [~] Add systemd service example (needs the `silverbot` user, hard-coded `/opt/silver-bot`, no sandboxing; D-50, D-83, G-26)
 - [x] Add log rotation (file untested; the `*.log` glob matches nothing the code writes; D-85)
-- [~] Add VPS setup instructions (carried into OPS, not yet written; user creation missing; D-50)
-- [x] Add production safety checklist (carried into OPS, not yet written)
+- [~] Add VPS setup instructions (carried into [OPS](ops-silverbot.md); user creation missing; D-50)
+- [x] Add production safety checklist (carried into [OPS](ops-silverbot.md))
 
 ### Phase 9: Live Readiness (PRD-F8)
 
@@ -585,7 +585,7 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 - [x] Add Binance Futures testnet endpoint validation (substring match; D-13, G-10)
 - [x] Add demo readiness checker
 - [x] Add demo readiness report export
-- [x] Add demo/testnet documentation (carried into OPS, not yet written, and the SDD)
+- [x] Add demo/testnet documentation (carried into [OPS](ops-silverbot.md) and the SDD)
 - [x] Add demo/testnet tests
 
 ### Standing rules (Never Do)
@@ -621,5 +621,5 @@ Corrected from the old "Next Recommended" list and ordered by the SCRUTINY verdi
 - [x] The operator surface lists only entrypoints, flags and files that exist, and the mode model reflects fail-closed rejection of live trading.
 - [x] Every `TODO.md` checkbox is carried into §9; items that the code shows as stub or partial are marked `[~]` with a `D-#`, and Phase 9 evidence items stay `[ ]`.
 - [x] No strategy performance claim is made; the empty evidence reports are cited (G-1, D-86).
-- [x] Links point only to files that exist; unwritten documents are plain text.
+- [x] Links point only to files that exist.
 - [ ] Every `[~]` item in §9 has been closed or re-scoped (open until the corresponding gaps are fixed).

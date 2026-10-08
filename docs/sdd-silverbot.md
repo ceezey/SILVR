@@ -7,7 +7,7 @@
 **Last updated:** 2026-10-08
 **Last reconciled:** 2026-10-08 against code at commit `62037d1`
 
-This document describes how Silver Bot is built, as coded, and how the unbuilt parts are intended to fit. It replaces the old `ARCHITECTURE.md` and `CONFIGURATION.md`; the full configuration reference is section 3.4. Product scope and feature status are in [prd-silverbot.md](prd-silverbot.md) (ids `PRD-F1` to `PRD-F12`); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and code hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design records are the four RFCs ([rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md)) and the test matrix is [qad-silverbot.md](qad-silverbot.md); AIA, OPS and BUILD are not yet written and are plain-text references.
+This document describes how Silver Bot is built, as coded, and how the unbuilt parts are intended to fit. It replaces the old `ARCHITECTURE.md` and `CONFIGURATION.md`; the full configuration reference is section 3.4. Product scope and feature status are in [prd-silverbot.md](prd-silverbot.md) (ids `PRD-F1` to `PRD-F12`); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and code hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design records are the four RFCs ([rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md)) and the test matrix is [qad-silverbot.md](qad-silverbot.md); AIA, OPS and BUILD are [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md) and [build-silverbot.md](build-silverbot.md).
 
 Reading convention. **As built** states what the code does today, with `file:line` relative to `src/silver_bot/` unless the path starts with a root filename. **Intended** states design direction and is labelled `Planned`. Where the two differ, as built wins and the difference is cited. The headline fact: the application entrypoint is a startup stub that initialises storage, writes two audit events and exits 0 (`main.py:14-50`, D-1, G-3). Every runtime described below (backtest, paper, demo) exists as a tested library, not as something the command line can start. No performance claim is made anywhere in this document; the three evidence reports are 0 bytes (G-1, D-86).
 
@@ -169,9 +169,9 @@ The seven SQLite tables with their columns and types, matching `storage/sqlite.p
 erDiagram
     candles {
         INTEGER id PK
-        TEXT symbol
-        TEXT timeframe
-        TEXT open_time
+        TEXT symbol UK
+        TEXT timeframe UK
+        TEXT open_time UK
         REAL open
         REAL high
         REAL low
@@ -652,7 +652,7 @@ No trade proceeds without a stop loss, enforced at four points: the strategy emi
 
 ### 5.6 Withdrawals-disabled expectation
 
-The exchange API key used with this bot is expected to have withdrawal permission disabled. The code cannot verify this: the only check is the owner assertion `API_WITHDRAWALS_DISABLED` in live readiness (`readiness.py:99`), and no exchange call exists to confirm key permissions. Key handling and exchange terms are tracked in CLR (not yet written).
+The exchange API key used with this bot is expected to have withdrawal permission disabled. The code cannot verify this: the only check is the owner assertion `API_WITHDRAWALS_DISABLED` in live readiness (`readiness.py:99`), and no exchange call exists to confirm key permissions. Key handling and exchange terms are tracked in CLR ([clr-silverbot.md](clr-silverbot.md)).
 
 ### 5.7 Other safety notes
 
@@ -662,7 +662,7 @@ The exchange API key used with this bot is expected to have withdrawal permissio
 
 ## 6. Infrastructure & Deployment
 
-Operational steps belong to OPS (not yet written); this section records what the files are. All of it is PRD-F11 and is `Partial`: the files exist and have four file-content tests, but the container runs the startup stub (D-1, H-4).
+Operational steps belong to OPS ([ops-silverbot.md](ops-silverbot.md)); this section records what the files are. All of it is PRD-F11 and is `Partial`: the files exist and have four file-content tests, but the container runs the startup stub (D-1, H-4).
 
 | Component | Facts | Source |
 |---|---|---|
@@ -696,7 +696,7 @@ No performance, latency or throughput target is defined in the code or the old d
 
 ## 8. ML Architecture
 
-ML is optional and PRD-F6 is `Partial`: every component exists as a tested library, none is wired to settings or exposed through a command, and no model is shipped. The package docstring states the contract: ML builds labels, features and offline artifacts and does not generate signals, place orders or bypass risk (`ml/__init__.py:1-5`). Decision records are in [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md); risk analysis is in AIA (not yet written).
+ML is optional and PRD-F6 is `Partial`: every component exists as a tested library, none is wired to settings or exposed through a command, and no model is shipped. The package docstring states the contract: ML builds labels, features and offline artifacts and does not generate signals, place orders or bypass risk (`ml/__init__.py:1-5`). Decision records are in [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md); risk analysis is in AIA ([aia-silverbot.md](aia-silverbot.md)).
 
 Pipeline (offline, then inference). Nothing outside `ml/` and tests calls `train_baseline_models`, `build_calibration_report`, `evaluate_model_promotion`, `MLDatasetBuilder` or `ModelRegistry.register_model`, and there is no entry point for the chain (`ml/__init__.py:7-46`, S-21).
 
@@ -747,7 +747,7 @@ Gaps in the surface, each a known weakness rather than a control:
 - **Unclamped multiplier in paper (D-62).** Bounded today by `MLFilterConfig` validation only.
 - **Training output is not promotion-ready:** it has no `test_metrics`, no calibration block and no top-level `sample_count`, so a caller must construct them (`ml/training.py:218-223`).
 
-AIA (not yet written) carries the risk register for these; [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) carries the decision record.
+AIA ([aia-silverbot.md](aia-silverbot.md)) carries the risk register for these; [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) carries the decision record.
 
 ## 9. Self-Check
 
@@ -757,5 +757,5 @@ AIA (not yet written) carries the risk register for these; [rfc-silverbot-ml-fil
 - [x] SQLite columns (section 3.2), exchange adapter signatures (section 4.2) and live-block checks (section 5.1) were copied from `storage/sqlite.py`, `exchange/base.py`, `config/settings.py` and `exchange/binance_futures.py`.
 - [x] As-built behaviour is separated from intended behaviour, and every discrepancy cites a `D-#`, `H-#` or `G-#` from the committed audit and scrutiny documents.
 - [x] No performance claim is made; the three evidence reports are stated as 0 bytes.
-- [x] References to the RFCs and QAD are links to existing files; AIA, OPS, CLR and BUILD stay plain text because they are not yet written.
+- [x] References to the RFCs and QAD are links to existing files; AIA, OPS, CLR and BUILD are links to existing files too.
 - [ ] Every `G-#` is closed or re-scoped in this document (open: most gaps are described here but remain code work, so this box stays unchecked until they are fixed).

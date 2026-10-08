@@ -37,7 +37,7 @@ f = maker_fee + taker_fee + 2 * (s / 10000) + 2 * (p / 10000) / 2
   = 0.0002 + 0.0005 + (2s + p) / 10000
 ```
 
-At the coded backtest defaults (s = 0, p = 0): `f = 0.0007`, that is 0.07% of notional (7 bps) per round trip, all of it fees. With the paper executor defaults (s = 1, p = 1) the formula gives `f = 0.0007 + 3/10000 = 0.0010` (0.10%); this is shown only to illustrate the sensitivity, because how the paper executor applies those values is documented in the SDD (not yet written).
+At the coded backtest defaults (s = 0, p = 0): `f = 0.0007`, that is 0.07% of notional (7 bps) per round trip, all of it fees. With the paper executor defaults (s = 1, p = 1) the formula gives `f = 0.0007 + 3/10000 = 0.0010` (0.10%); this is shown only to illustrate the sensitivity, because how the paper executor applies those values is documented in the SDD ([sdd-silverbot.md](sdd-silverbot.md)).
 
 ### 1.3 Cost per trade in R
 

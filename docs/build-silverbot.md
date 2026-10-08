@@ -11,7 +11,7 @@ This guide tells a coding agent or a human how to build Silver Bot from the cano
 
 ## 1. How to Build From These Docs
 
-Read in this order. Start at `docs/index.md` (created in a later task; plain-text reference only), then:
+Read in this order. Start at [docs/index.md](index.md), then:
 
 ```mermaid
 flowchart LR
@@ -153,7 +153,7 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
             return
 ```
 
-The `...` elides the lines after 216 (the rejection event, audit log and alert).
+The `...` elides the lines after line 217 (the `if not decision.approved:` header; the rejection event, audit log and alert).
 
 A rejected decision is recorded and the function returns before any position is opened.
 
@@ -254,7 +254,7 @@ For every task:
 7. Summarize changed files.
 8. Explain how to run tests.
 
-Note: `PROGRESS.md` and `TODO.md` were retired by the documentation suite. Read steps 5 and 6 as: update `docs/index.md` and the LOG (`docs/log-silverbot.md`), and update the PRD section 9 checkboxes.
+Note: `PROGRESS.md` and `TODO.md` were retired by the documentation suite. Read steps 5 and 6 as: update [docs/index.md](index.md) and the LOG ([docs/log-silverbot.md](log-silverbot.md)), and update the PRD section 9 checkboxes.
 
 ### Strategy Rules
 
@@ -341,12 +341,10 @@ Do not require real API keys for tests.
 
 When completing a task:
 
-- update `docs/index.md` and the LOG (`docs/log-silverbot.md`) every task;
+- update [docs/index.md](index.md) and the LOG ([docs/log-silverbot.md](log-silverbot.md)) every task;
 - update the PRD section 9 checkboxes ([prd-silverbot.md](prd-silverbot.md));
 - if architecture, strategy, risk or ML changes, update the SDD, RFC-001 (signal engine), RFC-002 (risk and kill switch) or the AIA respectively;
 - a change to a Locked doc requires a Change Record (section 5.1).
-
-`docs/index.md` and `docs/log-silverbot.md` are referenced as plain paths because they are created in a later task.
 
 ### Diagrams
 
@@ -369,7 +367,7 @@ Never cut: validation, risk gates, the kill switch, stop loss, tests or secret h
 1. Propose a Change Record `docs/cr-silverbot-<slug>.md` with sections: Why, Divergences, Changes, Verification, Pre-merge gate runs, Deferred.
 2. Apply the change (code, tests, docs).
 3. Verify: run the tests and the doc checks; run the subagent reviewers that SAD section 4 requires.
-4. Register the Change Record in the index section 2 (`docs/index.md`).
+4. Register the Change Record in the index section 2 ([docs/index.md](index.md)).
 
 ### Definition of Done
 
@@ -423,6 +421,6 @@ The generator lives outside the repository, so a stale or hand-edited generated 
 - [x] Section 5 carries every rule line of the previous `AGENTS.md`.
 - [x] Pinned stack values match `pyproject.toml` and `Dockerfile`; none invented.
 - [x] Golden-path excerpts are copied from real files with `file:line` and the commit.
-- [x] `docs/index.md` and LOG are referenced as plain text, not links.
+- [x] `docs/index.md` and the LOG are linked, not plain text.
 - [x] No em dashes.
 - [ ] Locked: not yet; every doc is Draft in this pass.

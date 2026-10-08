@@ -4,7 +4,7 @@
 
 ## 1. Model / System Card
 
-This section stands alone: it is the source of the root `MODEL_CARD.md`. Evidence for every statement is cited to code at commit `62037d1`. Related documents: [sdd-silverbot.md](docs/sdd-silverbot.md) §8, [rfc-silverbot-ml-filter-gate.md](docs/rfc-silverbot-ml-filter-gate.md), [aia-silverbot.md](docs/aia-silverbot.md) (risk register in §2), [scrutiny-silverbot.md](docs/scrutiny-silverbot.md).
+This section stands alone: it is the source of the root `MODEL_CARD.md`. Evidence for every statement is cited to code at commit `62037d1`. Related documents: [sdd-silverbot.md](docs/sdd-silverbot.md) (design, section 8), [rfc-silverbot-ml-filter-gate.md](docs/rfc-silverbot-ml-filter-gate.md), the Risk Register in [aia-silverbot.md](docs/aia-silverbot.md), [scrutiny-silverbot.md](docs/scrutiny-silverbot.md) (gaps, `G-n`), [audit-docs-drift.md](docs/audit-docs-drift.md) (drift findings `D-n` and hazards `H-n`; open questions `U-n`), [qad-silverbot.md](docs/qad-silverbot.md) (test scenarios, `QAD-Tn`) and [brd-silverbot.md](docs/brd-silverbot.md) (owner-input rows, `OI-n`).
 
 | Field | Value |
 |---|---|

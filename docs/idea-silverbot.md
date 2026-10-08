@@ -7,7 +7,7 @@
 **Last updated:** 2026-10-08
 **Last reconciled:** N/A (not a code-describing doc)
 
-Silver Bot is a personal Python bot that looks for ICT Silver Bullet setups in crypto futures, checks every candidate against a mandatory risk engine, and runs first as a backtest, then as paper trading, then against the exchange demo/testnet. Live trading is `Planned, blocked`. This brief is the starting point; evidence and costs follow in [val-silverbot.md](val-silverbot.md), [brd-silverbot.md](brd-silverbot.md) and [ues-silverbot.md](ues-silverbot.md). Gaps are tracked in [scrutiny-silverbot.md](scrutiny-silverbot.md). The design and test documents are [prd-silverbot.md](prd-silverbot.md), [sdd-silverbot.md](sdd-silverbot.md) and [qad-silverbot.md](qad-silverbot.md); CLR is not yet written and is a plain-text reference.
+Silver Bot is a personal Python bot that looks for ICT Silver Bullet setups in crypto futures, checks every candidate against a mandatory risk engine, and runs first as a backtest, then as paper trading, then against the exchange demo/testnet. Live trading is `Planned, blocked`. This brief is the starting point; evidence and costs follow in [val-silverbot.md](val-silverbot.md), [brd-silverbot.md](brd-silverbot.md) and [ues-silverbot.md](ues-silverbot.md). Gaps are tracked in [scrutiny-silverbot.md](scrutiny-silverbot.md). The design and test documents are [prd-silverbot.md](prd-silverbot.md), [sdd-silverbot.md](sdd-silverbot.md) and [qad-silverbot.md](qad-silverbot.md); compliance awareness is in [clr-silverbot.md](clr-silverbot.md).
 
 ## 1. The Spark
 
@@ -74,5 +74,5 @@ Backtesting (PRD-F2) feeds the same strategy and risk engines with historical ca
 - [x] The brief makes no performance or profit claim and cites G-1 for the empty evidence reports.
 - [x] The operating concept lists the pipeline order data, strategy, optional ML, risk, execution, monitoring.
 - [x] Success criteria point to BRD §7 instead of restating numbers.
-- [x] Links point only to files that exist; unwritten documents are plain text.
+- [x] Links point only to files that exist.
 - [x] No em dashes and no unfinished-work tokens.

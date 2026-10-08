@@ -38,8 +38,8 @@ Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-ga
    BINANCE_TESTNET=true
    LIVE_TRADING=false
    PAPER_TRADING=false
-   BINANCE_API_KEY=<your-testnet-key>
-   BINANCE_API_SECRET=<your-testnet-secret>
+   BINANCE_API_KEY=REPLACE_WITH_TESTNET_KEY
+   BINANCE_API_SECRET=REPLACE_WITH_TESTNET_SECRET
    BINANCE_FUTURES_BASE_URL=https://testnet.binancefuture.com
    DATABASE_PATH=data/silver_bot.sqlite3
    EXCHANGE_NAME=binance_futures
@@ -59,10 +59,10 @@ Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-ga
 4. **Run the demo readiness checker.** It writes a JSON report and places no orders. Send the report to a folder of your choice:
 
    ```bash
-   python -m silver_bot.demo_readiness --output reports/demo_readiness_report.json
+   python -m silver_bot.demo_readiness --output out/demo_readiness_report.json
    ```
 
-   The default output path is `reports/demo_readiness_report.json`. Exit code 0 means all 18 checks passed; exit code 2 means at least one failed, and the report lists each failed check with its reason. The checker reads `.env` from the current folder and overlays the process environment. It does not read values that exist only in `config.yaml` (except for the first check), so put demo values in `.env`.
+   The default output path is `reports/demo_readiness_report.json`, the repository evidence folder, which is why these steps write to `out/` instead. Exit code 0 means all 18 checks passed; exit code 2 means at least one failed, and the report lists each failed check with its reason. The checker reads `.env` from the current folder and overlays the process environment. It does not read values that exist only in `config.yaml` (except for the first check), so put demo values in `.env`.
 
 5. **Dry startup.** Confirm the health check and the startup stub accept the configuration:
 
@@ -77,7 +77,7 @@ Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-ga
 
    ```bash
    touch data/KILL_SWITCH
-   python -m silver_bot.demo_readiness --output reports/demo_readiness_report.json
+   python -m silver_bot.demo_readiness --output out/demo_readiness_report.json
    rm data/KILL_SWITCH
    ```
 

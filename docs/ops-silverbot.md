@@ -141,7 +141,7 @@ Common first moves, in order of safety:
 
 **Trigger.** Anything that says trading must stop now: a loss limit reached, an unexplained trade, a bad signal stream, a suspected compromise, a deploy gone wrong.
 
-**What the kill switch is, as built.** A file whose existence blocks new entries. It is inert unless a path is configured in code (`RiskConfig.kill_switch_path` defaults to `None`); `KILL_SWITCH_PATH` from `.env` is never passed to the risk engine; the default engines have no path; nothing creates the file, nothing trips it automatically and nothing closes positions or stops the process (`risk/kill_switch.py:11-17`, `risk/models.py:26`, `execution/paper_trading.py:49`, D-12, D-22, G-6). The compose `demo` service sets `KILL_SWITCH_PATH=/app/data/KILL_SWITCH`, but no code consumes it (H-9). The kill switch is therefore **not a reliable emergency stop** in the deployed system. The reliable stop is stopping the process.
+**What the kill switch is, as built.** A file whose existence blocks new entries. It is inert unless a path is configured in code (`RiskConfig.kill_switch_path` defaults to `None`); `KILL_SWITCH_PATH` from `.env` is never passed to the risk engine; the default engines have no path; nothing creates the file, nothing trips it automatically and nothing closes positions or stops the process (`risk/kill_switch.py:11-17`, `risk/models.py:26`, `execution/paper_trading.py:49`, D-12, D-22, G-6). The compose `demo` service sets `KILL_SWITCH_PATH=/app/data/KILL_SWITCH`, but the risk engine never receives it: settings parse and require `KILL_SWITCH_PATH` in demo mode (`config/settings.py:171-183`) and the paper loop builds its engine without a path (H-9). The kill switch is therefore **not a reliable emergency stop** in the deployed system. The reliable stop is stopping the process.
 
 **Immediate steps.**
 
@@ -273,6 +273,7 @@ Nothing automates backups. Back up by hand, or with the owner's own schedule:
   python -c "import sqlite3; s=sqlite3.connect('data/silver_bot.sqlite3'); d=sqlite3.connect('backups/silver_bot.sqlite3'); s.backup(d); d.close(); s.close()"
   ```
 
+- **Note**: the `backups/` copy is a `.sqlite3` file, which `.gitignore` already ignores (`*.sqlite3`); backups must never be committed.
 - **Audit log and reports**: copy `logs/audit.jsonl` (rotated `.gz` files too) and `reports/`.
 - **Model registry and artifacts**: copy `models/` (empty today). These are pickle files: restore only your own copies (AIA-R10).
 - **Configuration**: keep an offline copy of `.env` in a password manager or encrypted store, never in the repository or an image. Keep mode 600 on the working copy.

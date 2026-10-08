@@ -7,7 +7,7 @@
 **Last updated:** 2026-10-08
 **Last reconciled:** 2026-10-08 against code at commit `62037d1`
 
-This document is the test plan for Silver Bot. It maps all 108 existing tests to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. References to documents not yet written (AIA, OPS, CLR, BUILD, the index) are plain text.
+This document is the test plan for Silver Bot. It maps all 108 existing tests to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. Related documents: [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [build-silverbot.md](build-silverbot.md) and the [index](index.md).
 
 Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`), [sdd-silverbot.md](sdd-silverbot.md), [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) and [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (RFC-004, the mode-gate conditions).
 
@@ -281,9 +281,9 @@ No strategy performance claim is made anywhere in this suite. The three evidence
 
 ### 3.8 Uncovered Scenarios Register
 
-Every Not covered row from 3.1 to 3.5 is listed here once. 45 scenarios have no test. Each is tracked by an existing gap; scenarios the PRD records as "Not covered by any test (no gap id tracks this)" are tracked by G-32 in [scrutiny-silverbot.md](scrutiny-silverbot.md). Closing a row means writing the test, changing the cell in section 3 to the test name, and removing the row here.
+Every Not covered row from 3.1 to 3.5 is listed here once. 45 scenarios have no test. Each is tracked by an existing gap. Scenarios whose PRD acceptance criteria name no specific gap are tracked by G-32 (uncovered test scenarios) in [scrutiny-silverbot.md](scrutiny-silverbot.md). Closing a row means writing the test, changing the cell in section 3 to the test name, and removing the row here.
 
-The five PRD acceptance criteria that had no gap id are AC-01.5 (QAD-T49), AC-01.6 (QAD-T140), AC-04.8 (QAD-T15), AC-04.9 (QAD-T16) and AC-13.3 (QAD-T67); all are tracked by G-32.
+The five PRD acceptance criteria that name no specific gap are AC-01.5 (QAD-T49), AC-01.6 (QAD-T140), AC-04.8 (QAD-T15), AC-04.9 (QAD-T16) and AC-13.3 (QAD-T67); all are tracked by G-32.
 
 | QAD-T# | Scenario | PRD-F# | Tracked by | PRD acceptance criterion |
 |---|---|---|---|---|
@@ -437,7 +437,7 @@ A bad backtest means no live trading; a good backtest does not guarantee profit.
 
 ## 7. ML Evaluation
 
-ML is optional and may only approve, reject or reduce risk (PRD-F6, [RFC-003](rfc-silverbot-ml-filter-gate.md)). The AIA (not yet written) will own the model lifecycle and risk register; this section records how the coded evaluation is tested.
+ML is optional and may only approve, reject or reduce risk (PRD-F6, [RFC-003](rfc-silverbot-ml-filter-gate.md)). The AIA ([aia-silverbot.md](aia-silverbot.md)) owns the model lifecycle and risk register; this section records how the coded evaluation is tested.
 
 **Metrics as coded** (descriptions of what the code computes, not results):
 

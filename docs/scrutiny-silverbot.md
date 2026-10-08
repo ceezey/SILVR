@@ -7,7 +7,7 @@
 **Last updated:** 2026-10-08
 **Last reconciled:** 2026-10-08 against code at commit `62037d1`
 
-This gate decides whether the project should keep moving toward live trading, and records every gap that stands in the way. It is the source of the `G-#` ids cited by the other suite documents. Drift findings (`D-#`) live in [audit-docs-drift.md](audit-docs-drift.md); hazards (`H-#`) are recorded there under "Code hazards (not doc drift)". Scope: personal trading by the owner only; no outside users, no custody of other people's funds. Live trading is `Planned, blocked`. References to documents not yet written (BRD, PRD, SDD, RFCs, QAD, CLR, AIA, OPS) are plain text.
+This gate decides whether the project should keep moving toward live trading, and records every gap that stands in the way. It is the source of the `G-#` ids cited by the other suite documents. Drift findings (`D-#`) live in [audit-docs-drift.md](audit-docs-drift.md); hazards (`H-#`) are recorded there under "Code hazards (not doc drift)". Scope: personal trading by the owner only; no outside users, no custody of other people's funds. Live trading is `Planned, blocked`. The other suite documents are listed in the [index](index.md).
 
 ## 1. Verdict
 
@@ -28,7 +28,7 @@ Required fixes before any step toward live trading (order of priority):
 7. Harden the ML filter: NaN output must reject, and the filter must be built from settings. See G-8, G-9, G-23.
 8. Tighten the testnet URL guard to an exact host match. See G-10.
 9. Replace Telegram's in-memory client with a real transport and test it. See G-15.
-10. Close the owner-input items in BRD §8 (docs/brd-silverbot.md) and the open unknowns. See G-29, G-30.
+10. Close the owner-input items in BRD §8 ([brd-silverbot.md](brd-silverbot.md)) and the open unknowns. See G-29, G-30.
 
 ## 2. Claim & Reference Audit
 
@@ -112,9 +112,9 @@ Status values: Open (answerable from code or work), Planned (roadmap item not bu
 | G-27 | Health check validates configuration only and the live branch is unreachable; defined only in the Dockerfile (S-27, D-82). | LOW. Healthy status does not mean the bot works. | OPS, SDD (deployment) | Open |
 | G-28 | Test gaps: no tests for NaN model output, stale model, corrupt artifact, `main()`, `health.py`, `prepare-host.sh` or logrotate (H-13, S-34). | MEDIUM. The riskiest paths are untested. | QAD §3, §4 | Open |
 | G-29 | Open code-answerable unknowns: U-5 (scripts building non-default configs), U-6 (HTF lookahead in ML dataset), U-7 (strategy lookahead), U-8 (tzdata in deployment), U-9 (bind-mount UID), U-10 (`.env.example` completeness), U-11 (CONFIGURATION.md completeness), U-12 (compose version), U-13 (sklearn tests in CI), U-14 (newer ML docs under `docs/`), U-15 (other consumers of AppConfig fields), U-16 (real `.env` behaviour; not opened by design), U-17 (callers of `from_config`), U-18 (None session names), U-19 (kill-switch file semantics documentation), U-20 (secret scan outside git). U-21 is resolved (risk multiplier bounded to (0,1]). | MEDIUM. Each could hide a defect; none is answered by current evidence. | SDD (per topic), QAD §3, OPS | Open |
-| G-30 | Owner input required: capital and risk budget, target instruments, tolerance for drawdown, success criteria, jurisdiction, intended venue account, and the owner-only unknowns U-1 (is the restart loop intentional), U-2 (config.yaml in container), U-3 (who builds `MLFilterConfig`), U-4 (reconnect policy configuration). Collected as the owner input register in BRD §8 (docs/brd-silverbot.md). | HIGH for planning. Numeric targets and limits cannot be set without the owner. | BRD §8 | Owner input required |
+| G-30 | Owner input required: capital and risk budget, target instruments, tolerance for drawdown, success criteria, jurisdiction, intended venue account, and the owner-only unknowns U-1 (is the restart loop intentional), U-2 (config.yaml in container), U-3 (who builds `MLFilterConfig`), U-4 (reconnect policy configuration). Collected as the owner input register in BRD §8 ([brd-silverbot.md](brd-silverbot.md)). | HIGH for planning. Numeric targets and limits cannot be set without the owner. | BRD §8 | Owner input required |
 | G-31 | LOW-severity documentation drift D-51 to D-85 (file layouts, field names, option lists, metric columns, image names, log globs). | LOW. Documentation only; closed when the canonical docs are written. | SDD, AIA, OPS (per D-# Resolved in line) | Open |
-| G-32 | Uncovered test scenarios; register in QAD §3.8 (docs/qad-silverbot.md). Behaviours the PRD and RFCs state that no test pins and no other gap tracks: quality-score and reward-to-risk rejection in the strategy, the NO_TRADE-needs-a-reason construction error, partial take profit and breakeven, backtest determinism, audit-write failure handling, ML filter probability clamping and registry file errors. | MEDIUM. These paths run in operation but a regression would pass the suite. | QAD §3.8 | Open |
+| G-32 | Uncovered test scenarios; register in QAD §3.8 ([qad-silverbot.md](qad-silverbot.md)). Behaviours the PRD and RFCs state that no test pins and no other gap tracks: quality-score and reward-to-risk rejection in the strategy, the NO_TRADE-needs-a-reason construction error, partial take profit and breakeven, backtest determinism, audit-write failure handling, ML filter probability clamping and registry file errors. | MEDIUM. These paths run in operation but a regression would pass the suite. | QAD §3.8 | Open |
 
 Coverage check: each row shows which stubs (S-#), drift findings (D-#) and hazards (H-#) a gap covers. Every HIGH drift finding (D-1 to D-13, D-86) maps to a HIGH gap row.
 
@@ -181,7 +181,7 @@ Coverage check: each row shows which stubs (S-#), drift findings (D-#) and hazar
 
 ## 7. Blocking Questions
 
-Owner-facing only. Answers go to the owner input register, BRD §8 (docs/brd-silverbot.md).
+Owner-facing only. Answers go to the owner input register, BRD §8 ([brd-silverbot.md](brd-silverbot.md)).
 
 1. What capital will the bot trade on paper first and, eventually, live; and what loss would make you stop entirely?
 2. Which instruments and timeframe should the first evidence run use (the code defaults to BTCUSDT on 1m)?
@@ -199,5 +199,5 @@ Owner-facing only. Answers go to the owner input register, BRD §8 (docs/brd-sil
 - [x] Every unknown tagged open (U-5 to U-20) is listed in G-29; owner unknowns U-1 to U-4 are in G-30 pointing to BRD §8.
 - [x] The empty evidence reports are a HIGH gap (G-1) and no performance claim is made anywhere in this document.
 - [x] External references (Binance Futures URLs, Telegram Bot API) are each marked Verified in code at file:line or Open.
-- [x] References to documents not yet written are plain text, not links.
+- [x] References to other suite documents are links to existing files.
 - [ ] Every `G-#` has been closed or re-scoped in its landing document (open until those documents exist).

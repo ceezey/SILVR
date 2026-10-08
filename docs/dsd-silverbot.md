@@ -84,7 +84,7 @@ A layout sketch, not a chart.
 |  - checks, pass/fail, reason   | oos_validation_report   0 B  !  |
 | demo  READY      <generated_at>| paper_trading_report    0 B  !  |
 |  - checks, pass/fail, reason   | live_readiness_report   2.2 KB  |
-|                                | demo_readiness_report   2.4 KB  |
+|                                | demo_readiness_report   2404 B  |
 +--------------------------------+---------------------------------+
 | RISK BUDGET (needs persisted state: not available today)         |
 +---------------------------------------+--------------------------+

@@ -29,7 +29,7 @@ No performance claim is made anywhere in this dossier: no trained model exists i
 
 ## 1. Model / System Card
 
-This section stands alone: it is the source of the root `MODEL_CARD.md`. Evidence for every statement is cited to code at commit `62037d1`. Related documents: [sdd-silverbot.md](sdd-silverbot.md) §8, [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), [aia-silverbot.md](aia-silverbot.md) (risk register in §2), [scrutiny-silverbot.md](scrutiny-silverbot.md).
+This section stands alone: it is the source of the root `MODEL_CARD.md`. Evidence for every statement is cited to code at commit `62037d1`. Related documents: [sdd-silverbot.md](sdd-silverbot.md) (design, section 8), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), the Risk Register in [aia-silverbot.md](aia-silverbot.md), [scrutiny-silverbot.md](scrutiny-silverbot.md) (gaps, `G-n`), [audit-docs-drift.md](audit-docs-drift.md) (drift findings `D-n` and hazards `H-n`; open questions `U-n`), [qad-silverbot.md](qad-silverbot.md) (test scenarios, `QAD-Tn`) and [brd-silverbot.md](brd-silverbot.md) (owner-input rows, `OI-n`).
 
 | Field | Value |
 |---|---|
@@ -193,7 +193,7 @@ Nothing here is legal advice.
 
 ## 6. Materialization
 
-`MODEL_CARD.md` at the repository root is generated from §1 of this file by the suite's materialize step. §1 is the single source; do not edit `MODEL_CARD.md` by hand. §1 starts at the exact heading `## 1. Model / System Card` and ends before `## 2. Risk Register`. Relative links inside §1 are rewritten for the root location. If §1 changes, regenerate and commit both files together.
+`MODEL_CARD.md` at the repository root is generated from §1 of this file by the suite's materialize step. §1 is the single source; do not edit `MODEL_CARD.md` by hand. §1 starts at the exact heading `## 1. Model / System Card` and ends before `## 2. Risk Register`. Only relative links inside §1 are rewritten for the root location; `§N` references are not rewritten, so §1 avoids pointing at other sections of this file. If §1 changes, regenerate and commit both files together.
 
 ## 7. Self-Check
 

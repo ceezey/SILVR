@@ -147,11 +147,11 @@ Run against the 10-candle synthetic sample (the unit-test setup, written to a sc
 
 | Step | Command | Observed |
 |------|---------|----------|
-| 3 | `python run_backtest.py candles.csv out2` (the commands above use `out`; the verification used `out2`) | `1 211.69942074999986` then the four paths under `out2`; exit 0 |
+| 3 | `python run_backtest.py candles.csv out` | `1 211.69942074999986` then the four paths under `out`; exit 0 |
 | 3 | default strategy settings on the same 10 candles | `0 0`; `trades.csv` is 0 bytes; the JSON report is 374 bytes |
-| 4 | `ls -l out2` | `backtest_report.json` 651 bytes, `equity_curve.csv` 492, `rejected_signals.csv` 756, `trades.csv` 730 |
+| 4 | `ls -l out` | `backtest_report.json` 651 bytes, `equity_curve.csv` 492, `rejected_signals.csv` 756, `trades.csv` 730 |
 | 5 | `python run_oos.py candles.csv oos` | `{'training': 0, 'validation': 0, 'final_test': 0}` (slices of 6, 2 and 2 candles are too short to trade); `out_of_sample_validation_report.json` 1498 bytes |
-| 6 | `find out2 oos -type f -size 0` | `oos/training/trades.csv`, `oos/validation/trades.csv`, `oos/final_test/trades.csv` (all zero-trade runs); nothing from `out2` |
+| 6 | `find out oos -type f -size 0` | `oos/training/trades.csv`, `oos/validation/trades.csv`, `oos/final_test/trades.csv` (all zero-trade runs); nothing from `out` |
 | 7 | `python -m silver_bot.readiness` with the two paths set | exit 2, `ready` false; `backtest_report_exists` True, `out_of_sample_validation_report_exists` True, `paper_trading_report_exists` False |
 | Fetcher | `HistoricalOHLCVFetcher(BinanceFuturesAdapter(testnet=True)).fetch(symbol="btcusdt", timeframe="1m", start=..., end=...)` | `NotImplementedError: Binance Futures OHLCV network fetching is not implemented in Phase 1` |
 
