@@ -30,44 +30,43 @@ Non-goals for this release: live order placement, multi-symbol operation, a web 
 
 ### 2.1 Module map
 
-```text
-                                config.yaml  .env  process env
-                                          |
-                                   config/settings.py  (load_config -> AppConfig; fail closed)
-                                          |
-     ENTRYPOINTS (as built)               v
-     python -m silver_bot ---------> main.py: load_config, SQLiteStorage.initialize, audit
-     python main.py                       bot_started + bot_stopped, exit 0   (no mode dispatch)
-     silver-bot (console script)
-     python -m silver_bot.health ---> load_config only  (Docker HEALTHCHECK)
-     python -m silver_bot.readiness / demo_readiness --> report JSON (advisory only)
+How configuration, the as-built entrypoints and the library pipeline connect. Entrypoints do not start the pipeline; it is exercised by tests and by Python callers only.
 
-     LIBRARY PIPELINE (exercised by tests and by callers in Python; no CLI starts it)
+```mermaid
+flowchart TD
+    SRC["config.yaml, .env, process env"] --> CFG["config/settings.py<br/>load_config returns AppConfig (fail closed)"]
 
-      data/stream.py            data/fetcher.py
-      MarketDataStream          HistoricalOHLCVFetcher
-           |                          |
-           |        exchange/  ExchangeAdapter  <--- BinanceFuturesAdapter (skeleton: no network I/O)
-           |                          |
-           v                          v
-        Candle  (models.py) -----> strategy/  SilverBulletStrategyEngine  -> SilverBulletSignal
-                                          |       (session, swings, liquidity, sweep, displacement,
-                                          |        MSS, FVG, HTF bias, score)
-                                          v
-                                   ml/filter.py  MLProbabilityFilter   (optional; approve / reject / reduce)
-                                          |
-                                          v
-                                   risk/  RiskManagementEngine  (14 gates, kill switch, sizing)
-                                          |
-                    +---------------------+----------------------+
-                    v                                            v
-        backtest/engine.py  BacktestEngine            execution/  PaperTradingEngine
-        (simulated fills, metrics, exports)           PaperExecutionEngine (simulated limit fills)
-                    |                                            |
-                    v                                            v
-        trades.csv, equity_curve.csv,                 storage/sqlite.py  SQLiteStorage
-        rejected_signals.csv, backtest_report.json    monitoring/  audit.jsonl, Telegram facade,
-                                                      reports, journal, dashboard JSON
+    subgraph EP["Entrypoints (as built)"]
+        E1["python -m silver_bot<br/>python main.py<br/>silver-bot console script"] --> M1["main.py: load_config, SQLiteStorage.initialize,<br/>audit bot_started + bot_stopped, exit 0<br/>(no mode dispatch)"]
+        E2["python -m silver_bot.health"] --> M2["load_config only<br/>(Docker HEALTHCHECK)"]
+        E3["python -m silver_bot.readiness<br/>python -m silver_bot.demo_readiness"] --> M3["report JSON (advisory only)"]
+    end
+    CFG --> EP
+
+    subgraph LP["Library pipeline (exercised by tests and by Python callers, no CLI starts it)"]
+        ADP["exchange/ ExchangeAdapter<br/>BinanceFuturesAdapter (skeleton, no network I/O)"]
+        STR["data/stream.py<br/>MarketDataStream"]
+        FET["data/fetcher.py<br/>HistoricalOHLCVFetcher"]
+        CAN["Candle (models.py)"]
+        SBE["strategy/ SilverBulletStrategyEngine<br/>(session, swings, liquidity, sweep, displacement, MSS, FVG, HTF bias, score)<br/>outputs SilverBulletSignal"]
+        MLF["ml/filter.py MLProbabilityFilter<br/>(optional: approve / reject / reduce)"]
+        RSK["risk/ RiskManagementEngine<br/>(14 gates, kill switch, sizing)"]
+        BT["backtest/engine.py BacktestEngine<br/>(simulated fills, metrics, exports)"]
+        PT["execution/ PaperTradingEngine<br/>PaperExecutionEngine (simulated limit fills)"]
+        OUT1["trades.csv, equity_curve.csv,<br/>rejected_signals.csv, backtest_report.json"]
+        OUT2["storage/sqlite.py SQLiteStorage<br/>monitoring/ audit.jsonl, Telegram facade,<br/>reports, journal, dashboard JSON"]
+        ADP --> STR
+        ADP --> FET
+        STR --> CAN
+        FET --> CAN
+        CAN --> SBE
+        SBE --> MLF
+        MLF --> RSK
+        RSK --> BT
+        RSK --> PT
+        BT --> OUT1
+        PT --> OUT2
+    end
 ```
 
 ### 2.2 Module table
@@ -163,6 +162,97 @@ One file, `storage/sqlite.py`. `SQLiteStorage.initialize` creates the parent dir
 | `paper_trades` | `id INTEGER PRIMARY KEY AUTOINCREMENT`, `trade_id INTEGER NOT NULL`, `symbol TEXT NOT NULL`, `timeframe TEXT NOT NULL`, `session_name TEXT NOT NULL`, `direction TEXT NOT NULL`, `entry_time TEXT NOT NULL`, `exit_time TEXT NOT NULL`, `entry_price REAL NOT NULL`, `exit_price REAL NOT NULL`, `stop_loss REAL NOT NULL`, `take_profit REAL NOT NULL`, `position_size REAL NOT NULL`, `risk_amount REAL NOT NULL`, `realized_pnl REAL NOT NULL`, `realized_r REAL NOT NULL`, `fees REAL NOT NULL`, `slippage REAL NOT NULL`, `exit_reason TEXT NOT NULL`, `setup_quality_score INTEGER NOT NULL`, `notes TEXT NOT NULL` | `save_paper_trade` | `:69-91`, `:165` |
 | `paper_events` | `id INTEGER PRIMARY KEY AUTOINCREMENT`, `event_type TEXT NOT NULL`, `symbol TEXT NOT NULL`, `timestamp TEXT NOT NULL`, `message TEXT NOT NULL`, `context_json TEXT NOT NULL` | `save_paper_event` | `:92-99`, `:202` |
 | `ml_predictions` | `id INTEGER PRIMARY KEY AUTOINCREMENT`, `signal_id TEXT NOT NULL`, `model_version TEXT`, `model_name TEXT`, `probability REAL`, `threshold REAL NOT NULL`, `reduce_risk_threshold REAL NOT NULL`, `decision TEXT NOT NULL`, `risk_multiplier REAL NOT NULL`, `reason TEXT NOT NULL`, `features_snapshot TEXT NOT NULL`, `created_at TEXT NOT NULL` | `save_ml_prediction` (stores the prediction's `model_id` in `model_version`, `:236`) | `:100-113`, `:222` |
+
+The seven SQLite tables with their columns and types, matching `storage/sqlite.py:20-113`. No table declares a `FOREIGN KEY` or `REFERENCES` clause, so the entities are shown without relationship lines; `paper_trades.trade_id` is a plain integer, not a key reference.
+
+```mermaid
+erDiagram
+    candles {
+        INTEGER id PK
+        TEXT symbol
+        TEXT timeframe
+        TEXT open_time
+        REAL open
+        REAL high
+        REAL low
+        REAL close
+        REAL volume
+        TEXT close_time
+    }
+    signals {
+        INTEGER id PK
+        TEXT symbol
+        TEXT direction
+        TEXT generated_at
+        TEXT reason
+        REAL entry_price
+        REAL stop_loss
+        REAL take_profit
+    }
+    trades {
+        INTEGER id PK
+        TEXT symbol
+        TEXT side
+        TEXT status
+        REAL quantity
+        REAL entry_price
+        REAL stop_loss
+        REAL take_profit
+        TEXT created_at
+    }
+    logs {
+        INTEGER id PK
+        TEXT level
+        TEXT message
+        TEXT created_at
+        TEXT context_json
+    }
+    paper_trades {
+        INTEGER id PK
+        INTEGER trade_id
+        TEXT symbol
+        TEXT timeframe
+        TEXT session_name
+        TEXT direction
+        TEXT entry_time
+        TEXT exit_time
+        REAL entry_price
+        REAL exit_price
+        REAL stop_loss
+        REAL take_profit
+        REAL position_size
+        REAL risk_amount
+        REAL realized_pnl
+        REAL realized_r
+        REAL fees
+        REAL slippage
+        TEXT exit_reason
+        INTEGER setup_quality_score
+        TEXT notes
+    }
+    paper_events {
+        INTEGER id PK
+        TEXT event_type
+        TEXT symbol
+        TEXT timestamp
+        TEXT message
+        TEXT context_json
+    }
+    ml_predictions {
+        INTEGER id PK
+        TEXT signal_id
+        TEXT model_version
+        TEXT model_name
+        REAL probability
+        REAL threshold
+        REAL reduce_risk_threshold
+        TEXT decision
+        REAL risk_multiplier
+        TEXT reason
+        TEXT features_snapshot
+        TEXT created_at
+    }
+```
 
 Other methods: `count_rows(table_name)` accepts only a whitelist of the seven names and raises `ValueError("unknown table name")` otherwise; `table_names()` lists user tables (`storage/sqlite.py:249-266`). There is no read or query API for candles, signals or trades, no table for orders, performance metrics or backtest runs (G-14). The existing `test_database_initialization_creates_phase_one_tables` asserts five of the seven tables.
 
@@ -299,81 +389,143 @@ The first two sequences describe code that exists and is exercised by tests; the
 
 #### Sequence A: backtest bar loop (as built, `backtest/engine.py`)
 
-```text
-BacktestEngine.run(candles)                                        engine.py:45
-  ordered = sorted(candles by open_time)                           :48
-  audit bot_started("Backtest started")                            :57
-  for index, candle in ordered:                                    :63
-    1. if a position is open:  update it  (stop first, then target; partial TP if enabled;
-       SL/TP checked on the fill candle too)                       :84-91, :299-328
-       on close: risk.release_trade(realized_pnl, day); append TradeRecord
-    2. if an order is pending: try fill (low <= entry <= high)     :78-79, :268-272
-       fill price = entry + half-spread + slippage (LONG)
-       size = risk_decision.position_size; fee = maker rate        :273-283
-    3. append one EquityPoint per candle (realized-only equity)    :93-101
-    4. if nothing happened this candle AND no pending AND no open: :103-104
-         signal = strategy.evaluate(ordered[: index + 1])          :106   (look-ahead guard)
-         NO_TRADE         -> RejectedSignalRecord(reason)          :108-115
-         ml = ml_filter.evaluate(signal, ordered[: index + 1])     :128-131
-         ml REJECT        -> RejectedSignalRecord("ML rejected: ...")      :133-139
-         decision = risk.evaluate(equity, entry, SL, TP, dir, day)        :157-166   (mandatory)
-         not approved     -> RejectedSignalRecord("Risk rejected: ...")    :167-173
-                             + audit kill_switch_active if reason == "Kill switch is active" :189-194
-         ml REDUCE_RISK   -> scale size, risk_amount, leverage by multiplier clamped to [0,1]  :492-506
-         risk.reserve_trade(day); create PendingOrder (first fillable on the NEXT candle)      :198-205
-  end of data: force-close any open position at last close ("end_of_data"); drop any unfilled order  :220-235
-  metrics = calculate_metrics(trades, equity_curve, initial_balance)
-  if export_dir: write trades.csv, equity_curve.csv, rejected_signals.csv, backtest_report.json  :243-251
-  audit bot_stopped
+The backtest bar loop in the order the code runs it, with line references into `backtest/engine.py`.
+
+```mermaid
+sequenceDiagram
+    participant BE as BacktestEngine
+    participant ST as Strategy
+    participant ML as MLFilter
+    participant RE as RiskEngine
+    participant AU as Audit
+    Note over BE: BacktestEngine.run(candles) at engine.py:45
+    Note over BE: ordered = candles sorted by open_time (:48)
+    BE->>AU: bot_started "Backtest started" (:57)
+    loop for index, candle in ordered (:63)
+        opt 1. a position is open
+            BE->>BE: update it, stop first then target, partial TP if enabled, SL/TP checked on the fill candle too (:84-91, :299-328)
+            BE->>RE: on close release_trade(realized_pnl, day), then append TradeRecord
+        end
+        opt 2. an order is pending
+            BE->>BE: try fill when low <= entry <= high (:78-79, :268-272)
+            Note over BE: fill price = entry + half-spread + slippage (LONG)<br/>size = risk_decision.position_size, fee = maker rate (:273-283)
+        end
+        BE->>BE: 3. append one EquityPoint per candle, realized-only equity (:93-101)
+        opt 4. nothing happened this candle AND no pending AND no open (:103-104)
+            BE->>ST: evaluate(ordered[: index + 1]) (:106, look-ahead guard)
+            alt NO_TRADE
+                BE->>BE: RejectedSignalRecord(reason) (:108-115)
+            else a LONG or SHORT signal
+                BE->>ML: evaluate(signal, ordered[: index + 1]) (:128-131)
+                alt ML REJECT
+                    BE->>BE: RejectedSignalRecord("ML rejected: ...") (:133-139)
+                else not rejected
+                    BE->>RE: evaluate(equity, entry, SL, TP, dir, day) (:157-166, mandatory)
+                    alt not approved
+                        BE->>BE: RejectedSignalRecord("Risk rejected: ...") (:167-173)
+                        BE->>AU: audit kill_switch_active if reason == "Kill switch is active" (:189-194)
+                    else approved
+                        opt ml REDUCE_RISK
+                            BE->>BE: scale size, risk_amount, leverage by multiplier clamped to 0..1 (:492-506)
+                        end
+                        BE->>RE: reserve_trade(day)
+                        BE->>BE: create PendingOrder, first fillable on the NEXT candle (:198-205)
+                    end
+                end
+            end
+        end
+    end
+    BE->>BE: at the last candle force-close any open position at last close ("end_of_data"), drop any unfilled order (:220-235)
+    BE->>BE: metrics = calculate_metrics(trades, equity_curve, initial_balance)
+    opt export_dir is set
+        BE->>BE: write trades.csv, equity_curve.csv, rejected_signals.csv, backtest_report.json (:243-251)
+    end
+    BE->>AU: bot_stopped
 ```
 
 #### Sequence B: paper signal to risk to executor (as built, `execution/paper_trading.py`)
 
-```text
-PaperTradingEngine.run(max_candles)                                paper_trading.py:59
-  audit + alert bot_started                                        :64-65
-  async for candle in stream.candles():                            :68
-    store candle (if storage)
-    if kill switch active and no alert sent yet: event KILL_SWITCH_ACTIVE + one alert    :74-84
-    executor.process_candle(candle)                                :86
-       fills a pending limit order on touch; checks exits stop-first; on close:
-       equity += realized_pnl; risk.release_trade(...); save paper trade + events; alert   :86-102
-    if no active trade:  _evaluate_signal(candles so far)          :124-268
-       signal = strategy.evaluate(...)                             :127
-       NO_TRADE -> audit "signal_rejected" + alert                 :128-138
-       ml = ml_filter.evaluate(signal, candles)                    (disabled by default)  :140-160
-       ml REJECT -> event RISK_REJECTED "ML rejected: ..." BEFORE the risk engine         :181-205
-       decision = risk.evaluate(equity=self.equity, ..., signal_day=signal.generated_at.date())  :207-216
-       not approved -> RISK_REJECTED ("Risk rejected: ..."); "Kill switch is active" -> KILL_SWITCH_ACTIVE  :217-251
-       approved: if ml REDUCE_RISK multiply size, risk_amount, leverage by risk_multiplier (unclamped, bounded by MLFilterConfig (0,1])  :252-259
-       executor.submit_limit_order(signal, decision)               :260   (raises if not approved)
-       risk.reserve_trade(day)                                     :267
-    stop at max_candles                                            :107
-  audit + alert bot_stopped                                        :111-121
+The paper trading loop from candle to executor, with line references into `execution/paper_trading.py`. The ML filter is disabled by default.
+
+```mermaid
+sequenceDiagram
+    participant PE as PaperTradingEngine
+    participant SM as MarketDataStream
+    participant EX as PaperExecutor
+    participant ST as Strategy
+    participant ML as MLFilter
+    participant RE as RiskEngine
+    participant AU as AuditAndAlerts
+    Note over PE: PaperTradingEngine.run(max_candles) at paper_trading.py:59
+    PE->>AU: audit + alert bot_started (:64-65)
+    loop async for candle in stream.candles() (:68)
+        SM-->>PE: candle
+        PE->>PE: store candle (if storage)
+        opt kill switch active and no alert sent yet
+            PE->>AU: event KILL_SWITCH_ACTIVE + one alert (:74-84)
+        end
+        PE->>EX: process_candle(candle) (:86)
+        Note over EX: fills a pending limit order on touch, checks exits stop-first<br/>on close: equity += realized_pnl, risk.release_trade(...), save paper trade + events, alert (:86-102)
+        opt no active trade, so _evaluate_signal(candles so far) (:124-268)
+            PE->>ST: evaluate(...) (:127)
+            alt NO_TRADE
+                PE->>AU: audit "signal_rejected" + alert (:128-138)
+            else a LONG or SHORT signal
+                PE->>ML: evaluate(signal, candles) (disabled by default, :140-160)
+                alt ML REJECT
+                    PE->>AU: event RISK_REJECTED "ML rejected: ..." BEFORE the risk engine (:181-205)
+                else not rejected
+                    PE->>RE: evaluate(equity=self.equity, ..., signal_day=signal.generated_at.date()) (:207-216)
+                    alt not approved
+                        PE->>AU: RISK_REJECTED ("Risk rejected: ..."), and "Kill switch is active" gives KILL_SWITCH_ACTIVE (:217-251)
+                    else approved
+                        opt ml REDUCE_RISK
+                            PE->>PE: multiply size, risk_amount, leverage by risk_multiplier (unclamped, bounded by MLFilterConfig to (0, 1]) (:252-259)
+                        end
+                        PE->>EX: submit_limit_order(signal, decision) (:260, raises if not approved)
+                        PE->>RE: reserve_trade(day) (:267)
+                    end
+                end
+            end
+        end
+        Note over PE: stop at max_candles (:107)
+    end
+    PE->>AU: audit + alert bot_stopped (:111-121)
 ```
 
 Nothing constructs `PaperTradingEngine` outside tests (S-9). There is no emergency shutdown: an active kill switch only rejects new entries; open paper positions continue to be managed.
 
 #### Sequence C: demo startup with readiness (real startup; demo steps are intended)
 
-```text
-1. Operator sets demo environment (MODE=demo, DEMO_TRADING=true, PAPER_TRADING=false, testnet
-   keys, BINANCE_TESTNET=true, testnet URL, kill-switch and risk settings)       config/settings.py:140-191
-2. python -m silver_bot.demo_readiness                                           (exists, advisory)
-     18 checks in order: config valid, mode demo, demo/live/paper flags, testnet flag and endpoint,
-     keys present, risk engine, kill switch enabled/path/not active, stop loss required, three risk
-     limits, .env ignored by git, no committed secrets                           demo_readiness.py:56-222
-     writes reports/demo_readiness_report.json; exit 0 ready / 2 not ready
-3. python -m silver_bot  (AS BUILT)
-     load_config  -> ConfigError => log "configuration rejected", exit 2         main.py:21-25
-     SQLiteStorage.initialize()                                                  main.py:27-28
-     audit bot_started, audit bot_stopped, exit 0                                main.py:30-50
-     STOP. Nothing below this line exists.
-4. (INTENDED, Planned) build BinanceFuturesAdapter.from_config(config)           not called at runtime (U-17)
-   (INTENDED) verify readiness report is current and ready                       no code reads it (D-10, S-26)
-   (INTENDED) build RiskConfig from AppConfig; arm KillSwitch(KILL_SWITCH_PATH)  not wired (H-5, H-9)
-   (INTENDED) start a market stream, PaperTradingEngine-style loop, testnet order path via the adapter
-                                                                                 adapter orders raise (S-2)
+The demo startup flow. Steps 1 to 3 exist and are shown as built; the shaded block is intended only (`Planned`) and nothing in it exists in code.
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator
+    participant CF as ConfigLoader
+    participant DR as DemoReadiness
+    participant MN as MainEntrypoint
+    participant SQ as SQLiteStorage
+    participant AU as Audit
+    OP->>CF: 1. set demo environment (MODE=demo, DEMO_TRADING=true, PAPER_TRADING=false, testnet keys, BINANCE_TESTNET=true, testnet URL, kill-switch and risk settings) (config/settings.py:140-191)
+    OP->>DR: 2. python -m silver_bot.demo_readiness (exists, advisory)
+    Note over DR: 18 checks in order: config valid, mode demo, demo/live/paper flags, testnet flag and endpoint, keys present, risk engine, kill switch enabled/path/not active, stop loss required, three risk limits, .env ignored by git, no committed secrets (demo_readiness.py:56-222)<br/>writes reports/demo_readiness_report.json, exit 0 ready or 2 not ready
+    OP->>MN: 3. python -m silver_bot (AS BUILT)
+    MN->>CF: load_config (main.py:21-25)
+    alt ConfigError
+        MN-->>OP: log "configuration rejected", exit 2
+    else accepted
+        MN->>SQ: initialize() (main.py:27-28)
+        MN->>AU: audit bot_started, audit bot_stopped, exit 0 (main.py:30-50)
+    end
+    Note over MN: STOP. Nothing below this line exists.
+    rect rgb(255, 240, 240)
+        Note over OP,AU: 4. INTENDED, Planned. Not built.
+        MN-->>MN: build BinanceFuturesAdapter.from_config(config), not called at runtime (U-17)
+        MN-->>DR: verify readiness report is current and ready, no code reads it (D-10, S-26)
+        MN-->>CF: build RiskConfig from AppConfig and arm KillSwitch(KILL_SWITCH_PATH), not wired (H-5, H-9)
+        MN-->>MN: start a market stream, PaperTradingEngine-style loop, testnet order path via the adapter, adapter orders raise (S-2)
+    end
 ```
 
 Step 3 is also what every compose service runs, in every mode (D-1). In demo, even with the configuration rules satisfied, `KILL_SWITCH_PATH` is validated but never reaches a `KillSwitch`, so the switch would be inert (H-9).

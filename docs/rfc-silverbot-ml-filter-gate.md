@@ -30,14 +30,19 @@ Non-goals: this RFC does not describe a trained or shipped model. The `models/` 
 
 The offline library produces labelled rows, features, trained artifacts, calibration reports, a promotion decision and a registry entry. The runtime filter loads the active registry entry, scores the signal, and maps the probability to a decision.
 
-```text
-offline (library functions, no entry point):
-  MLDatasetBuilder -> time_based_split -> train_baseline_models -> build_calibration_report
-  -> evaluate_model_promotion (advisory) -> ModelRegistry.register_model / set_active
+The offline training chain and the runtime filter path.
 
-runtime (backtest and paper loops):
-  rule-based signal -> MLProbabilityFilter.evaluate -> APPROVE | REDUCE_RISK | REJECT
-  -> (if not rejected) risk engine -> (if REDUCE_RISK) multiply size, risk amount, leverage
+```mermaid
+flowchart TD
+    subgraph OFF["Offline (library functions, no entry point)"]
+        O1["MLDatasetBuilder"] --> O2["time_based_split"] --> O3["train_baseline_models"] --> O4["build_calibration_report"] --> O5["evaluate_model_promotion (advisory)"] --> O6["ModelRegistry.register_model / set_active"]
+    end
+    subgraph RUN["Runtime (backtest and paper loops)"]
+        R1["rule-based signal"] --> R2["MLProbabilityFilter.evaluate"]
+        R2 --> R3["APPROVE | REDUCE_RISK | REJECT"]
+        R3 -->|"if not rejected"| R4["risk engine"]
+        R4 -->|"if REDUCE_RISK"| R5["multiply size, risk amount, leverage"]
+    end
 ```
 
 Wiring facts:

@@ -50,11 +50,13 @@ The engine is constructed with defaults by the two callers in `src/`: `SilverBul
 
 ### Data flow
 
-```text
-candles (+ optional HTF candles)
-  -> session gate -> swings -> liquidity levels -> sweep candidates
-  -> per sweep: displacement -> MSS -> FVG -> entry/stop/target/RR -> HTF bias -> score
-  -> SilverBulletSignal (LONG | SHORT | NO_TRADE + reason)
+The signal engine stages from candles to a `SilverBulletSignal`.
+
+```mermaid
+flowchart TD
+    A["candles (+ optional HTF candles)"] --> B["session gate"] --> C["swings"] --> D["liquidity levels"] --> E["sweep candidates"]
+    E --> F["per sweep: displacement"] --> G["MSS"] --> H["FVG"] --> I["entry / stop / target / RR"] --> J["HTF bias"] --> K["score"]
+    K --> L["SilverBulletSignal (LONG | SHORT | NO_TRADE + reason)"]
 ```
 
 ## 3. Technical Details & Contracts

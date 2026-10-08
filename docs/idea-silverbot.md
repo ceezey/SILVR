@@ -47,28 +47,15 @@ Success is defined once, in [brd-silverbot.md](brd-silverbot.md) §7 (BRD-M1 to 
 
 ## 5. Operating Concept
 
-```text
-Market data (historical fetch, stream)         PRD-F10, PRD-F4
-        |
-        v
-Strategy engine: LONG / SHORT / NO_TRADE       PRD-F1
-(every NO_TRADE carries a reason)
-        |
-        v
-ML filter (optional): approve / reject /       PRD-F6
-reduce risk only; never creates a trade
-        |
-        v
-Risk engine + kill switch (mandatory)          PRD-F3
-sizing, stop loss, RR, daily loss, limits
-        |
-        v
-Execution: paper executor, or demo/testnet     PRD-F4, PRD-F5
-(live trading blocked at config load)
-        |
-        v
-Monitoring: logs, audit log, journal,          PRD-F7
-Telegram alerts, reports
+The operating concept as a pipeline, with the PRD feature ids that own each stage.
+
+```mermaid
+flowchart TD
+    A["Market data: historical fetch, stream<br/>PRD-F10, PRD-F4"] --> B["Strategy engine: LONG / SHORT / NO_TRADE<br/>(every NO_TRADE carries a reason)<br/>PRD-F1"]
+    B --> C["ML filter (optional): approve / reject / reduce risk only<br/>never creates a trade<br/>PRD-F6"]
+    C --> D["Risk engine + kill switch (mandatory)<br/>sizing, stop loss, RR, daily loss, limits<br/>PRD-F3"]
+    D --> E["Execution: paper executor, or demo/testnet<br/>(live trading blocked at config load)<br/>PRD-F4, PRD-F5"]
+    E --> F["Monitoring: logs, audit log, journal, Telegram alerts, reports<br/>PRD-F7"]
 ```
 
 Backtesting (PRD-F2) feeds the same strategy and risk engines with historical candles. Today the entrypoint is a startup stub, so this pipeline is not yet runnable end to end (G-3).

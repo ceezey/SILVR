@@ -330,33 +330,36 @@ The complete key list with line references lives in the SDD configuration sectio
 
 The only supported modes are `backtest`, `paper` and `demo`. Live is not a state the application can enter. All transitions are decided at config load and fail closed (`settings.py:94-115`).
 
-```text
-                 inputs (later wins): defaults < config.yaml < .env < process env
-                 MODE, if non-blank, overrides TRADING_MODE
+The mode resolution decided at config load, showing which inputs are accepted and which fail closed with a `ConfigError`.
 
-   TRADING_MODE / MODE
-   ---------------------------------------------------------------
-   "live"             --> ConfigError (not one of backtest/demo/paper)
-   LIVE_TRADING=true  --> ConfigError "LIVE_TRADING=true is rejected in Phase 1"
-   LIVE_TRADING not a boolean --> ConfigError
-
-   "backtest"  --> BACKTEST   (simulated fills, historical candles)
-   "paper"     --> PAPER      requires PAPER_TRADING=true
-        |            DEMO_TRADING=true promotes paper --> DEMO
-        v
-   "demo"      --> DEMO       requires DEMO_TRADING=true, PAPER_TRADING=false,
-                              BINANCE_API_KEY + BINANCE_API_SECRET,
-                              BINANCE_TESTNET=true, testnet URL (or blank),
-                              RISK_ENGINE_ENABLED, KILL_SWITCH_ENABLED,
-                              KILL_SWITCH_PATH, STOP_LOSS_REQUIRED,
-                              risk <= 0.005, daily loss <= 0.02, leverage <= 3
-
-   Any other combination (for example DEMO_TRADING=true with
-   PAPER_TRADING=true, in any mode) --> ConfigError
-
-   LIVE (blocked): no input reaches it. PRD-F12, Planned, blocked.
-   The live readiness checker can report "ready" only when
-   LIVE_TRADING=true, which load_config refuses (H-3).
+```mermaid
+stateDiagram-v2
+    [*] --> Resolve : inputs, later wins, defaults then config.yaml then .env then process env, non-blank MODE overrides TRADING_MODE
+    Resolve --> ConfigError : TRADING_MODE live, not one of backtest, demo or paper
+    Resolve --> ConfigError : LIVE_TRADING true, message LIVE_TRADING=true is rejected in Phase 1
+    Resolve --> ConfigError : LIVE_TRADING not a boolean
+    Resolve --> ConfigError : any other combination, for example DEMO_TRADING true with PAPER_TRADING true in any mode
+    Resolve --> BACKTEST : backtest
+    Resolve --> PAPER : paper, requires PAPER_TRADING true
+    PAPER --> DEMO : DEMO_TRADING true promotes paper to demo
+    Resolve --> DEMO : demo, requires DEMO_TRADING true
+    ConfigError --> [*]
+    BACKTEST : simulated fills, historical candles
+    PAPER : requires PAPER_TRADING true
+    LiveBlocked : LIVE, blocked. PRD-F12, Planned, blocked. No input reaches it
+    note right of DEMO
+        demo requires DEMO_TRADING true, PAPER_TRADING false,
+        BINANCE_API_KEY and BINANCE_API_SECRET,
+        BINANCE_TESTNET true, testnet URL or blank,
+        RISK_ENGINE_ENABLED, KILL_SWITCH_ENABLED,
+        KILL_SWITCH_PATH, STOP_LOSS_REQUIRED,
+        risk at most 0.005, daily loss at most 0.02,
+        leverage at most 3
+    end note
+    note right of LiveBlocked
+        The live readiness checker can report ready only when
+        LIVE_TRADING is true, which load_config refuses (H-3)
+    end note
 ```
 
 Caveats recorded elsewhere: the `.env.example` default combination promotes to demo and then fails for missing keys (D-2); the risk-limit caps apply only in demo mode (D-11, G-24); `main()` does not branch on the resulting mode (D-1).
