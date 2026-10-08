@@ -3,6 +3,8 @@ import pickle
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from silver_bot.backtest import BacktestConfig, BacktestEngine
 from silver_bot.ml import (
     FeatureEngineeringPipeline,
@@ -189,3 +191,29 @@ def test_backtest_includes_ml_probability_and_reduces_risk(tmp_path: Path) -> No
     assert trade.ml_probability == 0.57
     assert trade.ml_decision == MLDecision.REDUCE_RISK.value
     assert trade.position_size == 3.125
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), -0.1, 1.3])
+def test_ml_filter_rejects_invalid_probability(tmp_path: Path, bad: float) -> None:
+    candles = valid_long_setup()
+    signal = strategy().evaluate(candles)
+
+    result = active_filter(tmp_path, bad).evaluate(signal=signal, candles_at_signal=candles)
+
+    assert result.decision == MLDecision.REJECT
+    assert result.risk_multiplier == 0.0
+    assert result.probability is None
+    assert result.reason == "ML model returned an invalid probability"
+
+
+@pytest.mark.parametrize(("edge", "expected"), [(0.0, MLDecision.REJECT), (1.0, MLDecision.APPROVE)])
+def test_ml_filter_boundary_probabilities_keep_threshold_logic(
+    tmp_path: Path, edge: float, expected: MLDecision
+) -> None:
+    candles = valid_long_setup()
+    signal = strategy().evaluate(candles)
+
+    result = active_filter(tmp_path, edge).evaluate(signal=signal, candles_at_signal=candles)
+
+    assert result.decision == expected
+    assert result.probability == edge
