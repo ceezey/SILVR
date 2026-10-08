@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -130,6 +131,19 @@ class MLProbabilityFilter:
         feature_order = active_entry.features_used or tuple(features)
         row = [[float(features.get(name, 0.0)) for name in feature_order]]
         probability = self._predict_probability(model, row)
+        if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
+            return MLFilterResult(
+                signal_id=signal_id,
+                decision=MLDecision.REJECT,
+                probability=None,
+                threshold=self.config.min_probability,
+                reduce_risk_threshold=self.config.reduce_risk_threshold,
+                risk_multiplier=0.0,
+                model_id=active_entry.model_id,
+                model_name=active_entry.model_name,
+                reason="ML model returned an invalid probability",
+                features_snapshot=features,
+            )
 
         if probability >= self.config.min_probability:
             decision = MLDecision.APPROVE
@@ -176,7 +190,7 @@ class MLProbabilityFilter:
             probability = float(first[-1])
         else:
             probability = float(first)
-        return max(0.0, min(1.0, probability))
+        return probability
 
 
 def build_signal_id(signal: SilverBulletSignal) -> str:
