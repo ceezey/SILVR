@@ -83,7 +83,7 @@ Paths are relative to `src/silver_bot/` unless they start with a root filename.
   - `load_config` rejects `KILL_SWITCH_ENABLED=true` with a blank `KILL_SWITCH_PATH` in every mode (demo already requires both).
   - `KillSwitch.is_active()` returns `True` when the path exists, when it is a directory, or when checking it raises `OSError`. With no path it returns `False` (backtests).
   - New `KillSwitch.trip(reason: str) -> None` creates parent directories and writes the file as JSON: `{"reason": "Max daily loss limit reached", "tripped_at": "2026-10-09T14:00:00+00:00"}` (UTC ISO-8601 timestamp). With no path it does nothing.
-  - `RiskManagementEngine` calls `trip` when `evaluate` hits the max-daily-loss rejection, and when `release_trade` brings `consecutive_losses` to `max_consecutive_losses`. The reason names the limit. The halt then outlasts the day roll and a restart until the owner deletes the file.
+  - `RiskManagementEngine` calls `trip` when `evaluate` hits the max-daily-loss or max-consecutive-losses rejection (the latter covers a streak loaded from persisted state), and when `release_trade` brings `consecutive_losses` to `max_consecutive_losses`. A second trip keeps the first reason. The reason names the limit. The halt then outlasts the day roll and a restart until the owner deletes the file.
 - **Tests:** a directory path is active; an `OSError` from the check is active; a tripped file exists and holds valid JSON with both keys; three losing releases trip the switch; the daily-loss rejection trips it; with no path, `trip` writes nothing.
 
 ### G-7. Risk state resets on restart (H-11)
