@@ -1,7 +1,10 @@
+import json
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
+import silver_bot.risk.kill_switch as kill_switch_module
 from silver_bot.config import load_config
 from silver_bot.risk import KillSwitch, RiskConfig, RiskManagementEngine, RiskRequest, RiskState, build_risk_engine
 
@@ -163,3 +166,82 @@ def test_build_risk_engine_ignores_kill_switch_path_when_disabled(tmp_path) -> N
     engine = build_risk_engine(config)
 
     assert engine.kill_switch.path is None
+
+
+def test_kill_switch_directory_path_is_active(tmp_path) -> None:
+    folder = tmp_path / "KILL_SWITCH"
+    folder.mkdir()
+
+    assert KillSwitch(folder).is_active() is True
+
+
+def test_kill_switch_unreadable_path_is_active(tmp_path, monkeypatch) -> None:
+    def denied(path):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(kill_switch_module, "os", SimpleNamespace(stat=denied))
+
+    assert KillSwitch(tmp_path / "KILL_SWITCH").is_active() is True
+
+
+def test_kill_switch_parent_is_a_file_is_active(tmp_path) -> None:
+    parent = tmp_path / "not_a_dir"
+    parent.write_text("x", encoding="utf-8")
+
+    assert KillSwitch(parent / "KILL_SWITCH").is_active() is True
+
+
+def test_kill_switch_missing_file_is_inactive(tmp_path) -> None:
+    assert KillSwitch(tmp_path / "KILL_SWITCH").is_active() is False
+
+
+def test_kill_switch_trip_writes_reason_and_timestamp(tmp_path) -> None:
+    switch = KillSwitch(tmp_path / "nested" / "KILL_SWITCH")
+
+    switch.trip("Max daily loss limit reached")
+
+    payload = json.loads((tmp_path / "nested" / "KILL_SWITCH").read_text(encoding="utf-8"))
+    assert payload["reason"] == "Max daily loss limit reached"
+    assert payload["tripped_at"].endswith("+00:00")
+    assert switch.is_active() is True
+
+
+def test_kill_switch_second_trip_keeps_first_reason(tmp_path) -> None:
+    switch = KillSwitch(tmp_path / "KILL_SWITCH")
+    switch.trip("first")
+    switch.trip("second")
+
+    payload = json.loads((tmp_path / "KILL_SWITCH").read_text(encoding="utf-8"))
+    assert payload["reason"] == "first"
+
+
+def test_kill_switch_without_path_trip_is_noop() -> None:
+    switch = KillSwitch(None)
+    switch.trip("anything")
+
+    assert switch.is_active() is False
+
+
+def test_consecutive_losses_trip_kill_switch(tmp_path) -> None:
+    kill_file = tmp_path / "KILL_SWITCH"
+    engine = RiskManagementEngine(RiskConfig(max_consecutive_losses=3, kill_switch_path=kill_file))
+    day = date(2026, 1, 2)
+
+    for _ in range(3):
+        engine.reserve_trade(day)
+        engine.release_trade(realized_pnl=-10, day=day)
+
+    assert kill_file.exists()
+    assert json.loads(kill_file.read_text(encoding="utf-8"))["reason"] == "Max consecutive losses limit reached"
+    assert engine.evaluate(request()).reason == "Kill switch is active"
+
+
+def test_daily_loss_rejection_trips_kill_switch(tmp_path) -> None:
+    kill_file = tmp_path / "KILL_SWITCH"
+    state = RiskState(current_day=date(2026, 1, 2), daily_realized_pnl=-250)
+    engine = RiskManagementEngine(RiskConfig(max_daily_loss=0.02, kill_switch_path=kill_file), state=state)
+
+    decision = engine.evaluate(request())
+
+    assert decision.reason == "Max daily loss limit reached"
+    assert json.loads(kill_file.read_text(encoding="utf-8"))["reason"] == "Max daily loss limit reached"

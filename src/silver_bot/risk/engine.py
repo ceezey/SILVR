@@ -62,8 +62,10 @@ class RiskManagementEngine:
 
         max_daily_loss_amount = request.equity * self.config.max_daily_loss
         if self.state.daily_realized_pnl <= -max_daily_loss_amount:
+            self.kill_switch.trip("Max daily loss limit reached")
             return self._reject("Max daily loss limit reached", reward_to_risk=reward_to_risk)
         if self.state.consecutive_losses >= self.config.max_consecutive_losses:
+            self.kill_switch.trip("Max consecutive losses limit reached")
             return self._reject("Max consecutive losses limit reached", reward_to_risk=reward_to_risk)
         if self.state.trades_today >= self.config.max_trades_per_day:
             return self._reject("Max trades per day limit reached", reward_to_risk=reward_to_risk)
@@ -103,6 +105,8 @@ class RiskManagementEngine:
             self.state.consecutive_losses += 1
         elif realized_pnl > 0:
             self.state.consecutive_losses = 0
+        if self.state.consecutive_losses >= self.config.max_consecutive_losses:
+            self.kill_switch.trip("Max consecutive losses limit reached")
 
     @staticmethod
     def _stop_distance(*, direction: str, entry_price: float, stop_loss: float) -> float:
