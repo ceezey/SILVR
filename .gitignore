@@ -21,6 +21,5 @@ __pycache__/
 # Local-only
 .venv/
 /runtime/
-docs/document suite reference ONLY from another repo/
 .claude/settings.local.json
 *.egg-info/

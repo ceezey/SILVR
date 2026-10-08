@@ -34,7 +34,7 @@ flowchart LR
 7. [aia-silverbot.md](aia-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [ops-silverbot.md](ops-silverbot.md): AI risks, compliance rows, runbooks.
 8. This guide. Supporting: [idea-silverbot.md](idea-silverbot.md), [val-silverbot.md](val-silverbot.md), [ues-silverbot.md](ues-silverbot.md), [sad-silverbot.md](sad-silverbot.md), [voice-silverbot.md](voice-silverbot.md), [audit-docs-drift.md](audit-docs-drift.md), [README.md](../README.md).
 
-Build only against Locked docs. While every doc is Draft, flag the ambiguity to the owner instead of guessing. Code wins over any doc; a disagreement is recorded in [audit-docs-drift.md](audit-docs-drift.md).
+Draft docs are the best current knowledge and the code wins over them. Flag a doc/code disagreement or an `Open` / `Owner input required` item to the owner instead of guessing. Once a doc is Locked, changes to it need a Change Record. A disagreement is recorded in [audit-docs-drift.md](audit-docs-drift.md).
 
 Re-ground (re-read the relevant doc and the code) when:
 
@@ -54,7 +54,7 @@ Re-ground (re-read the relevant doc and the code) when:
 | Demo mode (PRD-F5) and readiness (PRD-F8) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) | readiness tests, subagent SAD-A1 |
 | ML filter (PRD-F6) | [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), [aia-silverbot.md](aia-silverbot.md) | ML tests, subagent SAD-A3 |
 | Monitoring (PRD-F7), deployment (PRD-F11) | [ops-silverbot.md](ops-silverbot.md) | monitoring tests, runbook steps |
-| Config (PRD-F9), data and storage (PRD-F10) | SDD config and data sections | config tests, `.env.example` loads |
+| Config (PRD-F9), data and storage (PRD-F10) | SDD config and data sections | config tests, the runbook-local-dev step 3 env block loads; `.env.example` is known to fail (G-4) |
 
 ## 2. Subagents
 
@@ -243,6 +243,8 @@ reports/
 
 ### Implementation Rules
 
+The bot must be developed phase by phase. Do not attempt to build the entire roadmap in one pass.
+
 For every task:
 
 1. Read the relevant documentation.
@@ -364,7 +366,7 @@ Never cut: validation, risk gates, the kill switch, stop loss, tests or secret h
 
 ### 5.1 Change Workflow
 
-1. Propose a Change Record `docs/cr-silverbot-<slug>.md` with sections: Why, Divergences, Changes, Verification, Pre-merge gate runs, Deferred.
+1. When a change touches a Locked doc, propose a Change Record `docs/cr-silverbot-<slug>.md` with sections: Why, Divergences, Changes, Verification, Pre-merge gate runs, Deferred.
 2. Apply the change (code, tests, docs).
 3. Verify: run the tests and the doc checks; run the subagent reviewers that SAD section 4 requires.
 4. Register the Change Record in the index section 2 ([docs/index.md](index.md)).
@@ -413,7 +415,7 @@ None. The bot has no public web surface; crawler policy is not applicable.
 | `MODEL_CARD.md` | [aia-silverbot.md](aia-silverbot.md) section 1 | generated |
 | `.claude/agents/*` | [sad-silverbot.md](sad-silverbot.md) section 3 | generated |
 
-The generator lives outside the repository, so a stale or hand-edited generated file is caught in review, not by CI. Never edit generated files directly; edit the source doc and re-materialize.
+The generator is `tools/materialize_docs.py`. Run `python tools/materialize_docs.py` to regenerate and `python tools/materialize_docs.py --check` to verify (also run by `tests/test_materialize_docs.py`). Never edit generated files directly; edit the source doc and re-materialize.
 
 ## 8. Self-Check
 

@@ -193,7 +193,7 @@ Nothing here is legal advice.
 
 ## 6. Materialization
 
-`MODEL_CARD.md` at the repository root is generated from §1 of this file by the suite's materialize step. §1 is the single source; do not edit `MODEL_CARD.md` by hand. §1 starts at the exact heading `## 1. Model / System Card` and ends before `## 2. Risk Register`. Only relative links inside §1 are rewritten for the root location; `§N` references are not rewritten, so §1 avoids pointing at other sections of this file. If §1 changes, regenerate and commit both files together.
+`MODEL_CARD.md` at the repository root is generated from §1 of this file by `python tools/materialize_docs.py`. §1 is the single source; do not edit `MODEL_CARD.md` by hand. §1 starts at the exact heading `## 1. Model / System Card` and ends before `## 2. Risk Register`. Only relative links inside §1 are rewritten for the root location; `§N` references are not rewritten, so §1 avoids pointing at other sections of this file. If §1 changes, run that command and commit both files together.
 
 ## 7. Self-Check
 

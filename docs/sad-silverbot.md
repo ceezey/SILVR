@@ -275,7 +275,7 @@ Rules:
 
 ## 5. Materialization
 
-A generator script (`materialize.py`, kept in the author's scratchpad and not committed) reads this file and writes `.claude/agents/<name>.md`. It finds each line of the form **Materializes to:** followed by a path in backticks, then the next four-backtick `markdown` fence, and writes that fence's content verbatim to the path. Edit the blocks here, never the generated files; regenerate after any edit. Only the four paths named in section 3 are valid targets. The generated files are not hand-edited and are not the source of truth.
+The generator script `tools/materialize_docs.py` (run `python tools/materialize_docs.py`; verify with `--check`) reads this file and writes `.claude/agents/<name>.md`. It finds each line of the form **Materializes to:** followed by a path in backticks, then the next four-backtick `markdown` fence, and writes that fence's content verbatim to the path. Edit the blocks here, never the generated files; regenerate after any edit. Only the four paths named in section 3 are valid targets. The generated files are not hand-edited and are not the source of truth.
 
 ## 6. Maintenance
 
