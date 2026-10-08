@@ -60,7 +60,7 @@ Re-ground (re-read the relevant doc and the code) when:
 
 ## 2. Subagents
 
-Four safety reviewers run before merge on the paths each guards. The roster, trigger rules and orchestration are in [sad-silverbot.md](docs/sad-silverbot.md) section 4. The generated cards live in `.claude/agents/`. Do not edit them by hand.
+Four safety reviewers run before merge on the paths each guards, and one standard-library-only builder (`psl-purist`, SAD-B1) writes operator UI and Telegram code on request. The roster, trigger rules and orchestration are in [sad-silverbot.md](docs/sad-silverbot.md) sections 3 and 4. The generated cards live in `.claude/agents/`. Do not edit them by hand.
 
 ## 3. Stack Currency & Deprecations
 

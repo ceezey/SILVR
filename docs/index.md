@@ -61,7 +61,7 @@ All suite docs were reconciled against code at commit `62037d1`, except the four
 | [CLAUDE.md](../CLAUDE.md) | Hand-maintained pointer | Itself; points here |
 | [AGENTS.md](../AGENTS.md) | Materialized | [build-silverbot.md](build-silverbot.md) |
 | [MODEL_CARD.md](../MODEL_CARD.md) | Materialized | [aia-silverbot.md](aia-silverbot.md) section 1 |
-| `.claude/agents/*.md` (4 files) | Materialized | [sad-silverbot.md](sad-silverbot.md) section 3 |
+| `.claude/agents/*.md` (5 files) | Materialized | [sad-silverbot.md](sad-silverbot.md) section 3 |
 
 Edit the source of truth, never the materialized file.
 
@@ -115,7 +115,7 @@ No incidents recorded. The bot has never run a paper, demo or live session, so t
 - [ ] Evidence reports are empty: `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are 0 bytes (G-1). No performance claim is made anywhere in the suite.
 - [x] Materialized artifacts match their sources: `python tools/materialize_docs.py --check` reports no changes, and `tests/test_materialize_docs.py` runs it in the suite. It checks generation only, not docs-vs-code semantics (see the process finding in [audit-docs-drift.md](audit-docs-drift.md)).
 - [x] The tables in section 1 list every file under `docs/` (25 files including this index).
-- [x] The SAD roster matches `.claude/agents/` (four reviewers, SAD-A1..A4).
+- [x] The SAD roster matches `.claude/agents/` (four reviewers, SAD-A1..A4, and one UI builder, SAD-B1).
 - [ ] Phase 9 live-readiness evidence is open: no backtest, out-of-sample, paper, kill-switch or Telegram evidence exists (see [prd-silverbot.md](prd-silverbot.md) section 9).
 - [ ] Code hazards still open; each is in [audit-docs-drift.md](audit-docs-drift.md) and [scrutiny-silverbot.md](scrutiny-silverbot.md):
   - The entrypoint is a startup stub that exits 0, so supervisors restart it in a loop (H-4, G-3). Because nothing calls `build_risk_engine`, the batch 1 risk fixes below reach no running bot.
