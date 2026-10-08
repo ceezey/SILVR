@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Sequence
 
 from silver_bot.config import AppConfig
+from silver_bot.config.settings import is_binance_futures_testnet_url
 from silver_bot.exchange.base import ExchangeAdapter
 from silver_bot.models import Candle
 
@@ -69,10 +70,3 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         if limit <= 0:
             raise ValueError("limit must be positive")
         raise NotImplementedError("Binance Futures OHLCV network fetching is not implemented in Phase 1")
-
-
-def is_binance_futures_testnet_url(value: str) -> bool:
-    """Return whether a URL points at the Binance Futures testnet host."""
-
-    normalized = value.strip().lower()
-    return "testnet.binancefuture.com" in normalized

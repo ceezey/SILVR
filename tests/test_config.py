@@ -239,3 +239,30 @@ def test_kill_switch_enabled_without_path_is_rejected_in_paper_mode(tmp_path: Pa
 
     with pytest.raises(ConfigError, match="KILL_SWITCH_PATH"):
         load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+
+def test_demo_config_rejects_lookalike_testnet_url(tmp_path: Path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        demo_env() + "\nBINANCE_FUTURES_BASE_URL=https://testnet.binancefuture.com.evil.com\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="testnet endpoint"):
+        load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_shipped_env_example_loads_as_paper(tmp_path: Path) -> None:
+    config = load_config(
+        env_path=REPO_ROOT / ".env.example",
+        yaml_path=tmp_path / "missing.yaml",
+        environ={},
+    )
+
+    assert config.mode == TradingMode.PAPER
+    assert config.paper_trading is True
+    assert config.demo_trading is False
+    assert config.live_trading is False
