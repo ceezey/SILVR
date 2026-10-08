@@ -1,0 +1,54 @@
+# Build Session Log (LOG)
+
+**Project:** Silver Bot (ICT Silver Bullet trading bot)
+**Version:** 0.1
+**Owner:** Cian Jake Francisco
+**Status:** Draft (append-only)
+**Last updated:** 2026-10-08
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+
+Add rows at the bottom of section 1; never edit or delete an earlier row. A correction is a new row.
+
+This log absorbs the change log of the old `PROGRESS.md`. The old file gave phase names but no dates; the old files were last modified on 2026-06-15, so every entry that carried no date is recorded as `before 2026-06-15`. "Evidence" names a test file or document that exists in the repository; it does not mean the feature works end to end (see [scrutiny-silverbot.md](scrutiny-silverbot.md) for the gaps). Related documents: [build-silverbot.md](build-silverbot.md) (how to build), [audit-docs-drift.md](audit-docs-drift.md) (old claims versus code), [prd-silverbot.md](prd-silverbot.md) (feature status).
+
+## 1. Action log
+
+| Date | Phase / pass | What changed | Evidence |
+|------|--------------|--------------|----------|
+| before 2026-06-15 | Initial documentation | Created the first documentation set (README.md, ARCHITECTURE.md, STRATEGY_NOTES.md, RISK_POLICY.md, ML_MODEL.md, DEPLOYMENT.md, PROGRESS.md, TODO.md, AGENTS.md). Chose ICT Silver Bullet as the core strategy, ML as a filter only, and an AI agent as analyst only. | Superseded by this suite; see [audit-docs-drift.md](audit-docs-drift.md) |
+| before 2026-06-15 | Phase 1 Foundation scaffold | Python 3.11+ `src/` package; typed config loading (defaults, optional `.env`, optional `config.yaml`, process environment); `LIVE_TRADING=true` and `TRADING_MODE=live` rejected; exchange adapter interface and a Binance Futures adapter skeleton with order placement disabled; historical OHLCV fetcher interface; SQLite initialisation. | `tests/test_config.py`, `tests/test_storage.py`, `tests/test_exchange.py` |
+| before 2026-06-15 | Phase 1 review | Added the correctly named `RISK_POLICY.md`; placeholder packages for later phases; hardened config validation (partial credentials, database path); order cancellation also disabled. | `tests/test_config.py`, `tests/test_exchange.py`, `tests/test_imports.py` |
+| before 2026-06-15 | Phase 2 Strategy modules | Session detection (America/New_York, DST-aware fallback), causal swing detection, liquidity and sweep detection, bullish and bearish FVG, displacement, simple MSS, higher-timeframe bias, deterministic LONG / SHORT / NO_TRADE signal engine, quality score. | `tests/test_strategy_sessions.py`, `tests/test_strategy_modules.py`, `tests/test_silver_bullet_strategy.py` |
+| before 2026-06-15 | Phase 3 Backtesting | Event-driven backtester using the strategy engine; limit entries at the FVG midpoint; stop and target simulation with stop-first on same-candle ambiguity; fees, slippage and spread; optional partial take-profit and breakeven; exports (`trades.csv`, `equity_curve.csv`, `backtest_report.json`, `rejected_signals.csv`); metrics; chronological split helper. Slippage and spread default to 0 bps. | `tests/test_backtest_engine.py` |
+| before 2026-06-15 | Phase 4 Risk management | Risk engine: sizing, stop-loss, reward-to-risk, daily loss, consecutive loss, max trades, max open positions and leverage validation; file-based kill switch; risk approval wired into the backtester; risk rejections recorded. Settings limits never reach `RiskConfig` (G-5); the kill switch is inert by default (G-6). | `tests/test_risk_engine.py`, `tests/test_backtest_engine.py` |
+| before 2026-06-15 | Phase 5 Paper trading | Market-data stream interfaces, mock stream, reconnecting wrapper, Binance polling stream skeleton (network fetch unimplemented); paper execution engine with simulated fills and costs; trade management; paper orchestrator; paper persistence; Telegram alert module (disabled by default, in-memory client only); basic daily paper report helper. | `tests/test_paper_trading.py`, `tests/test_storage.py` |
+| before 2026-06-15 | Phase 6 ML foundation | Dataset from rule-based setups (one row per setup), TP-before-SL labels, leakage-safe features, chronological split, baseline logistic regression, optional scikit-learn models, model artifacts and JSON registry with rollback. Offline only. | `tests/test_ml_dataset.py`, `tests/test_ml_training_registry.py` |
+| before 2026-06-15 | Phase 6 ML probability filter integration | Optional filter loading the active registry model; approve, reject and reduce-risk decisions; pass-through when disabled or no model; integrated in the backtester before risk approval; ML fields in trade and rejection records; prediction persistence. Config keys are parsed but never wired to the filter (G-9). | `tests/test_ml_probability_filter.py`, `tests/test_storage.py` |
+| before 2026-06-15 | Phase 7 Monitoring and reporting | JSON audit log with nested secret redaction; audit events for decisions, rejections, ML and simulated trade lifecycle; extra Telegram alert methods; daily and weekly report builders; trade journal CSV; dashboard JSON export. No scheduler calls the builders (G-16). | `tests/test_monitoring_reports.py` |
+| before 2026-06-15 | Phase 6 ML calibration and promotion | Calibration report (Brier score, reliability bins, ECE) with JSON and CSV export; offline promotion policy (`promote`, `reject`, `keep_current`) with a final-test optimisation guard. | `tests/test_ml_calibration.py`, `tests/test_ml_promotion.py` |
+| before 2026-06-15 | Phase 6 ML completion audit | Verified the Phase 6 components; a tied validation score can no longer hide other rejection reasons; added direct tests for degradation rejection, `keep_current` and tied-candidate rejection. | `tests/test_ml_promotion.py` |
+| before 2026-06-15 | Phase 8 Deployment support | Dockerfile with safe paper defaults; `.dockerignore`; Compose services and profiles (paper, backtest, research); container health check; example systemd unit; host preparation script; logrotate example. The container runs the startup stub (G-3). | `tests/test_deployment_files.py` |
+| before 2026-06-15 | Phase 9 Live-readiness checker | `python -m silver_bot.readiness` writing `reports/live_readiness_report.json`; 15 gates; fail-closed on an active kill-switch file. The report-exists gates accept 0-byte files (G-2). | `tests/test_readiness.py` |
+| before 2026-06-15 | Configuration checklist | Added `CONFIGURATION.md` and `config.example.yaml`; aligned `.env.example` and deployment docs to variable names; tightened validation of exchange name, symbol, timeframe and ML paths; clearer readiness messages. `.env.example` still fails to load (G-4). | `tests/test_config.py`, `tests/test_readiness.py` |
+| before 2026-06-15 | Phase 9.5 Binance demo/testnet mode | Separate `demo` mode (`MODE=demo`, `DEMO_TRADING=true`, `BINANCE_TESTNET=true`); strict demo config validation; adapter endpoint selection with a testnet-only guard (substring match, G-10); `python -m silver_bot.demo_readiness` with 18 checks; Compose `demo` profile. No network I/O exists in the adapter. | `tests/test_demo_readiness.py`, `tests/test_exchange.py`, `tests/test_config.py` |
+| 2026-10-08 | Docs canonicalization | Replaced the ten root documents (ARCHITECTURE.md, BACKTESTING.md, CONFIGURATION.md, DEPLOYMENT.md, ML_MODEL.md, RISK_POLICY.md, STRATEGY_NOTES.md, PROGRESS.md, TODO.md, codex-task.json) with the canonical suite under `docs/`; every old claim was checked against the code and every disagreement recorded as a drift row; gaps (G-#) were collected in SCRUTINY; runbooks and this log were written (runbook commands were executed on 2026-10-09). No code, tests or config were changed. | [spec](superpowers/specs/2026-10-08-canonical-docs-design.md), [plan](superpowers/plans/2026-10-08-canonical-docs.md), [audit-docs-drift.md](audit-docs-drift.md) |
+
+## 2. Friction
+
+Process lessons from the build so far. They are observations, not fixes; the fixes are tracked as gaps in [scrutiny-silverbot.md](scrutiny-silverbot.md).
+
+- **Evidence files existed but were empty.** The three evidence reports (`reports/backtest_report.json`, `reports/out_of_sample_validation_report.json`, `reports/paper_trading_report.json`) are 0 bytes, yet the live-readiness checker passes them because it only tests that the path exists (G-1, G-2). A green gate was therefore not evidence. Rule going forward: no performance claim without a non-empty report.
+- **Status was tracked in three files.** `PROGRESS.md`, `TODO.md` and `codex-task.json` each held a version of "what is done", and they drifted from the code (for example, task-list items ticked for features that are stubs, such as the historical fetcher and Telegram). Rule going forward: one status table (PRD section 3) and this log; task checkboxes live in PRD section 9.
+- **Phase labels outran the runtime.** Phases were marked complete when the component and its unit tests existed, not when the bot could run it. The entrypoint ignores the mode and exits after a startup stub (G-3), so backtest, paper and demo have no command line runtime.
+- **The shipped example config did not load.** `.env.example` was edited as phases were added and never run through `load_config` (G-4). Rule going forward: every runbook config block is verified by loading it.
+- **Entries carried no dates.** The old change log had phase names only, so the history before 2026-06-15 cannot be ordered by day. This log dates every new row.
+- **Commands in prose were not tested.** The old README and DEPLOYMENT described `python main.py` as running paper and backtest modes; it does not (D-1). The runbooks in this suite were each executed against the code before being written down.
+
+## Self-Check
+
+- [x] Every change-log section of the old `PROGRESS.md` has a row in section 1 (16 phase rows plus the docs pass).
+- [x] Rows without a source date use `before 2026-06-15`; no date was invented.
+- [x] Evidence cells name test files that exist under `tests/` or documents that exist under `docs/`.
+- [x] Rows state known stubs and gaps (G-#) next to the claim they limit.
+- [x] The friction section lists process lessons only, with no performance claim.
+- [ ] Rows are append-only; this holds only while future editors respect it (no tooling enforces it).

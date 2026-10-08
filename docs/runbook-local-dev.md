@@ -1,0 +1,156 @@
+# Local Development Runbook (RUNBOOK)
+
+**Project:** Silver Bot (ICT Silver Bullet trading bot)
+**Version:** 0.1
+**Owner:** Cian Jake Francisco
+**Status:** Draft
+**Last updated:** 2026-10-08
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+
+This runbook takes a fresh checkout to a working local environment: virtual environment, install, a safe paper-mode `.env`, the test suite, and the entrypoints that exist. It absorbs the old README "Basic Setup" and the example blocks of the old `CONFIGURATION.md`. Every command below was run against the code as built, except `pip install` (it needs the network; see step 2). Nothing here enables live trading or places an order; the adapter performs no network I/O.
+
+Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configuration reference, section 2.3 modes), [prd-silverbot.md](prd-silverbot.md) (section 5.1 operator surface), [ops-silverbot.md](ops-silverbot.md) (Docker and VPS), [qad-silverbot.md](qad-silverbot.md) (tests), [scrutiny-silverbot.md](scrutiny-silverbot.md) (G-3, G-4), [audit-docs-drift.md](audit-docs-drift.md) (D-1, D-2). The other runbooks are [runbook-backtest.md](runbook-backtest.md) and [runbook-demo-testnet.md](runbook-demo-testnet.md).
+
+## Prerequisites
+
+- Python 3.11 or newer (the project declares `requires-python = ">=3.11"`; the reference environment used 3.14.3).
+- Git. No exchange account and no API keys are needed for anything in this runbook.
+- The project has no runtime dependencies (`dependencies = []`); the only optional extra is `dev`, which installs `pytest>=8.0`.
+
+## Steps
+
+1. **Open a terminal in the repository root** (the folder that contains `pyproject.toml`).
+
+2. **Create and activate a virtual environment, then install the package with the dev extra.**
+
+   Windows (PowerShell):
+
+   ```powershell
+   py -3 -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install -e ".[dev]"
+   ```
+
+   Linux or macOS:
+
+   ```bash
+   python3 -m venv .venv
+   . .venv/bin/activate
+   python -m pip install -e ".[dev]"
+   ```
+
+   There is no `requirements.txt`; the old README step `pip install -r requirements.txt` fails (D-40, G-25). The `pip install` line needs network access to fetch the build backend and `pytest`, so it was not re-run in the offline verification; the existing reference environment already shows `silver-bot 0.1.0` installed editable. Venv creation was run and works. If you cannot install, `pytest` still works from the repository root because `pyproject.toml` sets `pythonpath = ["src"]`.
+
+3. **Create a private `.env` with a corrected paper-mode block.** Do not copy `.env.example` unchanged: it fails to load (see "Why `.env.example` fails" below). Create `.env` in the repository root with exactly this content:
+
+   ```dotenv
+   MODE=paper
+   TRADING_MODE=paper
+   LIVE_TRADING=false
+   PAPER_TRADING=true
+   DEMO_TRADING=false
+   DATABASE_PATH=data/silver_bot.sqlite3
+   EXCHANGE_NAME=binance_futures
+   SYMBOL=BTCUSDT
+   TIMEFRAME=1m
+   BINANCE_API_KEY=
+   BINANCE_API_SECRET=
+   BINANCE_TESTNET=false
+   BINANCE_FUTURES_BASE_URL=
+   TELEGRAM_ENABLED=false
+   ML_FILTER_ENABLED=false
+   RISK_ENGINE_ENABLED=true
+   KILL_SWITCH_ENABLED=true
+   KILL_SWITCH_PATH=data/KILL_SWITCH
+   STOP_LOSS_REQUIRED=true
+   MAX_RISK_PER_TRADE=0.005
+   MAX_DAILY_LOSS=0.02
+   MAX_LEVERAGE=3
+   ```
+
+   `.env` is git-ignored; never commit it and never paste real keys into any file that is tracked. Values are read as written: no `export` prefix, no inline comments (put comments on their own line).
+
+   What each safe default means:
+
+   | Variable | Value | Meaning |
+   |----------|-------|---------|
+   | `MODE`, `TRADING_MODE` | `paper` | Simulated trading. `MODE` overrides `TRADING_MODE` when both are set. The allowed modes are `backtest`, `demo`, `paper`; `live` is rejected. |
+   | `LIVE_TRADING` | `false` | `true` makes `load_config` raise `ConfigError`; there is no override. |
+   | `PAPER_TRADING` | `true` | Must be `true` in paper mode and `false` whenever `DEMO_TRADING=true`. |
+   | `DEMO_TRADING` | `false` | `true` switches on every demo-mode requirement (testnet keys and more). Keep `false` for local work. |
+   | `DATABASE_PATH` | `data/silver_bot.sqlite3` | SQLite file, relative to the folder you run from; must not contain `..` and must not be a directory. |
+   | `EXCHANGE_NAME`, `SYMBOL`, `TIMEFRAME` | `binance_futures`, `BTCUSDT`, `1m` | Target market; timeframe is digits plus one of `m h d w`. |
+   | `BINANCE_API_KEY`, `BINANCE_API_SECRET` | blank | Keys must be both set or both blank. Blank is correct outside demo. |
+   | `BINANCE_TESTNET`, `BINANCE_FUTURES_BASE_URL` | `false`, blank | Endpoint selection; only used in demo (see [runbook-demo-testnet.md](runbook-demo-testnet.md)). |
+   | `TELEGRAM_ENABLED` | `false` | `true` requires a token and chat id, and there is no real transport yet (G-15). |
+   | `ML_FILTER_ENABLED` | `false` | The ML filter keys are parsed but not wired to the runtime (G-9). |
+   | `RISK_ENGINE_ENABLED`, `STOP_LOSS_REQUIRED` | `true` | Required `true` for demo; kept `true` everywhere. |
+   | `KILL_SWITCH_ENABLED`, `KILL_SWITCH_PATH` | `true`, `data/KILL_SWITCH` | Kill-switch file location. The runtime does not pass this path to the risk engine, so it is not an effective emergency stop today (G-6). |
+   | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` | `0.005`, `0.02`, `3` | The documented caps (0.5%, 2%, 3x). Only demo mode and the readiness checkers range-check them (G-5). |
+
+   **Why `.env.example` fails.** It sets `MODE=paper` and `PAPER_TRADING=false` but also `DEMO_TRADING=true`. When `DEMO_TRADING` is true and the mode is `paper`, the loader promotes the mode to `demo`, and demo mode then requires API keys, so loading stops with `ConfigError: BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode` (D-2, G-4). The block above fixes it by using `PAPER_TRADING=true` and `DEMO_TRADING=false`. The example file itself has not been changed in this documentation pass.
+
+4. **Run the test suite** from the repository root:
+
+   ```bash
+   python -m pytest -q
+   ```
+
+   Expected: `108 passed`. The tests use mocks and in-memory clients; they need no API keys and no network.
+
+5. **Check the configuration loads and live is off** (this is also what the container health check runs):
+
+   ```bash
+   python -m silver_bot.health
+   ```
+
+   It prints nothing. Exit code 0 means the configuration loaded; 2 means it was rejected. It does not test the database, the exchange or the kill switch (G-27).
+
+6. **Run the bot entrypoint.** Any of these three is equivalent:
+
+   ```bash
+   python -m silver_bot
+   python main.py
+   silver-bot
+   ```
+
+   The last needs the editable install from step 2. The entrypoint takes no arguments and does not branch on the mode: it loads the configuration, creates the SQLite file, appends `bot_started` and `bot_stopped` lines to `logs/audit.jsonl`, logs `silver bot initialized`, and exits 0. It does not run a backtest, a paper session or a demo session (D-1, G-3). If the configuration is rejected it logs `configuration rejected: <reason>` and exits 2.
+
+7. **Inspect what it wrote:**
+
+   ```bash
+   ls data logs
+   ```
+
+   Expected: `data/silver_bot.sqlite3` and `logs/audit.jsonl`. These paths are relative to the folder you ran from, so run every command from the same place.
+
+## Verify
+
+Each check below was run against a temporary working folder containing only the `.env` from step 3.
+
+| Check | Command | Observed result |
+|-------|---------|-----------------|
+| Tests | `python -m pytest -q` (repository root) | `108 passed in 2.12s` |
+| Config loads | `python -c "from silver_bot.config import load_config; c=load_config(); print(c.mode, c.live_trading, c.paper_trading, c.demo_trading)"` | `TradingMode.PAPER False True False` |
+| Example fails | load `.env.example` with `load_config(env_path=".env.example", yaml_path="none.yaml", environ={})` | `ConfigError BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode` |
+| Health | `python -m silver_bot.health; echo $?` | no output, `0` |
+| Entrypoint | `python -m silver_bot; echo $?` | `INFO silver_bot.main silver bot initialized`, `0`; `main.py` gave the same |
+| Files written | `ls data logs` | `silver_bot.sqlite3`, `audit.jsonl` (two JSON lines, `bot_started` and `bot_stopped`, `"mode": "paper"`) |
+
+Safety posture to confirm: `live_trading` prints `False`, and `LIVE_TRADING=true` in the environment makes both `python -m silver_bot` and `python -m silver_bot.health` exit 2.
+
+## Troubleshooting
+
+- `ConfigError ... required for demo mode`: you copied `.env.example`; use the step 3 block.
+- `ConfigError: PAPER_TRADING must be true when TRADING_MODE=paper`: `MODE` or `TRADING_MODE` is `paper` while `PAPER_TRADING=false`.
+- A `data/` or `logs/` folder appears somewhere unexpected: relative paths follow the current working directory, not the repository root.
+- A `config.yaml` is read if present. Its parser is not real YAML (no nesting, indentation ignored), and root keys written after a section header are silently prefixed and ignored (see [sdd-silverbot.md](sdd-silverbot.md) section 3.4).
+
+## Self-Check
+
+- [x] Every command was executed against the code, except `pip install -e ".[dev]"`, which needs the network and is flagged as such in step 2.
+- [x] The `.env` block in step 3 was loaded with `load_config` from a temporary folder and returned mode paper, live false.
+- [x] The reason `.env.example` fails is stated with the exact error message and cross-referenced to D-2 and G-4.
+- [x] The entrypoint is described as a startup stub; no step claims it runs a backtest, paper or demo session.
+- [x] No real key, secret or personal path appears in the runbook.
+- [ ] The Linux and macOS venv commands were not executed (the verification host is Windows).
