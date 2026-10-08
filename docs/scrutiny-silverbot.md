@@ -37,13 +37,13 @@ Claims checked against code at the reconciled commit. "Verified?" is Yes, Partia
 | Claim (source) | Verified? | Evidence |
 |---|---|---|
 | Default mode is paper, LIVE_TRADING=false (README.md:23-25) | Yes | Defaults in `config/settings.py:68-71`; Dockerfile ENV and compose force paper and LIVE_TRADING false. `.env.example` itself does not load (D-2). |
-| Live trading only after the readiness checklist passes (README.md:17-19, ARCHITECTURE.md:547-556, PROGRESS.md:272) | Partial | Live is blocked unconditionally at config load; no code consults any readiness report (D-10, G-2). The block is safe but the described gate does not exist. |
-| Run backtest, paper and demo with `python main.py` (README.md:301-338) | No | `main.py:14-50` ignores mode and exits 0 (D-1, G-3). |
-| `pip install -r requirements.txt` (README.md:288-290) | No | No such file; `dependencies = []` in `pyproject.toml:10` (D-40, G-25). |
+| Live trading only after the readiness checklist passes (README.md:221, ARCHITECTURE.md:547-556, PROGRESS.md:272) | Partial | Live is blocked unconditionally at config load; no code consults any readiness report (D-10, G-2). The block is safe but the described gate does not exist. |
+| Run backtest, paper and demo with `python main.py` (README.md:332-351) | No | `main.py:14-50` ignores mode and exits 0 (D-1, G-3). |
+| `pip install -r requirements.txt` (README.md:302) | No | No such file; `dependencies = []` in `pyproject.toml:10` (D-40, G-25). |
 | Slippage and spread are modelled conservatively (BACKTESTING.md:194, 210) | No | Defaults are 0.0 bps (D-5, G-11). |
 | Walk-forward, Monte Carlo, sensitivity and multi-symbol backtests (README.md Phase 3, BACKTESTING.md:45-55) | No | Not present (D-6, G-12). |
 | Risk limits capped at 0.5% per trade (RISK_POLICY.md:99-121) | Partial | Enforced only by demo-mode config checks; `RiskConfig` allows 5% and is not wired to settings (D-11, H-5, G-5). |
-| Kill switch is mandatory (AGENTS.md, RISK_POLICY.md:142) | Partial | Implemented as a file check; inert by default (D-12, H-9, G-6). |
+| Kill switch is mandatory (AGENTS.md, RISK_POLICY.md:61, 139) | Partial | Implemented as a file check; inert by default (D-12, H-9, G-6). |
 | ML can only approve, reject or reduce risk (AGENTS.md, ML_MODEL.md) | Yes | `ml/filter.py` returns approve, reject or a multiplier in (0,1]. Caveat: a NaN probability approves (H-1, G-8). |
 | ML filter is configurable by environment (ML_MODEL.md:322-331) | No | Keys parsed but never wired (D-4, G-9). |
 | Telegram alerts work (DEPLOYMENT.md:7-11, 285, 336-337) | No | Protocol and in-memory client only (D-3, G-15). |
@@ -115,7 +115,41 @@ Status values: Open (answerable from code or work), Planned (roadmap item not bu
 | G-30 | Owner input required: capital and risk budget, target instruments, tolerance for drawdown, success criteria, jurisdiction, intended venue account, and the owner-only unknowns U-1 (is the restart loop intentional), U-2 (config.yaml in container), U-3 (who builds `MLFilterConfig`), U-4 (reconnect policy configuration). Collected as the owner input register in BRD §8 (docs/brd-silverbot.md). | HIGH for planning. Numeric targets and limits cannot be set without the owner. | BRD §8 | Owner input required |
 | G-31 | LOW-severity documentation drift D-51 to D-85 (file layouts, field names, option lists, metric columns, image names, log globs). | LOW. Documentation only; closed when the canonical docs are written. | SDD, AIA, OPS (per D-# Resolved in line) | Open |
 
-Coverage check: every STUB S-1 to S-34 is covered by G-2, G-3, G-6, G-9, G-12 to G-22, G-25 to G-28 (S-1 G-13, S-2 G-17, S-3 G-13/G-17, S-4 to S-7 G-13, S-8 to S-10 G-3, S-11 G-12, S-12 G-20, S-13 G-20, S-14 G-14, S-15 G-18, S-16 G-19, S-17 G-19, S-18 G-6, S-19 G-21, S-20 G-17, S-21 G-9/G-22, S-22 G-9, S-23 G-9, S-24 G-22, S-25 G-3, S-26 G-2, S-27 G-27, S-28 G-24, S-29 G-25, S-30 G-15, S-31 G-16, S-32 G-16, S-33 G-26, S-34 G-28). Every HIGH drift finding D-1 to D-13 and D-86 maps to a HIGH G-# row (D-1 G-3, D-2 G-4, D-3 G-15, D-4 G-9, D-5 G-11, D-6 G-12, D-7 and D-8 G-13, D-9 G-14, D-10 G-2, D-11 G-5, D-12 G-6, D-13 G-10, D-86 G-1). Hazards: H-1 G-8, H-2 G-1/G-2, H-3 G-2, H-4 G-3, H-5 G-5, H-6 G-18, H-7 G-11, H-8 G-23, H-9 G-6, H-10 G-21 (LOW, grouped), H-11 G-7, H-12 G-13, H-13 G-28, H-14 G-4.
+Coverage check: each row shows which stubs (S-#), drift findings (D-#) and hazards (H-#) a gap covers. Every HIGH drift finding (D-1 to D-13, D-86) maps to a HIGH gap row.
+
+| G-# | Covers |
+|---|---|
+| G-1 | D-86, H-2 |
+| G-2 | D-10, H-2, H-3, S-26 |
+| G-3 | D-1, D-46, H-4, S-8, S-9, S-10, S-25 |
+| G-4 | D-2, H-14 |
+| G-5 | D-11, H-5 |
+| G-6 | D-12, D-22, D-80, H-9, S-18 |
+| G-7 | H-11 |
+| G-8 | H-1 |
+| G-9 | D-4, S-21, S-22, S-23 |
+| G-10 | D-13 |
+| G-11 | D-5, H-7 |
+| G-12 | D-6, D-33, S-10, S-11 |
+| G-13 | D-7, D-8, H-12, S-1, S-3, S-4, S-5, S-6, S-7 |
+| G-14 | D-9, D-34, D-35, S-14 |
+| G-15 | D-3, D-47, S-30 |
+| G-16 | D-48, D-49, D-81, S-31, S-32 |
+| G-17 | S-2, S-3, S-20 |
+| G-18 | D-14, H-6, S-15 |
+| G-19 | D-15 to D-19, S-16, S-17 |
+| G-20 | D-25 to D-32, S-12, S-13 |
+| G-21 | D-23, D-24, H-10 (LOW, grouped), S-19 |
+| G-22 | D-36 to D-39, D-68 to D-76, S-21, S-24 |
+| G-23 | H-8 |
+| G-24 | D-41 to D-45, D-77 to D-79, S-28 |
+| G-25 | D-40, S-29 |
+| G-26 | D-50, D-83, S-33 |
+| G-27 | D-82, S-27 |
+| G-28 | H-13, S-34 |
+| G-29 | U-5 to U-20 (open unknowns) |
+| G-30 | U-1 to U-4 and missing owner inputs (BRD §8) |
+| G-31 | D-51 to D-85 (LOW drift not named in another row) |
 
 ## 4. Assumption Stress-Test
 
@@ -137,7 +171,7 @@ Coverage check: every STUB S-1 to S-34 is covered by G-2, G-3, G-6, G-9, G-12 to
 
 ## 6. Risk & Compliance Pre-flight
 
-- **Trading risk:** leverage up to 3x is the documented cap; the bot must never trade without a stop loss, average down or use martingale (AGENTS.md rules; stop-loss requirement is enforced by the risk engine gates). Details in RFC-002 (risk and kill switch) and RISK sections of SDD.
+- **Trading risk:** leverage up to 3x is the documented cap (`src/silver_bot/risk/models.py:25`); the bot must never trade without a stop loss, average down or use martingale (AGENTS.md rules; stop-loss requirement is enforced by the risk engine gates). Details in RFC-002 (risk and kill switch) and RISK sections of SDD.
 - **Compliance:** personal trading on the owner's own account; jurisdiction and tax treatment are Owner input required (G-30). Venue terms of use, API-key withdrawal restrictions and key handling are tracked in CLR §2.
 - **AI/ML risk:** ML is a filter only; NaN handling (G-8), pickle loading (G-23) and leakage (G-22) are tracked in AIA §2.
 - **Security:** no secrets in the repository; `.env` is never committed; the readiness secret scan exists but its behaviour outside git is Open (U-20, G-29).

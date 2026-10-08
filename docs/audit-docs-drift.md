@@ -14,7 +14,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ### D-1. Entrypoint is a startup-only stub; docs describe a running bot
 
-- **Old doc said:** README.md:301-304 `TRADING_MODE=backtest ... python main.py` runs a backtest; README.md:306-308 runs paper trading; README.md:334-338 starts demo mode; DEPLOYMENT.md:267 service starts the bot which "defaults to paper mode"; DEPLOYMENT.md:346-357 paper ready when "bot runs continuously", "daily report works"
+- **Old doc said:** README.md:332 `TRADING_MODE=backtest ... python main.py` runs a backtest; README.md:338 runs paper trading; README.md:351 starts demo mode; DEPLOYMENT.md:267 service starts the bot which "defaults to paper mode"; DEPLOYMENT.md:346-357 paper ready when "bot runs continuously", "daily report works"
 - **Code does:** `main.py:14-50` ignores mode, initialises SQLite, writes bot_started and bot_stopped to logs/audit.jsonl and returns 0; no exchange, stream, strategy, backtest or order code runs; the `bot` compose service therefore exits and restarts (docker-compose.yaml:31-32)
 - **Resolved in:** OPS (runbook, container and service behaviour) and SDD (entrypoint and runtime wiring); PRD-F11 status in PRD section 3
 
@@ -68,7 +68,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ### D-10. Live gate claims; readiness never consulted
 
-- **Old doc said:** ARCHITECTURE.md:547-556 live requires mode==live, LIVE_TRADING, PAPER_TRADING false, readiness, no-withdraw key, kill switch inactive; README.md:17-19, 366 live only after readiness checklist; PROGRESS.md:272 "live trading blocked unless all readiness checks pass in the report"
+- **Old doc said:** ARCHITECTURE.md:547-556 live requires mode==live, LIVE_TRADING, PAPER_TRADING false, readiness, no-withdraw key, kill switch inactive; README.md:221, 367 live only after readiness checklist; PROGRESS.md:272 "live trading blocked unless all readiness checks pass in the report"
 - **Code does:** `config/settings.py:104-107` blocks live unconditionally; no code reads any readiness report; `exchange/base.py:44-47`
 - **Resolved in:** SDD (exchange and readiness section) and CLR (live-trading controls); PRD-F5, PRD-F8 and PRD-F12 in PRD section 3
 
@@ -80,7 +80,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ### D-12. Kill switch inert by default
 
-- **Old doc said:** RISK_POLICY.md:142, AGENTS.md "kill switch validation" mandatory
+- **Old doc said:** RISK_POLICY.md:61, 139, AGENTS.md "kill switch validation" mandatory
 - **Code does:** `risk/models.py:26` kill_switch_path None; `execution/paper_trading.py:49` default engine has no path
 - **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and compliance); PRD-F3 status in PRD section 3
 
@@ -92,9 +92,9 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ### D-86. Evidence reports are 0 bytes yet readiness reports them as present
 
-- **Old doc said:** `reports/live_readiness_report.json` (generated 2026-06-15) lists `backtest_report_exists`, `out_of_sample_validation_report_exists` and `paper_trading_report_exists` as `"passed": true` ("Found reports\<name>.json"); README.md:17-19 and PROGRESS.md:272 make live trading conditional on that evidence
+- **Old doc said:** `reports/live_readiness_report.json` (generated 2026-06-15) lists `backtest_report_exists`, `out_of_sample_validation_report_exists` and `paper_trading_report_exists` as `"passed": true` ("Found reports\<name>.json"); README.md:221 and PROGRESS.md:272 make live trading conditional on that evidence
 - **Code does:** `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are all 0 bytes; `readiness.py:150-165` checks existence only (see H-2); no backtest, out-of-sample or paper result has ever been recorded
-- **Resolved in:** SDD (exchange and readiness section) and CLR (live-trading controls); PRD-F5, PRD-F8 and PRD-F12 in PRD section 3
+- **Resolved in:** QAD (strategy evidence section), BRD §7 (success metrics), SDD (exchange and readiness section) and CLR (live-trading controls); PRD-F2 and PRD-F8 in PRD section 3
 
 
 ## MEDIUM
@@ -107,7 +107,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ### D-15. No `use_htf_bias` flag
 
-- **Old doc said:** STRATEGY_NOTES.md:444 `use_htf_bias = true`
+- **Old doc said:** STRATEGY_NOTES.md:443 `use_htf_bias = true`
 - **Code does:** `strategy/silver_bullet.py:193` always applies bias, falls back to execution candles
 - **Resolved in:** SDD (strategy engine section); PRD-F1 status in PRD section 3
 
@@ -257,7 +257,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ### D-40. requirements.txt missing
 
-- **Old doc said:** README.md:288-290 `pip install -r requirements.txt`
+- **Old doc said:** README.md:302 `pip install -r requirements.txt`
 - **Code does:** no file; `pyproject.toml:10` `dependencies = []`
 - **Resolved in:** SDD (configuration section: keys, load order, validation) and OPS (environment setup)
 
@@ -530,7 +530,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ### D-85. Log glob
 
-- **Old doc said:** README.md:369-390; DEPLOYMENT.md:16 `*.log`
+- **Old doc said:** README.md:387 and DEPLOYMENT.md:215-219 mount `logs` for runtime logs; DEPLOYMENT.md:286 installs log rotation, implying application `*.log` files
 - **Code does:** only `logs/audit.jsonl` produced (`main.py:29`)
 - **Resolved in:** SDD (monitoring and reporting section); PRD-F7 status in PRD section 3
 
