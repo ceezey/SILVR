@@ -24,6 +24,8 @@ Live trading is blocked: the config loader rejects `LIVE_TRADING=true`, and orde
 6. API withdrawals are disabled.
 7. The owner accepts the risk.
 
+Full proposal conditions: [RFC-004 §7.1](docs/rfc-silverbot-readiness-gates.md).
+
 ## Current Status
 
 Honest summary at commit `62037d1` (see [docs/prd-silverbot.md](docs/prd-silverbot.md) section 3 for the per-feature table):
@@ -57,7 +59,7 @@ Start at [docs/index.md](docs/index.md); it lists every document, its status and
 
 - What and why: [docs/prd-silverbot.md](docs/prd-silverbot.md), [docs/brd-silverbot.md](docs/brd-silverbot.md)
 - How it is built: [docs/sdd-silverbot.md](docs/sdd-silverbot.md), [docs/build-silverbot.md](docs/build-silverbot.md)
-- Strategy and risk: [docs/rfc-silverbot-signal-engine.md](docs/rfc-silverbot-signal-engine.md), [docs/rfc-silverbot-risk-kill-switch.md](docs/rfc-silverbot-risk-kill-switch.md)
+- Strategy, risk, ML and readiness: [RFC-001](docs/rfc-silverbot-signal-engine.md), [RFC-002](docs/rfc-silverbot-risk-kill-switch.md), [RFC-003](docs/rfc-silverbot-ml-filter-gate.md), [RFC-004](docs/rfc-silverbot-readiness-gates.md)
 - Testing and gates: [docs/qad-silverbot.md](docs/qad-silverbot.md)
 - Operations: [docs/ops-silverbot.md](docs/ops-silverbot.md)
 - What is wrong today: [docs/scrutiny-silverbot.md](docs/scrutiny-silverbot.md), [docs/audit-docs-drift.md](docs/audit-docs-drift.md)

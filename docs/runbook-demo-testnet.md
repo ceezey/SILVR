@@ -38,8 +38,8 @@ Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-ga
    BINANCE_TESTNET=true
    LIVE_TRADING=false
    PAPER_TRADING=false
-   BINANCE_API_KEY=REPLACE_WITH_TESTNET_KEY
-   BINANCE_API_SECRET=REPLACE_WITH_TESTNET_SECRET
+   BINANCE_API_KEY=<testnet-key>
+   BINANCE_API_SECRET=<testnet-secret>
    BINANCE_FUTURES_BASE_URL=https://testnet.binancefuture.com
    DATABASE_PATH=data/silver_bot.sqlite3
    EXCHANGE_NAME=binance_futures

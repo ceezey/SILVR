@@ -11,7 +11,7 @@ This brief asks whether the idea in [idea-silverbot.md](idea-silverbot.md) deser
 
 ## 1. Problem Evidence
 
-**Owner motivation (stated, not measured).** README.md §Project Philosophy sets the motive: build around survival, protect capital, log every decision, prove performance before live trading, and never trade without a stop loss. README.md §Important Warning states that crypto futures are high risk, that leverage can liquidate an account, and that the bot "must never be treated as guaranteed profitable".
+**Owner motivation (stated, not measured).** old README.md (commit `62037d1`) §Project Philosophy sets the motive: build around survival, protect capital, log every decision, prove performance before live trading, and never trade without a stop loss. old README.md (commit `62037d1`) §Important Warning states that crypto futures are high risk, that leverage can liquidate an account, and that the bot "must never be treated as guaranteed profitable".
 
 **Evidence that the strategy has an edge: none.** `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are 0 bytes (G-1, D-86). The backtest engine is covered by tests on synthetic data only. No profit, win rate, drawdown or return figure exists anywhere in this repository, and none is claimed here.
 

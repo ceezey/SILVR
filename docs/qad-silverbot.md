@@ -31,7 +31,7 @@ Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`
 
 | Environment | Purpose | How |
 |---|---|---|
-| Local virtual environment | The only environment that runs the suite today | `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` (Git Bash path on the owner's Windows machine) |
+| Local virtual environment | The only environment that runs the suite today | `.venv/Scripts/python -m pytest -q` from the repo root (Git Bash on the owner's Windows machine) |
 | Fixtures | Isolation | pytest `tmp_path` for databases, kill-switch files, reports and logs; `pytest.raises` for error cases; no `conftest.py`, no network, no real `.env` |
 | Config | Collection | `pyproject.toml`: `pythonpath = ["src"]`, `testpaths = ["tests"]`, `addopts = "-ra"`; Python 3.11 or newer; `pytest>=8.0` in the `dev` extra |
 | Binance testnet | Manual only, and not possible yet | There is no network code (G-13, G-17); see section 4 |
@@ -39,7 +39,7 @@ Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`
 
 **Data.** All tests use synthetic candles and in-code fixtures. No historical dataset ships with the repository, and the owner has not yet chosen a data source (OI-8 in the BRD). Real-data runs are therefore not part of this suite (section 3.7).
 
-**Baseline result (verbatim).** Run on 2026-10-08 with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` at the reconciled commit:
+**Baseline result (verbatim).** Run on 2026-10-08 with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` (recorded on 2026-10-08 in the original checkout path) at the reconciled commit:
 
 ```text
 ........................................................................ [ 66%]

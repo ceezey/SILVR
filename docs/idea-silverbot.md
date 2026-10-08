@@ -11,9 +11,9 @@ Silver Bot is a personal Python bot that looks for ICT Silver Bullet setups in c
 
 ## 1. The Spark
 
-The owner wants a disciplined, repeatable way to trade one specific method, the ICT Silver Bullet, without relying on attention, mood or screen time. The method is rule-like enough to encode (README.md §Core Strategy): price enters a session window, takes liquidity, shows displacement and a market structure shift, leaves a Fair Value Gap, and the entry is taken on the retracement into that gap with a defined stop and a liquidity-based target.
+The owner wants a disciplined, repeatable way to trade one specific method, the ICT Silver Bullet, without relying on attention, mood or screen time. The method is rule-like enough to encode (old README.md (commit `62037d1`) §Core Strategy): price enters a session window, takes liquidity, shows displacement and a market structure shift, leaves a Fair Value Gap, and the entry is taken on the retracement into that gap with a defined stop and a liquidity-based target.
 
-Automation is attractive for three reasons stated in the project's own philosophy (README.md §Project Philosophy): protect capital first, log every decision, and prove performance before any live execution. A bot can enforce the same stop-loss and sizing rules on every trade and leave an audit trail; a human cannot do that reliably.
+Automation is attractive for three reasons stated in the project's own philosophy (old README.md (commit `62037d1`) §Project Philosophy): protect capital first, log every decision, and prove performance before any live execution. A bot can enforce the same stop-loss and sizing rules on every trade and leave an audit trail; a human cannot do that reliably.
 
 What this brief does not claim: that the method is profitable. No backtest, out-of-sample or paper evidence exists yet (all three report files are 0 bytes, G-1). The idea is worth pursuing only as a research and validation project until that evidence exists.
 

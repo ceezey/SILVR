@@ -76,13 +76,13 @@ This audit records findings, not decisions. It compares the old root documents (
 
 - **Old doc said:** RISK_POLICY.md:50-62 enforced set; RISK_POLICY.md:99-121 MAX_RISK_PER_TRADE <= 0.005
 - **Code does:** `risk/models.py:29` RiskConfig allows up to 0.05; Settings risk limits (demo-only checks, settings.py:186-190) never wired into RiskConfig (`backtest/engine.py:41`, `execution/paper_trading.py:49`)
-- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and compliance); PRD-F3 status in PRD section 3
+- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
 
 ### D-12. Kill switch inert by default
 
 - **Old doc said:** RISK_POLICY.md:61, 139, AGENTS.md "kill switch validation" mandatory
 - **Code does:** `risk/models.py:26` kill_switch_path None; `execution/paper_trading.py:49` default engine has no path
-- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and compliance); PRD-F3 status in PRD section 3
+- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
 
 ### D-13. Testnet URL check is substring
 
@@ -151,7 +151,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 - **Old doc said:** ARCHITECTURE.md:273 "Trigger kill switch"
 - **Code does:** `risk/kill_switch.py:8-17` read-only file-exists check
-- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and compliance); PRD-F3 status in PRD section 3
+- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
 
 ### D-23. Execution responsibilities overstated
 
@@ -382,7 +382,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 - **Old doc said:** ARCHITECTURE.md:277-282 position_sizing.py, limits.py, validators.py
 - **Code does:** engine.py, kill_switch.py, models.py
-- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and compliance); PRD-F3 status in PRD section 3
+- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
 
 ### D-61. Execution file layout
 
@@ -400,7 +400,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 - **Old doc said:** RISK_POLICY.md:130-132
 - **Code does:** `risk/models.py:19`, `risk/engine.py:49` absolute price units
-- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and compliance); PRD-F3 status in PRD section 3
+- **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
 
 ### D-64. simulator.py
 

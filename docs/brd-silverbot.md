@@ -17,7 +17,7 @@ The business requirement is survival first: no trade without a stop loss, no mar
 
 ## 2. Problem & Opportunity (personal)
 
-**Problem.** Discretionary execution of a rule-based method is inconsistent: stops move, size drifts, trades are skipped or forced. A person also cannot watch the session windows continuously or keep a complete decision log (README.md §Project Philosophy).
+**Problem.** Discretionary execution of a rule-based method is inconsistent: stops move, size drifts, trades are skipped or forced. A person also cannot watch the session windows continuously or keep a complete decision log (old README.md (commit `62037d1`) §Project Philosophy).
 
 **Opportunity.** If the method has an edge after realistic costs, encoding it plus an enforced risk layer could trade it consistently with a full audit trail. If it has no edge, the project's value is finding that out cheaply and safely in backtest and paper modes. Both outcomes are acceptable; an unvalidated live deployment is not.
 
@@ -103,9 +103,9 @@ Every number or decision that only the owner can give. Referenced as `Owner inpu
 | OI-7 | Target instruments and timeframe for the first evidence run (code default BTCUSDT, 1m) | Fixes the data and cost assumptions for the evidence run | IDEA §6, BRD-M3, QAD |
 | OI-8 | Historical data source and how far back to test | Without data no backtest exists (fetch raises NotImplementedError, G-13) | BRD-M3, UES §3 |
 | OI-9 | Minimum number of trades the owner accepts as meaningful evidence | The old document requires "enough trades" but gives no number | BRD-M5, VALIDATION K6 |
-| OI-10 | Intended venue account for demo and, if ever, live (and whether it is already opened) | Needed for API key handling, withdrawal restrictions and venue terms | [clr-silverbot.md](clr-silverbot.md), [RFC-001](rfc-silverbot-signal-engine.md) |
+| OI-10 | Intended venue account for demo and, if ever, live (and whether it is already opened) | Needed for API key handling, withdrawal restrictions and venue terms | [clr-silverbot.md](clr-silverbot.md), [RFC-004](rfc-silverbot-readiness-gates.md) |
 | OI-11 | Is the container restart loop after `main()` exits intentional, and should `config.yaml` be present in the container (U-1, U-2) | Decides the supervisor behaviour and the configuration source in deployment | [ops-silverbot.md](ops-silverbot.md), [sdd-silverbot.md](sdd-silverbot.md) |
-| OI-12 | Who builds the ML filter configuration from settings, and how should stream reconnection be configured (U-3, U-4) | Closes two design questions only the owner can decide | [sdd-silverbot.md](sdd-silverbot.md), [RFC-001](rfc-silverbot-signal-engine.md) |
+| OI-12 | Who builds the ML filter configuration from settings, and how should stream reconnection be configured (U-3, U-4) | Closes two design questions only the owner can decide | [sdd-silverbot.md](sdd-silverbot.md), [RFC-003](rfc-silverbot-ml-filter-gate.md) |
 
 ## 9. Stakeholders
 

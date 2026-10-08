@@ -115,7 +115,7 @@ No incidents recorded. The bot has never run a paper, demo or live session, so t
   - NaN model probability is treated as 1.0 and approves a signal (H-1, G-8).
   - The kill switch is inert unless a path is injected, checks existence only, never auto-triggers and does not close positions (D-12, H-9, G-6).
   - Readiness is unreliable and consulted by nothing: a 0-byte report passes "exists", and a live-ready result needs settings the app refuses to load (H-2, H-3, G-2).
-  - Settings risk limits never reach the risk engine, which allows 5% per trade against the documented 0.5% (D-11, H-5, G-5).
+  - Settings risk limits never reach the risk engine, whose RiskConfig accepts up to 5% risk per trade (validation ceiling; default 0.5%; `risk/models.py:18,29`) against the documented 0.5% cap (D-11, H-5, G-5).
   - Risk state lives in memory and resets on restart (H-11, G-7).
   - The entrypoint is a startup stub that exits 0, so supervisors restart it in a loop (H-4, G-3).
   - `.env.example` fails to load as shipped (H-14, G-4).
@@ -124,17 +124,17 @@ No incidents recorded. The bot has never run a paper, demo or live session, so t
 
 ## 5. Notes
 
-Owner decisions that shaped this suite (from the [design spec](superpowers/specs/2026-10-08-canonical-docs-design.md)):
+Owner decisions that shaped this suite (OD-1 to OD-7, from the [design spec](superpowers/specs/2026-10-08-canonical-docs-design.md)). Citations of the form `FILE.md:N` to retired root docs (ARCHITECTURE.md, BACKTESTING.md, CONFIGURATION.md, DEPLOYMENT.md, ML_MODEL.md, RISK_POLICY.md, STRATEGY_NOTES.md, PROGRESS.md, TODO.md, the old README.md and the old AGENTS.md) refer to `git show 62037d1:FILE.md`.
 
-- D1: Personal trading only. No customers, no pricing.
-- D2: Generic jurisdiction. Country-specific compliance rows are open items for the owner.
-- D3: Old root docs were absorbed, then deleted. Baseline commit `62037d1` keeps the originals.
-- D4: The DSD is created with empty design-system sections ("Not started") plus a labelled Recommended UI proposal. Nothing is claimed as built.
-- D5: Personal financial targets are an owner-input register; items not derivable from code are `Owner input required` (BRD section 8).
-- D6: A small safety subagent roster, materialized to `.claude/agents/`.
-- D7: Code-first audit, then write. Code wins over old docs.
+- OD-1: Personal trading only. No customers, no pricing.
+- OD-2: Generic jurisdiction. Country-specific compliance rows are open items for the owner.
+- OD-3: Old root docs were absorbed, then deleted. Baseline commit `62037d1` keeps the originals.
+- OD-4: The DSD is created with empty design-system sections ("Not started") plus a labelled Recommended UI proposal. Nothing is claimed as built.
+- OD-5: Personal financial targets are an owner-input register; items not derivable from code are `Owner input required` (BRD section 8).
+- OD-6: A small safety subagent roster, materialized to `.claude/agents/`.
+- OD-7: Code-first audit, then write. Code wins over old docs.
 
-Doc count: 17 suite docs (16 in the first table plus this index), 4 RFCs, 3 runbooks and 1 audit, which is 25 files under `docs/`. The root holds README.md, CLAUDE.md, AGENTS.md and MODEL_CARD.md.
+Doc count: 17 suite docs (16 in the first table plus this index), 4 RFCs, 3 runbooks and 1 audit, which is 25 files under `docs/`, plus 2 tracked process records under `docs/superpowers/` (the design spec and the implementation plan). The root holds README.md, CLAUDE.md, AGENTS.md and MODEL_CARD.md.
 
 Excluded: GTM, PITCH and WRAP. This is a personal trading bot with no customers, no pitch audience and no external product launch, so market, investor and launch-wrap docs do not apply.
 
