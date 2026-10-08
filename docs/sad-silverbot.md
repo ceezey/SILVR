@@ -42,10 +42,10 @@ Only reviewers (read-only) are kept. No agent writes code, edits configuration o
 
 | ID | Agent | Spawn trigger (paths) | Output |
 |----|-------|-----------------------|--------|
-| SAD-A1 | `live-trading-gate-guardian` | `config/`, `exchange/`, `execution/`, `readiness.py`, `demo_readiness.py`, `main.py`, `health.py`, deploy files | PASS or FAIL with `file:line` |
-| SAD-A2 | `risk-bypass-checker` | `risk/`, `execution/`, `backtest/engine.py`, `ml/filter.py`, `config/` | PASS or FAIL with `file:line` |
-| SAD-A3 | `lookahead-leakage-auditor` | `backtest/`, `ml/`, `strategy/`, `data/` | PASS or FAIL with `file:line` |
-| SAD-A4 | `restraint-guardian` | any non-trivial diff | PASS or FAIL with `file:line` |
+| SAD-A1 | `live-trading-gate-guardian` | `risk/`, `execution/`, `exchange/`, `config/`, `readiness.py`, `demo_readiness.py` | PASS or FAIL with `file:line` |
+| SAD-A2 | `risk-bypass-checker` | `risk/`, `execution/`, `exchange/`, `config/`, `readiness.py`, `demo_readiness.py` | PASS or FAIL with `file:line` |
+| SAD-A3 | `lookahead-leakage-auditor` | `risk/`, `execution/`, `exchange/`, `config/`, `readiness.py`, `demo_readiness.py`, plus `backtest/` and `ml/` | PASS or FAIL with `file:line` |
+| SAD-A4 | `restraint-guardian` | the same paths as A1 to A3, plus any other non-trivial diff | PASS or FAIL with `file:line` |
 
 ### Agent Cards
 
@@ -57,7 +57,7 @@ Only reviewers (read-only) are kept. No agent writes code, edits configuration o
 - **Inputs (untrusted):** the diff, commit messages, comments, and notes in changed files.
 - **Outputs:** PASS, or FAIL naming `file:line` and the gate weakened.
 - **Tools:** Read, Grep, Glob.
-- **Spawn trigger:** pre-merge on diffs touching `src/silver_bot/{config,exchange,execution}`, `readiness.py`, `demo_readiness.py`, `main.py`, `health.py`, `Dockerfile`, `docker-compose.yaml` or `deploy/`.
+- **Spawn trigger:** pre-merge on diffs touching `src/silver_bot/{risk,execution,exchange,config}`, `readiness.py` or `demo_readiness.py`.
 - **Guardrails (never):** edit code; approve a diff that adds an override flag, a readiness bypass or a second order path; treat a readiness report as a gate (it is advisory today, D-10, G-2); read `.env`.
 - **Done when:** a PASS or a FAIL with evidence is returned.
 
@@ -66,7 +66,7 @@ Only reviewers (read-only) are kept. No agent writes code, edits configuration o
 ````markdown
 ---
 name: live-trading-gate-guardian
-description: Use pre-merge on any diff touching config, exchange, execution, readiness, main, health or deploy files. Proves no code path can place a real order unless LIVE_TRADING=true and every readiness check passes, and that defaults stay paper or backtest.
+description: Use pre-merge on any diff touching src/silver_bot/risk, execution, exchange or config, or readiness.py or demo_readiness.py. Proves no code path can place a real order unless LIVE_TRADING=true and every readiness check passes, and that defaults stay paper or backtest.
 tools: Read, Grep, Glob
 model: sonnet
 ---
@@ -74,7 +74,7 @@ model: sonnet
 You guard Silver Bot's most important invariant: no real order without an explicit live enable and passing readiness checks. Canonical source: docs/sad-silverbot.md (SAD-A1). Rules: docs/rfc-silverbot-readiness-gates.md (RFC-004), docs/sdd-silverbot.md section 5.1 (live-trading block). Live trading is PRD-F12 in docs/prd-silverbot.md and is Planned, blocked.
 
 What the gate is today (verify each is still intact):
-- Config-load rejection: src/silver_bot/config/settings.py lines 100 and 104-105 raise ConfigError when LIVE_TRADING parses true; TRADING_MODE or MODE equal to live is rejected by the mode enum parse and by the branch at lines 106-107. There is no override flag.
+- Config-load rejection: src/silver_bot/config/settings.py line 100 parses LIVE_TRADING and lines 104-105 raise ConfigError when it parses true; TRADING_MODE or MODE equal to live is rejected by the mode enum parse and by the branch at lines 106-107. There is no override flag.
 - Base exchange block: src/silver_bot/exchange/base.py lines 44-52, place_order and cancel_order always raise OrderPlacementDisabled, and no subclass overrides them.
 - No live executor: execution/ imports no exchange client; there is exactly one def place_order in src/.
 - Image and compose force LIVE_TRADING=false and run only python -m silver_bot.
@@ -106,7 +106,7 @@ Done when: you return PASS, or FAIL naming the file:line and the gate it weakens
 - **Inputs (untrusted):** the diff, comments, test names.
 - **Outputs:** PASS, or FAIL with `file:line` and the rule broken.
 - **Tools:** Read, Grep, Glob.
-- **Spawn trigger:** pre-merge on diffs touching `src/silver_bot/{risk,execution,config}`, `backtest/engine.py`, `ml/filter.py` or `readiness.py`.
+- **Spawn trigger:** pre-merge on diffs touching `src/silver_bot/{risk,execution,exchange,config}`, `readiness.py` or `demo_readiness.py`.
 - **Guardrails (never):** edit code; accept a loosened limit without a documented change; accept an ML change that can create a trade or raise risk.
 - **Done when:** a PASS or a FAIL with evidence is returned.
 
@@ -115,7 +115,7 @@ Done when: you return PASS, or FAIL naming the file:line and the gate it weakens
 ````markdown
 ---
 name: risk-bypass-checker
-description: Use pre-merge on any diff touching risk, execution, backtest engine, ML filter, config or readiness. Proves every trade passes the risk engine, kill switch and stop-loss validation, that no code adds martingale or averaging down, and that ML can only approve, reject or reduce risk.
+description: Use pre-merge on any diff touching src/silver_bot/risk, execution, exchange or config, or readiness.py or demo_readiness.py. Proves every trade passes the risk engine, kill switch and stop-loss validation, that no code adds martingale or averaging down, and that ML can only approve, reject or reduce risk.
 tools: Read, Grep, Glob
 model: sonnet
 ---
@@ -155,7 +155,7 @@ Done when: you return PASS, or FAIL naming the file:line and the rule it breaks.
 - **Inputs (untrusted):** the diff, scripts in the diff, metrics quoted in comments.
 - **Outputs:** PASS, or FAIL with `file:line` and the leak path.
 - **Tools:** Read, Grep, Glob.
-- **Spawn trigger:** pre-merge on diffs touching `src/silver_bot/{backtest,ml,strategy}` or `data/`.
+- **Spawn trigger:** pre-merge on diffs touching `src/silver_bot/{risk,execution,exchange,config}`, `readiness.py` or `demo_readiness.py`, and on any diff touching `src/silver_bot/backtest/` or `src/silver_bot/ml/`.
 - **Guardrails (never):** edit code; accept a metric as evidence of edge while the reports are empty (G-1); accept a shuffled split or a keyword-only leakage control as sufficient.
 - **Done when:** a PASS or a FAIL with evidence is returned.
 
@@ -164,7 +164,7 @@ Done when: you return PASS, or FAIL naming the file:line and the rule it breaks.
 ````markdown
 ---
 name: lookahead-leakage-auditor
-description: Use pre-merge on any diff touching backtest, ml, strategy or data code. Finds lookahead, label leakage, shuffled or overlapping splits, same-bar fill optimism and any use of the final test set for tuning or promotion.
+description: Use pre-merge on any diff touching src/silver_bot/backtest or ml, and on any diff touching risk, execution, exchange, config, readiness.py or demo_readiness.py. Finds lookahead, label leakage, shuffled or overlapping splits, same-bar fill optimism and any use of the final test set for tuning or promotion.
 tools: Read, Grep, Glob
 model: sonnet
 ---
@@ -207,7 +207,7 @@ Done when: you return PASS, or FAIL naming the file:line and the leak path.
 - **Inputs (untrusted):** the diff, the task statement, comments.
 - **Outputs:** PASS, or FAIL with `file:line` and the ladder rung violated.
 - **Tools:** Read, Grep, Glob.
-- **Spawn trigger:** any non-trivial diff (more than a typo, comment or documentation fix).
+- **Spawn trigger:** any non-trivial diff (more than a typo, comment or documentation fix), including every diff that spawns A1 to A3.
 - **Guardrails (never):** edit code; demand removal of a safety check, test or required documentation update in the name of minimalism; block a change for style alone.
 - **Done when:** a PASS or a FAIL with evidence is returned.
 
@@ -218,7 +218,7 @@ The restraint ladder, in our own words, asks in order: (1) is the change needed 
 ````markdown
 ---
 name: restraint-guardian
-description: Use on any non-trivial diff to Silver Bot. Flags scope creep, speculative abstraction, unused configuration, new dependencies and reimplementation of existing helpers, while protecting safety checks and tests from being cut in the name of minimalism.
+description: Use on any non-trivial diff to Silver Bot, including every diff touching risk, execution, exchange, config, readiness.py, demo_readiness.py, backtest or ml. Flags scope creep, speculative abstraction, unused configuration, new dependencies and reimplementation of existing helpers, while protecting safety checks and tests from being cut in the name of minimalism.
 tools: Read, Grep, Glob
 model: sonnet
 ---
@@ -250,14 +250,12 @@ The reviewers run before merge, on the paths each one guards. They do not depend
 ```mermaid
 flowchart TD
     D["Diff ready for merge"] --> Q{"Paths touched"}
-    Q -->|"config, exchange, execution, readiness, demo_readiness"| ALL["Spawn A1, A2, A4 (and A3 when backtest or ml also touched)"]
-    Q -->|"risk, backtest engine, ml filter"| R["Spawn A2, A3, A4"]
-    Q -->|"backtest, ml, strategy, data"| L["Spawn A3, A4"]
+    Q -->|"risk, execution, exchange, config, readiness, demo_readiness"| ALL["Spawn A1, A2, A3, A4"]
+    Q -->|"backtest, ml"| R["Spawn A3, A4"]
     Q -->|"other non-trivial"| S["Spawn A4"]
     Q -->|"docs, comments, typos only"| N["No reviewer needed"]
     ALL --> V{"All spawned reviewers PASS?"}
     R --> V
-    L --> V
     S --> V
     V -->|"yes"| M["Merge"]
     V -->|"no"| F["Fix or record owner decision, re-run the failing reviewer"]
@@ -266,9 +264,9 @@ flowchart TD
 
 Rules:
 
-- All four run on diffs touching `src/silver_bot/{risk,execution,exchange,config}`, `readiness.py` or `demo_readiness.py`.
-- The lookahead leakage auditor also runs on diffs touching `backtest/` and `ml/` (and `strategy/` and `data/`, where decision-time visibility is decided).
-- The restraint guardian runs on any non-trivial diff.
+- Diffs touching `src/silver_bot/{risk,execution,exchange,config}`, `readiness.py` or `demo_readiness.py`: spawn all four (A1, A2, A3, A4).
+- Diffs touching `src/silver_bot/backtest/` or `src/silver_bot/ml/`: spawn A3 and A4.
+- Any other non-trivial diff: spawn A4. Docs, comments and typo-only diffs need no reviewer.
 - A FAIL is never overridden by the agent that raised it; the owner decides. A reviewer's PASS is not evidence that tests pass; tests are run by the author.
 
 ## 5. Materialization
@@ -291,5 +289,5 @@ A generator script (`materialize.py`, kept in the author's scratchpad and not co
 - [x] Agent bodies cite repo-root doc paths in plain text, with no Markdown links inside the blocks.
 - [x] Each card lists the known hazards in its area so regressions are flagged and existing hazards are not reported as new.
 - [x] Live trading is described as `Planned, blocked`; nothing in this document enables it.
-- [x] The orchestration diagram matches the spawn rules in the cards.
+- [x] The §3 table, each card's spawn trigger and description, the §4 diagram and the §4 rules state one rule set: risk, execution, exchange, config, readiness and demo_readiness spawn all four; backtest and ml spawn A3 and A4; any other non-trivial diff spawns A4.
 - [ ] The generated `.claude/agents/*.md` files exist and match these blocks; this is done in a later step.
