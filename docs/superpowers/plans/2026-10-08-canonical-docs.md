@@ -14,7 +14,7 @@
 
 - Doc slug `silverbot`; suite files are `docs/<type>-silverbot.md`; RFCs `docs/rfc-silverbot-<topic>.md`; Change Records `docs/cr-silverbot-<slug>.md`.
 - Every suite doc starts as `Status: Draft`. Nothing is `Locked` in this pass.
-- Never name, credit or describe the template's source repository, its product, client, design system, engine or plugins in any committed file.
+- Never name, credit or describe any external source repository or product in any committed file.
 - Exclude GTM, PITCH and WRAP.
 - **Code wins** over old docs. Every disagreement becomes a row in `docs/audit-docs-drift.md`, and a `G-#` in SCRUTINY when it affects a claim.
 - What neither code nor old docs answer is written as `Owner input required` (owner facts) or `Open` (everything else). Never invent a number.
@@ -30,14 +30,14 @@
 1. **A doc describes behaviour the code does not have.** Example: claiming WebSocket reconnect works when it is a stub. Expected: every behavioural claim traces to a fact-sheet entry with `file:line`. Pinned by Task 14 Step 2, a sampled claim audit of 12 claims.
 2. **A non-negotiable safety rule from the old `AGENTS.md` is lost in the rewrite.** Expected: every rule survives verbatim in the new `AGENTS.md`. Pinned by Task 10 Step 5, which diffs every rule line against baseline commit `62037d1`.
 3. **An owner-input value is silently invented**, such as a capital figure or a monthly budget. Expected: every money figure in BRD/UES traces to config/code or sits in the owner-input register. Pinned by Task 3 Step 6, a money-figure grep with manual disposition.
-4. **Template content is copy-pasted.** Domain words from an unrelated product (multi-tenant, RLS, OCR, deposit, Supabase, NestJS and so on) would show the template was transcribed rather than adapted. Expected: zero hits. Pinned by the `smells` check in `check_docs.py` (Task 0) and run in Task 14.
-5. **Secrets or local data are pushed to GitHub.** Expected: `.env`, `data/`, `reports/`, `models/`, `logs/`, `*.sqlite3` and the template folder are untracked at push time. Pinned by Task 15 Step 1, the pre-push tracked-file audit and secret re-scan.
+4. **Foreign content is copy-pasted.** Domain words unrelated to trading would show text was transcribed rather than adapted. Expected: zero hits. Pinned by the `smells` check in `check_docs.py` (Task 0) and run in Task 14.
+5. **Secrets or local data are pushed to GitHub.** Expected: `.env`, `data/`, `reports/`, `models/`, `logs/`, `*.sqlite3` and the gitignored reference folder are untracked at push time. Pinned by Task 15 Step 1, the pre-push tracked-file audit and secret re-scan.
 
 ---
 
 ## Shared Definitions
 
-`SCRATCH` = `/c/Users/CIANJA~1/AppData/Local/Temp/claude/c--TRADING-BOT/d1b8a5ff-3bf6-4c48-9348-bcbce36d4c09/scratchpad` (Git Bash path). `REPO` = `/c/TRADING BOT`. `TEMPLATE` = `$REPO/docs/document suite reference ONLY from another repo` (gitignored, read-only, structural inspiration only).
+`$SCRATCH` = the session scratch directory (outside the repo). `$REPO` = the repo root. `$TEMPLATE` = the gitignored reference folder (read-only, never committed).
 
 ### Standard doc header (every suite doc, RFC, runbook and audit)
 
@@ -137,18 +137,7 @@ Fact sheets may use em dashes; they are not committed.
 
 - [ ] **Step 1: Write `leak_terms.txt`**
 
-One term per line, lowercase. Derive them by reading the header block of `$TEMPLATE/docs/index.md`, the template's build guide (`$TEMPLATE/docs/build-*.md`) §5 and its design system doc (`$TEMPLATE/docs/dsd-*.md`) §0. Include:
-- the product name
-- the client/anchor company name
-- the design system name
-- the documentation engine's name and its acronym
-- the merged marketing visual system name
-- the YAGNI plugin name and its GitHub owner
-- the chat-compression mode name
-- the domain acronym for equipment daily time records
-- the payment provider name
-
-Expected: 10 to 12 lines. This file is never committed, so the terms never enter the repo.
+Write the external names the owner forbade, one per line; this file is never committed.
 
 - [ ] **Step 2: Write `check_docs.py`**
 
@@ -174,8 +163,7 @@ LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCE_RE = re.compile(r"^(`{3,})[^\n]*\n.*?^\1[ \t]*$", re.M | re.S)
 PLACEHOLDER_RE = re.compile(r"\bTBD\b|\bFIXME\b|\bXXX\b|\bTODO\b(?!\.md)|lorem ipsum")
 INLINE_RE = re.compile(r"`[^`\n]*`")
-SMELLS = ["tenant", "rls", "ocr", "supabase", "nestjs", "drizzle",
-          "vercel", "capstone", "storefront", "booking"]
+SMELLS = [...]  # a list of domain words unrelated to trading, kept in the scratch script only
 
 failures: list[str] = []
 
@@ -358,16 +346,14 @@ print("materialized: " + (", ".join(diffs) if diffs else "no changes"))
 
 - [ ] **Step 4: Prove the checker detects failures (the "failing test")**
 
-Run: `cd "/c/TRADING BOT" && python "$SCRATCH/check_docs.py" . trace leaks voice`
-Expected: exit 1 with `FAIL trace: docs/prd-silverbot.md missing`. `leaks` prints nothing for leaks (no committed template files). `voice` may report em dashes in the old root `README.md`/`AGENTS.md`; those are replaced in Tasks 10 and 13.
+Run: `cd "$REPO" && python "$SCRATCH/check_docs.py" . trace leaks voice`
+Expected: exit 1 with `FAIL trace: docs/prd-silverbot.md missing`. `leaks` prints nothing for leaks (no committed reference files). `voice` may report em dashes in the old root `README.md`/`AGENTS.md`; those are replaced in Tasks 10 and 13.
 
-Also confirm the leak term list can fire by matching it against the template's own index.
-Run: `grep -ciwf "$SCRATCH/leak_terms.txt" "$TEMPLATE/docs/index.md"`
-Expected: a count greater than 0, which proves the term list matches the source-repo vocabulary.
+Also confirm the leak term list can fire by matching it against a file known to contain a forbidden name (kept outside the repo); the count must be greater than 0.
 
 - [ ] **Step 5: Record baseline pytest**
 
-Run: `cd "/c/TRADING BOT" && .venv/Scripts/python -m pytest -q 2>&1 | tail -5 | tee "$SCRATCH/baseline-pytest.txt"`
+Run: `cd "$REPO" && .venv/Scripts/python -m pytest -q 2>&1 | tail -5 | tee "$SCRATCH/baseline-pytest.txt"`
 Expected: a summary line such as `N passed`. Record N exactly, failures included if any; docs quote this verbatim. If `.venv/Scripts/python` is missing, use `python -m pytest -q` and record which interpreter was used.
 
 No commit (scratchpad only).
@@ -399,9 +385,9 @@ Slices:
 Prompt for each agent (fill in `<slice>`, `<code>`, `<olddocs>`, `<outfile>`):
 
 ```text
-Read-only audit of the Silver Bot repo at C:\TRADING BOT for the slice "<slice>".
+Read-only audit of the Silver Bot repo for the slice "<slice>".
 Read these files IN FULL (not excerpts): <code>. Then read: <olddocs>.
-Do not read anything under "docs/document suite reference ONLY from another repo".
+Do not read anything under the gitignored reference folder.
 Return a fact sheet in exactly this Markdown format: <paste the fact sheet format>.
 Rules: every Behaviour bullet ends with `path:line`. Quote rejection-reason strings
 verbatim. Mark anything that is a stub, placeholder, NotImplementedError, TODO, or
@@ -463,7 +449,7 @@ TYPE `SCRUTINY`, title "Scrutiny Gate". Sections:
 
 - [ ] **Step 3: Run checks**
 
-Run: `cd "/c/TRADING BOT" && python "$SCRATCH/check_docs.py" . links leaks smells placeholders voice`
+Run: `cd "$REPO" && python "$SCRATCH/check_docs.py" . links leaks smells placeholders voice`
 Expected: no FAIL lines that name `docs/scrutiny-silverbot.md` or `docs/audit-docs-drift.md` (other failures from not-yet-written docs or old root files are fine at this stage).
 
 - [ ] **Step 4: Commit**
@@ -790,7 +776,7 @@ Sections:
 3. Alerting: the Telegram alert types as coded and when each fires.
 4. Incident Response, with runbooks 4.1 activate kill switch, 4.2 exchange/stream outage, 4.3 unexpected or orphan position, 4.4 daily-loss or consecutive-loss limit hit, 4.5 API key compromise, 4.6 bad deploy / rollback. Each runbook: trigger, immediate steps (exact commands from old DEPLOYMENT §Emergency Commands where they match the code), verification, follow-up.
 5. Routine Operations: daily/weekly reports, log rotation, backups of SQLite and the registry, VPS updates.
-6. Postmortems: template plus "none yet".
+6. Postmortems: "none yet".
 7. Self-Check.
 
 - [ ] **Step 4: Run checks**
@@ -908,7 +894,7 @@ All links are relative to `docs/` (e.g. `[prd-silverbot.md](prd-silverbot.md)`).
 - [ ] **Step 2: Write VOICE** (TYPE `VOICE`, "House Style & Voice")
 
 Sections:
-1. Hard Bans: no em dashes in suite docs; no performance or profit claims without an evidence file; no "guaranteed", "risk-free" or "passive income"; no invented numbers (use `Owner input required` / `Open`); no naming of external template sources.
+1. Hard Bans: no em dashes in suite docs; no performance or profit claims without an evidence file; no "guaranteed", "risk-free" or "passive income"; no invented numbers (use `Owner input required` / `Open`); no naming of external sources.
 2. Register by document type: RFC/SDD terse and precise; runbooks imperative; audit factual.
 3. AI-tell pass before locking a doc: cut filler, hedges and triplets; one claim per sentence with evidence.
 4. Project Voice Tuning: plain, cautious, safety-first; trading terms used as defined in RFC-001.
@@ -916,7 +902,7 @@ Sections:
 
 - [ ] **Step 3: Materialize**
 
-Run: `cd "/c/TRADING BOT" && python "$SCRATCH/materialize.py" .`
+Run: `cd "$REPO" && python "$SCRATCH/materialize.py" .`
 Expected: `materialized: AGENTS.md, MODEL_CARD.md, .claude/agents/live-trading-gate-guardian.md, .claude/agents/risk-bypass-checker.md, .claude/agents/lookahead-leakage-auditor.md, .claude/agents/restraint-guardian.md`
 
 Run: `python "$SCRATCH/materialize.py" . --check`
@@ -1065,7 +1051,7 @@ Sections:
 - `## 2. Change Log`: "No Change Records yet. Records start once a doc is Locked." Plus one row noting this canonicalization pass, pointing to the spec and plan.
 - `## 3. Incident Log`: none.
 - `## 4. Health Check`: honest `[x]` / `[~]` / `[ ]` rows: all docs Draft (no Locked doc yet); evidence reports empty (`G-#`); materialized artifacts match (checked by the scratchpad generator, not by the repo); registry lists every file on disk; SAD roster matches `.claude/agents`; Phase 9 evidence open.
-- `## 5. Notes`: owner decisions D1–D7 from the spec (personal trading, generic jurisdiction, and so on), the doc count, and "Excluded: GTM, PITCH, WRAP" with the reason.
+- `## 5. Notes`: owner decisions OD-1 to OD-7 from the spec (personal trading, generic jurisdiction, and so on), the doc count, and "Excluded: GTM, PITCH, WRAP" with the reason.
 
 - [ ] **Step 3: Rewrite README.md** (hand-maintained, not materialized)
 
@@ -1128,7 +1114,7 @@ Dispatch one fresh `general-purpose` agent (most capable model). Ask it to read 
 - contradictions between docs;
 - any claim lacking code evidence;
 - any lost safety rule;
-- any wording that credits an external template source.
+- any wording that credits an external source.
 
 Fix confirmed findings.
 
@@ -1151,7 +1137,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 Run:
 ```bash
-git ls-files | grep -nE '(^|/)\.env$|^data/|^reports/|^models/|^logs/|\.sqlite3?$|^\.venv/|document suite reference' ; echo "exit=$?"
+git ls-files | grep -nE '(^|/)\.env$|^data/|^reports/|^models/|^logs/|\.sqlite3?$|^\.venv/|reference folder' ; echo "exit=$?"
 git ls-files -z | xargs -0 grep -nEi '(api[_-]?(key|secret)|token|secret|password)\s*[:=]\s*["'"'"']?[A-Za-z0-9_\-]{20,}' ; echo "exit=$?"
 git status --short
 ```

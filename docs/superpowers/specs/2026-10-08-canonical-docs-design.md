@@ -1,7 +1,7 @@
 # Canonical Documentation Suite: Design Spec
 
 **Date:** 2026-10-08
-**Status:** Approved in conversation; awaiting written-spec review
+**Status:** Approved; implemented on branch docs/canonical-suite
 **Owner:** Cian Jake Francisco (ceezey)
 **Doc slug:** `silverbot`
 
@@ -11,11 +11,10 @@
 
 ### What the owner asked for
 
-- Build a canonical `docs/` suite for the ICT Silver Bullet bot, using a supplied
-  document-suite template folder as structural inspiration.
+- Build a canonical `docs/` suite for Silver Bot.
 - Fill every topic accurately and reconcile the old root `.md` files into it.
-- Write it as this project's own documentation. Never name, credit or describe the
-  external template repository or its product anywhere in committed content.
+- Write it as this project's own documentation. Never name, credit or describe any
+  external source repository or its product anywhere in committed content.
 - Exclude GTM and PITCH.
 - Before producing output, surface any topic the available information cannot fill.
 - Afterwards, push the codebase to a new **private** GitHub repo under the owner's
@@ -25,13 +24,13 @@
 
 | # | Question | Decision |
 |---|----------|----------|
-| D1 | Purpose of the bot | **Personal trading only.** No customers, no product pricing. |
-| D2 | Compliance jurisdiction | **Generic.** CLR is jurisdiction-neutral; country-specific rows are open items for the owner. |
-| D3 | Old root docs | **Absorb, then delete.** Baseline commit `62037d1` keeps the originals in history. |
-| D4 | DSD (design system) | **Create the file but leave the design-system sections empty** ("Not started"). Add a clearly labelled **Recommended UI** proposal based on how the bot is actually used. Nothing is claimed as built. |
-| D5 | Personal financial targets | **Owner-input register.** Everything derivable from code/config is filled; capital, monthly budget, drawdown tolerance in money and return goal are listed as `Owner input required`. |
-| D6 | Subagents (SAD) | **Small safety roster, materialized** to `.claude/agents/`. |
-| D7 | Build approach | **Code-first audit, then write.** |
+| OD-1 | Purpose of the bot | **Personal trading only.** No customers, no product pricing. |
+| OD-2 | Compliance jurisdiction | **Generic.** CLR is jurisdiction-neutral; country-specific rows are open items for the owner. |
+| OD-3 | Old root docs | **Absorb, then delete.** Baseline commit `62037d1` keeps the originals in history. |
+| OD-4 | DSD (design system) | **Create the file but leave the design-system sections empty** ("Not started"). Add a clearly labelled **Recommended UI** proposal based on how the bot is actually used. Nothing is claimed as built. |
+| OD-5 | Personal financial targets | **Owner-input register.** Everything derivable from code/config is filled; capital, monthly budget, drawdown tolerance in money and return goal are listed as `Owner input required`. |
+| OD-6 | Subagents (SAD) | **Small safety roster, materialized** to `.claude/agents/`. |
+| OD-7 | Build approach | **Code-first audit, then write.** |
 
 ### Information gaps flagged before output
 
@@ -52,7 +51,7 @@ open items, never guesses:
 
 1. Every doc in §2 exists, and every statement about behaviour is traceable to code
    (`file:line` in the fact sheets) or labelled `Planned` / `Owner input required`.
-2. Zero mentions of the template's source repository or product in any committed file.
+2. Zero mentions of any external source repository or product in any committed file.
 3. Old root docs are absorbed and deleted; only `README.md`, `AGENTS.md`, `CLAUDE.md`
    and `MODEL_CARD.md` remain at the root as docs.
 4. All relative links resolve. Every `PRD-F#` appears in SDD and QAD.
@@ -72,16 +71,16 @@ All suite docs live in `docs/` and are named `<type>-silverbot.md`. All start as
 | IDEA | `idea-silverbot.md` | The spark, who it is for, scope and cut line, success criteria, open questions | README, codex-task.json |
 | VALIDATION | `val-silverbot.md` | Evidence the strategy is worth automating, alternatives (manual trading, off-the-shelf bots), feasibility, kill criteria | README, BACKTESTING, owner input |
 | SCRUTINY | `scrutiny-silverbot.md` | Verdict, claim audit, gap register `G-#`, assumption stress test, risk pre-flight, blocking questions | code vs old docs |
-| VOICE | `voice-silverbot.md` | House style: hard bans, register per doc type, project tuning | template structure, adapted |
+| VOICE | `voice-silverbot.md` | House style: hard bans, register per doc type, project tuning | project-specific rules |
 | BRD | `brd-silverbot.md` | Personal objectives, `BRD-M#` metrics, `BRD-V#` impact variables, scope, owner-input register, stakeholders (owner only) | README, BACKTESTING pass/fail |
 | UES | `ues-silverbot.md` | Cost of running (VPS, exchange fees, slippage, spread, data), capital and runway as owner input, cost per trade | DEPLOYMENT, backtest fee model |
 | PRD | `prd-silverbot.md` | Features `PRD-F#`, user stories `US-##` with acceptance criteria, operator flows, instrumentation, NFRs, out of scope, ML spec, phase plan | TODO, PROGRESS, codex-task.json, code |
-| DSD | `dsd-silverbot.md` | Design-system sections present but empty ("Not started") + **Recommended UI** proposal | D4 |
+| DSD | `dsd-silverbot.md` | Design-system sections present but empty ("Not started") + **Recommended UI** proposal | OD-4 |
 | SDD | `sdd-silverbot.md` | Principles, architecture, modules, data models, SQLite storage, exchange adapter, modes, config, security, NFRs, ML architecture | ARCHITECTURE, CONFIGURATION, code |
 | QAD | `qad-silverbot.md` | Strategy, environments, test matrix (happy / sad / abuse / unsafe-config), `QAD-T#` rows mapped to the 19 test files and `PRD-F#`, release criteria, ML evaluation | tests/, BACKTESTING |
-| SAD | `sad-silverbot.md` | Roster of 4 safety agents, orchestration, materialization | D6 |
+| SAD | `sad-silverbot.md` | Roster of 4 safety agents, orchestration, materialization | OD-6 |
 | BUILD | `build-silverbot.md` | Read order, traceability map, pinned stack, golden-path patterns, conventions and guardrails (all existing AGENTS.md safety rules preserved), definition of done | AGENTS.md, pyproject, code |
-| CLR | `clr-silverbot.md` | Generic retail-trader register: API key security, exchange terms, tax record-keeping, data held, open jurisdiction rows | D2 |
+| CLR | `clr-silverbot.md` | Generic retail-trader register: API key security, exchange terms, tax record-keeping, data held, open jurisdiction rows | OD-2 |
 | AIA | `aia-silverbot.md` | ML filter assurance: intended use, allowed / forbidden powers, data and leakage, calibration, promotion and rollback, risk register | ML_MODEL, ml/ |
 | OPS | `ops-silverbot.md` | Operating posture per mode, SLOs, logs / `audit.jsonl` / Telegram, alerting, kill-switch and emergency runbooks, VPS / systemd / Docker routine ops | DEPLOYMENT, monitoring/, deploy/ |
 | LOG | `log-silverbot.md` | Append-only build history backfilled from PROGRESS.md, plus this pass | PROGRESS |
@@ -114,7 +113,7 @@ Absorbed and deleted after the suite lands: `ARCHITECTURE.md`, `BACKTESTING.md`,
 Status tracking that lived in PROGRESS.md / TODO.md moves to `docs/index.md`
 (health check), PRD §9 (phase plan with checkboxes) and LOG.
 
-### SAD roster (D6)
+### SAD roster (OD-6)
 
 | Agent | Purpose | Never |
 |-------|---------|-------|
@@ -126,7 +125,7 @@ Status tracking that lived in PROGRESS.md / TODO.md moves to `docs/index.md`
 Each agent is read-only (Read, Grep, Glob), returns a verdict plus evidence, and treats
 its inputs as untrusted.
 
-### DSD Recommended UI (D4) scope
+### DSD Recommended UI (OD-4) scope
 
 A proposal only, derived from the operator workflow: mode and safety state at a glance
 (mode, LIVE/PAPER/DEMO flags, kill switch), readiness checklist status, open positions
@@ -174,9 +173,9 @@ Stable IDs, never renumbered: `PRD-F#`, `US-##`, `BRD-M#`, `BRD-V#`, `G-#`, `QAD
 
 ### 3.4 Language
 
-- No mention of the template's source repository or product, and no "based on" credit.
-- Template mechanics (materialization, Change Records, Locked/Draft status, health
-  check) are adopted as this project's own conventions.
+- No mention of any external source repository or product, and no "based on" credit.
+- Materialization, Change Records, Locked/Draft status and the health check are this
+  project's own conventions.
 - From now on, any change to a `Locked` doc requires a Change Record
   (`docs/cr-silverbot-<slug>.md`).
 
@@ -185,7 +184,7 @@ Stable IDs, never renumbered: `PRD-F#`, `US-##`, `BRD-M#`, `BRD-V#`, `G-#`, `QAD
 ## 4. Git and Publishing
 
 1. Done: `git init`, `.gitignore` hardened (`.venv/`, `runtime/`, `*.egg-info/`,
-   `.claude/settings.local.json`, and the template folder, which stays on disk and is
+   `.claude/settings.local.json`, and the gitignored reference folder, which stays on disk and is
    never committed). Secret scan clean. Baseline commit `62037d1`.
 2. This spec is committed next.
 3. The suite lands in a few commits; the last one deletes the absorbed root files.
@@ -197,14 +196,14 @@ Stable IDs, never renumbered: `PRD-F#`, `US-##`, `BRD-M#`, `BRD-V#`, `G-#`, `QAD
 ## 5. Verification
 
 - Link check: every relative Markdown link resolves.
-- Leak check: grep finds zero references to the template's source repository or
-  product names across all tracked files.
+- Leak check: grep finds zero references to the forbidden external names across all
+  tracked files.
 - Traceability: every `PRD-F#` appears in SDD and QAD; the index matrix matches.
 - Materialization: `AGENTS.md` matches BUILD; `MODEL_CARD.md` matches AIA §1;
   `.claude/agents/*` match the SAD cards.
 - Placeholder scan: no `TBD` except `Owner input required` / `Open` rows.
 - `pytest` result unchanged from §3.1.
-- `git status` clean; `.env` and the template folder are not tracked.
+- `git status` clean; `.env` and the gitignored reference folder are not tracked.
 
 ---
 
