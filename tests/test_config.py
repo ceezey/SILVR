@@ -223,3 +223,14 @@ def test_demo_config_rejects_disabled_testnet_flag(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="BINANCE_TESTNET"):
         load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+
+def test_demo_config_rejects_lookalike_testnet_url(tmp_path: Path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        demo_env() + "\nBINANCE_FUTURES_BASE_URL=https://testnet.binancefuture.com.evil.com\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="testnet endpoint"):
+        load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})

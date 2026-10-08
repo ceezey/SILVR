@@ -80,3 +80,44 @@ def test_binance_adapter_uses_testnet_url_in_demo_mode(tmp_path) -> None:
 def test_binance_adapter_rejects_production_url_for_testnet_mode() -> None:
     with pytest.raises(ValueError, match="testnet endpoint"):
         BinanceFuturesAdapter(testnet=True, base_url="https://fapi.binance.com")
+
+
+from silver_bot.exchange import is_binance_futures_testnet_url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://testnet.binancefuture.com",
+        "https://testnet.binancefuture.com/fapi",
+        "HTTPS://TESTNET.BINANCEFUTURE.COM",
+        "https://testnet.binancefuture.com:443",
+        "  https://testnet.binancefuture.com  ",
+    ],
+)
+def test_testnet_url_accepts_exact_host(url: str) -> None:
+    assert is_binance_futures_testnet_url(url) is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://testnet.binancefuture.com.evil.com",
+        "https://evil.com/?x=testnet.binancefuture.com",
+        "https://user@testnet.binancefuture.com",
+        "http://testnet.binancefuture.com",
+        "https://fapi.binance.com",
+        "https://testnet.binancefuture.com:8443",
+        "https://testnet.binancefuture.com.",
+        "https://testnet.binancefuture.com:notaport",
+        "testnet.binancefuture.com",
+        "",
+    ],
+)
+def test_testnet_url_rejects_lookalikes(url: str) -> None:
+    assert is_binance_futures_testnet_url(url) is False
+
+
+def test_adapter_rejects_lookalike_testnet_host() -> None:
+    with pytest.raises(ValueError, match="testnet endpoint"):
+        BinanceFuturesAdapter(testnet=True, base_url="https://testnet.binancefuture.com.evil.com")

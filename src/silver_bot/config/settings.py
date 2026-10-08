@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Mapping
+from urllib.parse import urlsplit
 
 
 class ConfigError(ValueError):
@@ -141,7 +142,7 @@ def load_config(
         raise ConfigError("BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode")
     if demo_trading and not binance_testnet:
         raise ConfigError("BINANCE_TESTNET must be true when MODE=demo")
-    if demo_trading and binance_base_url and not _is_binance_testnet_url(binance_base_url):
+    if demo_trading and binance_base_url and not is_binance_futures_testnet_url(binance_base_url):
         raise ConfigError("Demo mode requires a Binance Futures testnet endpoint")
     telegram_enabled = _parse_bool(raw.get("TELEGRAM_ENABLED", "false"), "TELEGRAM_ENABLED")
     telegram_bot_token = _blank_to_none(raw.get("TELEGRAM_BOT_TOKEN"))
@@ -342,6 +343,21 @@ def _strip_quotes(value: str) -> str:
     return value
 
 
-def _is_binance_testnet_url(value: str) -> bool:
-    normalized = value.strip().lower()
-    return "testnet.binancefuture.com" in normalized
+BINANCE_FUTURES_TESTNET_HOST = "testnet.binancefuture.com"
+
+
+def is_binance_futures_testnet_url(value: str) -> bool:
+    """Return whether a URL is exactly the Binance Futures testnet over https."""
+
+    try:
+        parts = urlsplit(value.strip())
+        port = parts.port
+    except ValueError:
+        return False
+    return (
+        parts.scheme.lower() == "https"
+        and parts.hostname == BINANCE_FUTURES_TESTNET_HOST
+        and parts.username is None
+        and parts.password is None
+        and port in (None, 443)
+    )
