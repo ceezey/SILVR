@@ -20,7 +20,7 @@ All suite docs were last reconciled against code at commit `62037d1`, except the
 | Business Requirements (BRD) | [brd-silverbot.md](brd-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
 | Unit Economics (UES) | [ues-silverbot.md](ues-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
 | Product Requirements (PRD) | [prd-silverbot.md](prd-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
-| Design System (DSD) | [dsd-silverbot.md](dsd-silverbot.md) | 0.1 | Draft (design system not started) | 2026-10-08 | N/A |
+| Design System (DSD) | [dsd-silverbot.md](dsd-silverbot.md) | 0.1 | Draft (design system not started) | 2026-10-09 | N/A |
 | System Design (SDD) | [sdd-silverbot.md](sdd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-08 (`62037d1`) |
 | QA and Test Plan (QAD) | [qad-silverbot.md](qad-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
 | Subagent Roster (SAD) | [sad-silverbot.md](sad-silverbot.md) | 0.1 | Draft | 2026-10-08 | 2026-10-08 (`62037d1`) |
@@ -97,6 +97,7 @@ No Change Records yet. Records start once a doc is Locked.
 
 | Date | Change | Reference |
 |---|---|---|
+| 2026-10-09 | Linked the Figma design file from the DSD header. | [dsd-silverbot.md](dsd-silverbot.md) |
 | 2026-10-09 | Added the tech stack table, SDD section 2.4, verified against `2b916d1`; README links to it. | [sdd-silverbot.md](sdd-silverbot.md) section 2.4 |
 | 2026-10-08 | Canonicalization pass: the root docs were absorbed into this suite, reconciled against code at `62037d1`, and removed. Originals remain in git history at that commit. | [design spec](superpowers/specs/2026-10-08-canonical-docs-design.md), [plan](superpowers/plans/2026-10-08-canonical-docs.md) |
 

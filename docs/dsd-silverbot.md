@@ -4,8 +4,9 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft (design system not started)
-**Last updated:** 2026-10-08
+**Last updated:** 2026-10-09
 **Last reconciled:** N/A (not a code-describing doc)
+**Design file:** [Figma](https://www.figma.com/design/g1n3J4j2L1iPrbdjiOS30e/Untitled?node-id=0-1&p=f). It is the working canvas for the section 9 proposal; nothing in it is built or approved.
 
 > The bot has no user interface today. Sections 0 to 8 are intentionally empty. Section 9 is a proposal, not built, and adds no requirement: no PRD feature, user story or acceptance criterion depends on it. The operator surface that exists is listed in [prd-silverbot.md](prd-silverbot.md) section 5.1 (command-line entrypoints and files only).
 
