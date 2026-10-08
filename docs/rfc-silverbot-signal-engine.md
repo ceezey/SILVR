@@ -159,7 +159,7 @@ RR is `reward / risk`; it is 0.0 when risk or reward is zero or negative, so a s
 | Volatility | 5 | 5 if the displacement ATR is greater than 0; else 0 |
 | Total | capped at 100 | Maximum raw sum is 100 |
 
-The score is evaluated after the RR and bias gates; the setup is rejected if the total is below `minimum_signal_score` (default 70) (`strategy/silver_bullet.py:197-209`). Because liquidity is a constant, the volatility score is 5 for any displacement that exists, and the FVG score is 15 for any detected gap, three of the seven components never vary in practice (D-17, G-19).
+The score is evaluated after the RR and bias gates; the setup is rejected if the total is below `minimum_signal_score` (default 70) (`strategy/silver_bullet.py:197-209`). Four of the seven components never vary in practice: the session component is a constant 15 once the session gate passes (`strategy/scoring.py:25`), liquidity is a constant 20, the volatility score is 5 for any displacement that exists, and the FVG score is 15 for any detected gap (D-17, G-19).
 
 ### 3.7 Signal output (`strategy/models.py:170-202`)
 

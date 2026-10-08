@@ -7,7 +7,7 @@
 **Last updated:** 2026-10-08
 **Last reconciled:** N/A (not a code-describing doc)
 
-Silver Bot is a personal Python bot that looks for ICT Silver Bullet setups in crypto futures, checks every candidate against a mandatory risk engine, and runs first as a backtest, then as paper trading, then against the exchange demo/testnet. Live trading is `Planned, blocked`. This brief is the starting point; evidence and costs follow in [val-silverbot.md](val-silverbot.md), [brd-silverbot.md](brd-silverbot.md) and [ues-silverbot.md](ues-silverbot.md). Gaps are tracked in [scrutiny-silverbot.md](scrutiny-silverbot.md). Documents not yet written (PRD, SDD, QAD, CLR) are plain-text references.
+Silver Bot is a personal Python bot that looks for ICT Silver Bullet setups in crypto futures, checks every candidate against a mandatory risk engine, and runs first as a backtest, then as paper trading, then against the exchange demo/testnet. Live trading is `Planned, blocked`. This brief is the starting point; evidence and costs follow in [val-silverbot.md](val-silverbot.md), [brd-silverbot.md](brd-silverbot.md) and [ues-silverbot.md](ues-silverbot.md). Gaps are tracked in [scrutiny-silverbot.md](scrutiny-silverbot.md). The design and test documents are [prd-silverbot.md](prd-silverbot.md), [sdd-silverbot.md](sdd-silverbot.md) and [qad-silverbot.md](qad-silverbot.md); CLR is not yet written and is a plain-text reference.
 
 ## 1. The Spark
 
@@ -23,7 +23,7 @@ One person: the owner, as sole operator and trader, on personal capital. There a
 
 ## 3. Scope & Cut Line
 
-Feature ids are defined in PRD §3 (not yet written).
+Feature ids are defined in [prd-silverbot.md](prd-silverbot.md) section 3.
 
 | In scope (this release) | Out of scope |
 |---|---|

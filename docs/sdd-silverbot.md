@@ -7,7 +7,7 @@
 **Last updated:** 2026-10-08
 **Last reconciled:** 2026-10-08 against code at commit `62037d1`
 
-This document describes how Silver Bot is built, as coded, and how the unbuilt parts are intended to fit. It replaces the old `ARCHITECTURE.md` and `CONFIGURATION.md`; the full configuration reference is section 3.4. Product scope and feature status are in [prd-silverbot.md](prd-silverbot.md) (ids `PRD-F1` to `PRD-F12`); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and code hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). RFCs, QAD, AIA, OPS and BUILD are not yet written and are plain-text references.
+This document describes how Silver Bot is built, as coded, and how the unbuilt parts are intended to fit. It replaces the old `ARCHITECTURE.md` and `CONFIGURATION.md`; the full configuration reference is section 3.4. Product scope and feature status are in [prd-silverbot.md](prd-silverbot.md) (ids `PRD-F1` to `PRD-F12`); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and code hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design records are the four RFCs ([rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md)) and the test matrix is [qad-silverbot.md](qad-silverbot.md); AIA, OPS and BUILD are not yet written and are plain-text references.
 
 Reading convention. **As built** states what the code does today, with `file:line` relative to `src/silver_bot/` unless the path starts with a root filename. **Intended** states design direction and is labelled `Planned`. Where the two differ, as built wins and the difference is cited. The headline fact: the application entrypoint is a startup stub that initialises storage, writes two audit events and exits 0 (`main.py:14-50`, D-1, G-3). Every runtime described below (backtest, paper, demo) exists as a tested library, not as something the command line can start. No performance claim is made anywhere in this document; the three evidence reports are 0 bytes (G-1, D-86).
 
@@ -367,11 +367,11 @@ No loader builds these dataclasses from settings; callers construct them in Pyth
 | `DEFAULT_SESSIONS` (America/New_York) | `london` 03:00-04:00 on; `new_york_am` 10:00-11:00 on; `new_york_pm` 14:00-15:00 off | `strategy/sessions.py:11-15` |
 | HTF bias lookback | 5 (function default, not configurable) | `strategy/bias.py:14` |
 | `MLFilterConfig` enabled / registry_path / min_probability / reduce_risk_threshold / reduced_risk_multiplier | False / `models/model_registry.json` / 0.60 / 0.55 / 0.5 | `ml/filter.py:26-43` |
-| `PromotionPolicyConfig` | primary_metric `accuracy`; min_validation_improvement 0.0; max_test_degradation 0.02; max_brier 0.25; min_sample_count 30 | `ml/promotion.py:22-42` |
+| `PromotionPolicyConfig` | primary_metric `accuracy`; minimum_validation_improvement 0.0; maximum_test_score_degradation 0.02; maximum_brier_score 0.25; minimum_sample_count 30 | `ml/promotion.py:26-30` |
 | `MLDatasetBuilder.max_lookahead_candles` | 100 | `ml/dataset.py:66` |
 | ML feature pipeline atr_period / recent_window | 5 / 5 | `ml/features.py:66-68` |
-| Baseline logistic regression learning rate / iterations | 0.1 / 500 | `ml/training.py:272-291` |
-| Calibration bin_count | 10 | `ml/calibration.py:141` |
+| Baseline logistic regression learning rate / iterations | 0.1 / 500 | `ml/training.py:44-45` |
+| Calibration bin_count | 10 | `ml/calibration.py:63` |
 | `TelegramAlertConfig` | enabled False, token None, chat_id None | `monitoring/telegram.py:16-22` |
 | Audit log path | `logs/audit.jsonl`, hard-coded, not configurable | `main.py:29` |
 
@@ -559,7 +559,7 @@ class ExchangeAdapter(ABC):
 
 `fetch_ohlcv` is the only abstract method (`exchange/base.py:29-42`); `place_order` (`:44-47`) and `cancel_order` (`:49-52`) are concrete methods that always raise. No subclass overrides them. `OrderRequest` requires a stop loss and a take profit by shape.
 
-Intended (`Planned`): a position, balance and account query surface, signed REST, a user data stream, and an explicit order path guarded by the live gate. These are not designed in detail here; they belong to RFC-001 (exchange and data) and RFC-004 (live gate), not yet written (G-17).
+Intended (`Planned`): a position, balance and account query surface, signed REST, a user data stream, and an explicit order path guarded by the live gate. These are not designed in detail here; no RFC covers the exchange and data surface yet (G-17); the live gate is discussed in [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md).
 
 ### 4.3 Binance Futures adapter
 
@@ -622,7 +622,7 @@ Live trading is blocked in layers. Each layer is cited; any one of the first two
 | 9 | Image and compose | `Dockerfile:6,31`; `docker-compose.yaml:3-8` | `LIVE_TRADING=false` forced; the only command is `python -m silver_bot`; no live service |
 | 10 | Health command | `health.py:15-16` | Exit 3 on a live flag; unreachable because the config cannot load with one |
 
-What is not a block: the live readiness report is advisory. No code reads any readiness report (D-10, G-2), the "report exists" checks pass on 0-byte files (H-2), and a ready live report requires `LIVE_TRADING=true`, which the application refuses to load (H-3). The old documents described a live gate (mode, flags, readiness, no-withdraw key, inactive kill switch); that gate does not exist and is `Planned` under RFC-004. Until it is built and the owner approves, the unconditional block in checks 1 to 3 and 6 to 7 is the control. This is safe but is not the gate the old documents described.
+What is not a block: the live readiness report is advisory. No code reads any readiness report (D-10, G-2), the "report exists" checks pass on 0-byte files (H-2), and a ready live report requires `LIVE_TRADING=true`, which the application refuses to load (H-3). The old documents described a live gate (mode, flags, readiness, no-withdraw key, inactive kill switch); that gate does not exist and is `Planned`; see [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md). Until it is built and the owner approves, the unconditional block in checks 1 to 3 and 6 to 7 is the control. This is safe but is not the gate the old documents described.
 
 ### 5.2 Secrets handling
 
@@ -640,7 +640,7 @@ What is not a block: the live readiness report is advisory. No code reads any re
 - Inert by default: `RiskConfig.kill_switch_path` is None (`risk/models.py:26`), and the default engines in the backtester and paper loop have no path (`execution/paper_trading.py:49`). `KILL_SWITCH_PATH` from settings is never passed to a `RiskConfig`. Compose `demo` sets the path, but no code consumes it (H-9, D-12, G-6).
 - Manual only: nothing creates, trips or resets it. Reset is deleting the file. There is no automatic trigger (a breached daily loss only blocks new entries), no command, no emergency shutdown, and open positions are not closed (D-22, S-18).
 - Evidence of behaviour: tests cover the risk rejection, the paper `KILL_SWITCH_ACTIVE` event and alert, and the backtest rejection (`test_kill_switch_active`, `test_paper_trading_kill_switch_alert_and_risk_rejection`, `test_backtest_logs_risk_rejection_when_kill_switch_active`).
-- Intended (`Planned`, RFC-002): armed by default from settings, automatic triggers on loss limits, persisted risk state across restarts (H-11, G-7), closing or reducing open exposure on trip, and a documented reset step.
+- Intended (`Planned`, [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md)): armed by default from settings, automatic triggers on loss limits, persisted risk state across restarts (H-11, G-7), closing or reducing open exposure on trip, and a documented reset step.
 
 ### 5.4 Stop-loss requirement
 
@@ -683,7 +683,7 @@ Mirrors PRD section 5.5. The right-hand column says how each requirement is met 
 | Area | Requirement | How it is met | Status |
 |---|---|---|---|
 | Safety | Default paper; live rejected at load; no trade without a stop; no martingale or averaging down; ML and the risk engine cannot be bypassed; no real orders | Section 5.1 (layered live block), 5.4 (stop loss at four points), 1 (principles). Risk engine called on every candidate in both loops (`backtest/engine.py:157-166`, `execution/paper_trading.py:207-216`); ML runs before risk and cannot raise size (section 8.1). Order methods raise | Enforced for the points tested. Kill switch default, risk-limit unification and risk-state persistence are open (G-5, G-6, G-7) |
-| Determinism of backtests | Same candles and configuration give the same result; one pending or open trade at a time | Candles sorted by `open_time` (`backtest/engine.py:48`); strategy sees only the prefix (`:106`); signal evaluated only when idle (`:103-104`); no randomness in the engine | Implemented; not pinned by a test (QAD, AC-04.9). Strategy-internal look-ahead freedom is Open (U-7) |
+| Determinism of backtests | Same candles and configuration give the same result; one pending or open trade at a time | Candles sorted by `open_time` (`backtest/engine.py:48`); strategy sees only the prefix (`:106`); signal evaluated only when idle (`:103-104`); no randomness in the engine | Implemented; not pinned by a test ([qad-silverbot.md](qad-silverbot.md) §3.8, AC-04.9, G-32). Strategy-internal look-ahead freedom is Open (U-7) |
 | No real keys in tests | Tests use mocks and in-memory clients | `InMemoryTelegramClient`, `MockMarketDataStream`, adapter that never touches the network | Holds for the 19 test files (108 tests) |
 | Python version | 3.11 or newer | `requires-python = ">=3.11"`; Docker `python:3.11-slim`; `pyproject.toml` declares no runtime dependencies; scikit-learn is optional and undeclared (G-25) | Holds |
 | Timezone correctness | Sessions evaluated in America/New_York with daylight saving; audit timestamps UTC | `zoneinfo` conversion with a hand-rolled fixed-offset fallback for New York only when tzdata is missing (`strategy/sessions.py:28-33,61-73`); naive timestamps assumed UTC (`:56-59`); audit `created_at` UTC | Tests cover June and January. tzdata in deployment is Open (U-8) |
@@ -696,7 +696,7 @@ No performance, latency or throughput target is defined in the code or the old d
 
 ## 8. ML Architecture
 
-ML is optional and PRD-F6 is `Partial`: every component exists as a tested library, none is wired to settings or exposed through a command, and no model is shipped. The package docstring states the contract: ML builds labels, features and offline artifacts and does not generate signals, place orders or bypass risk (`ml/__init__.py:1-5`). Decision records are in RFC-003 (ML filter; not yet written); risk analysis is in AIA (not yet written).
+ML is optional and PRD-F6 is `Partial`: every component exists as a tested library, none is wired to settings or exposed through a command, and no model is shipped. The package docstring states the contract: ML builds labels, features and offline artifacts and does not generate signals, place orders or bypass risk (`ml/__init__.py:1-5`). Decision records are in [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md); risk analysis is in AIA (not yet written).
 
 Pipeline (offline, then inference). Nothing outside `ml/` and tests calls `train_baseline_models`, `build_calibration_report`, `evaluate_model_promotion`, `MLDatasetBuilder` or `ModelRegistry.register_model`, and there is no entry point for the chain (`ml/__init__.py:7-46`, S-21).
 
@@ -747,7 +747,7 @@ Gaps in the surface, each a known weakness rather than a control:
 - **Unclamped multiplier in paper (D-62).** Bounded today by `MLFilterConfig` validation only.
 - **Training output is not promotion-ready:** it has no `test_metrics`, no calibration block and no top-level `sample_count`, so a caller must construct them (`ml/training.py:218-223`).
 
-AIA (not yet written) carries the risk register for these; RFC-003 carries the decision record.
+AIA (not yet written) carries the risk register for these; [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) carries the decision record.
 
 ## 9. Self-Check
 
@@ -757,5 +757,5 @@ AIA (not yet written) carries the risk register for these; RFC-003 carries the d
 - [x] SQLite columns (section 3.2), exchange adapter signatures (section 4.2) and live-block checks (section 5.1) were copied from `storage/sqlite.py`, `exchange/base.py`, `config/settings.py` and `exchange/binance_futures.py`.
 - [x] As-built behaviour is separated from intended behaviour, and every discrepancy cites a `D-#`, `H-#` or `G-#` from the committed audit and scrutiny documents.
 - [x] No performance claim is made; the three evidence reports are stated as 0 bytes.
-- [x] References to RFCs, QAD, AIA, OPS, CLR and BUILD are plain text; links point only to existing files.
+- [x] References to the RFCs and QAD are links to existing files; AIA, OPS, CLR and BUILD stay plain text because they are not yet written.
 - [ ] Every `G-#` is closed or re-scoped in this document (open: most gaps are described here but remain code work, so this box stays unchecked until they are fixed).
