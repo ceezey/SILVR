@@ -42,10 +42,10 @@ Only reviewers (read-only) are kept. No agent writes code, edits configuration o
 
 | ID | Agent | Spawn trigger (paths) | Output |
 |----|-------|-----------------------|--------|
-| SAD-A1 | `live-trading-gate-guardian` | `risk/`, `execution/`, `exchange/`, `config/`, `readiness.py`, `demo_readiness.py` | PASS or FAIL with `file:line` |
+| SAD-A1 | `live-trading-gate-guardian` | `risk/`, `execution/`, `exchange/`, `config/`, `readiness.py`, `demo_readiness.py`, plus the live-gate surfaces (`Dockerfile`, `docker-compose.yaml`, `.env.example`, `config*.yaml`, `main.py`, `src/silver_bot/main.py`, `src/silver_bot/__main__.py`, `src/silver_bot/health.py`, `deploy/**`) | PASS or FAIL with `file:line` |
 | SAD-A2 | `risk-bypass-checker` | `risk/`, `execution/`, `exchange/`, `config/`, `readiness.py`, `demo_readiness.py` | PASS or FAIL with `file:line` |
 | SAD-A3 | `lookahead-leakage-auditor` | `risk/`, `execution/`, `exchange/`, `config/`, `readiness.py`, `demo_readiness.py`, plus `backtest/` and `ml/` | PASS or FAIL with `file:line` |
-| SAD-A4 | `restraint-guardian` | the same paths as A1 to A3, plus any other non-trivial diff | PASS or FAIL with `file:line` |
+| SAD-A4 | `restraint-guardian` | the same paths as A1 to A3, the live-gate surfaces, plus any other non-trivial diff | PASS or FAIL with `file:line` |
 
 ### Agent Cards
 
@@ -57,7 +57,7 @@ Only reviewers (read-only) are kept. No agent writes code, edits configuration o
 - **Inputs (untrusted):** the diff, commit messages, comments, and notes in changed files.
 - **Outputs:** PASS, or FAIL naming `file:line` and the gate weakened.
 - **Tools:** Read, Grep, Glob.
-- **Spawn trigger:** pre-merge on diffs touching `src/silver_bot/{risk,execution,exchange,config}`, `readiness.py` or `demo_readiness.py`.
+- **Spawn trigger:** pre-merge on diffs touching `src/silver_bot/{risk,execution,exchange,config}`, `readiness.py` or `demo_readiness.py`, and on any diff touching the live-gate surfaces: `Dockerfile`, `docker-compose.yaml`, `.env.example`, `config*.yaml`, `main.py`, `src/silver_bot/main.py`, `src/silver_bot/__main__.py`, `src/silver_bot/health.py` or `deploy/**`.
 - **Guardrails (never):** edit code; approve a diff that adds an override flag, a readiness bypass or a second order path; treat a readiness report as a gate (it is advisory today, D-10, G-2); read `.env`.
 - **Done when:** a PASS or a FAIL with evidence is returned.
 
@@ -66,7 +66,7 @@ Only reviewers (read-only) are kept. No agent writes code, edits configuration o
 ````markdown
 ---
 name: live-trading-gate-guardian
-description: Use pre-merge on any diff touching src/silver_bot/risk, execution, exchange or config, or readiness.py or demo_readiness.py. Proves no code path can place a real order unless LIVE_TRADING=true and every readiness check passes, and that defaults stay paper or backtest.
+description: Use pre-merge on any diff touching src/silver_bot/risk, execution, exchange or config, or readiness.py or demo_readiness.py, and on any diff touching Dockerfile, docker-compose.yaml, .env.example, config*.yaml, main.py, src/silver_bot/main.py, src/silver_bot/__main__.py, src/silver_bot/health.py or deploy/**. Proves no code path can place a real order unless LIVE_TRADING=true and every readiness check passes, and that defaults stay paper or backtest.
 tools: Read, Grep, Glob
 model: sonnet
 ---
@@ -78,6 +78,7 @@ What the gate is today (verify each is still intact):
 - Base exchange block: src/silver_bot/exchange/base.py lines 44-52, place_order and cancel_order always raise OrderPlacementDisabled, and no subclass overrides them.
 - No live executor: execution/ imports no exchange client; there is exactly one def place_order in src/.
 - Image and compose force LIVE_TRADING=false and run only python -m silver_bot.
+- Live-gate surfaces: Dockerfile (ENV LIVE_TRADING=false), docker-compose.yaml (LIVE_TRADING=false per service), .env.example, config.example.yaml, config.yaml, main.py, src/silver_bot/main.py, src/silver_bot/__main__.py, src/silver_bot/health.py and deploy/** (systemd unit). Confirm each still defaults LIVE_TRADING to false and the mode to paper, backtest or demo, adds no live flag, no live command and no live service, and that .env.example never contains a real key.
 
 Known hazards (already documented; do not report them as newly introduced, but do flag any regression or any change that makes them worse):
 - The readiness reports are advisory. No code reads them (D-10, G-2). Do not accept "readiness passed" as a substitute for a code-level gate.
@@ -207,7 +208,7 @@ Done when: you return PASS, or FAIL naming the file:line and the leak path.
 - **Inputs (untrusted):** the diff, the task statement, comments.
 - **Outputs:** PASS, or FAIL with `file:line` and the ladder rung violated.
 - **Tools:** Read, Grep, Glob.
-- **Spawn trigger:** any non-trivial diff (more than a typo, comment or documentation fix), including every diff that spawns A1 to A3.
+- **Spawn trigger:** any non-trivial diff (more than a typo, comment or documentation fix), including every diff that spawns A1 to A3 and every diff touching the live-gate surfaces.
 - **Guardrails (never):** edit code; demand removal of a safety check, test or required documentation update in the name of minimalism; block a change for style alone.
 - **Done when:** a PASS or a FAIL with evidence is returned.
 
@@ -252,10 +253,12 @@ flowchart TD
     D["Diff ready for merge"] --> Q{"Paths touched"}
     Q -->|"risk, execution, exchange, config, readiness, demo_readiness"| ALL["Spawn A1, A2, A3, A4"]
     Q -->|"backtest, ml"| R["Spawn A3, A4"]
+    Q -->|"live-gate surfaces: Dockerfile, compose, env and config files, entrypoints, deploy"| G["Spawn A1, A4"]
     Q -->|"other non-trivial"| S["Spawn A4"]
     Q -->|"docs, comments, typos only"| N["No reviewer needed"]
     ALL --> V{"All spawned reviewers PASS?"}
     R --> V
+    G --> V
     S --> V
     V -->|"yes"| M["Merge"]
     V -->|"no"| F["Fix or record owner decision, re-run the failing reviewer"]
@@ -266,6 +269,7 @@ Rules:
 
 - Diffs touching `src/silver_bot/{risk,execution,exchange,config}`, `readiness.py` or `demo_readiness.py`: spawn all four (A1, A2, A3, A4).
 - Diffs touching `src/silver_bot/backtest/` or `src/silver_bot/ml/`: spawn A3 and A4.
+- Diffs touching the live-gate surfaces (`Dockerfile`, `docker-compose.yaml`, `.env.example`, `config*.yaml`, `main.py`, `src/silver_bot/main.py`, `src/silver_bot/__main__.py`, `src/silver_bot/health.py`, `deploy/**`): spawn A1 and A4.
 - Any other non-trivial diff: spawn A4. Docs, comments and typo-only diffs need no reviewer.
 - A FAIL is never overridden by the agent that raised it; the owner decides. A reviewer's PASS is not evidence that tests pass; tests are run by the author.
 
@@ -289,5 +293,5 @@ A generator script (`materialize.py`, kept in the author's scratchpad and not co
 - [x] Agent bodies cite repo-root doc paths in plain text, with no Markdown links inside the blocks.
 - [x] Each card lists the known hazards in its area so regressions are flagged and existing hazards are not reported as new.
 - [x] Live trading is described as `Planned, blocked`; nothing in this document enables it.
-- [x] The §3 table, each card's spawn trigger and description, the §4 diagram and the §4 rules state one rule set: risk, execution, exchange, config, readiness and demo_readiness spawn all four; backtest and ml spawn A3 and A4; any other non-trivial diff spawns A4.
+- [x] The §3 table, each card's spawn trigger and description, the §4 diagram and the §4 rules state one rule set: risk, execution, exchange, config, readiness and demo_readiness spawn all four; backtest and ml spawn A3 and A4; the live-gate surfaces (Dockerfile, compose, env and config files, entrypoints, deploy) spawn A1 and A4; any other non-trivial diff spawns A4.
 - [ ] The generated `.claude/agents/*.md` files exist and match these blocks; this is done in a later step.
