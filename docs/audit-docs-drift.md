@@ -7,7 +7,7 @@
 **Last updated:** 2026-10-08
 **Last reconciled:** 2026-10-08 against code at commit `62037d1`
 
-This audit records findings, not decisions. It compares the old root documents (README.md, AGENTS.md, ARCHITECTURE.md, BACKTESTING.md, CONFIGURATION.md, DEPLOYMENT.md, ML_MODEL.md, RISK_POLICY.md, STRATEGY_NOTES.md, PROGRESS.md, TODO.md) with the code at the reconciled commit. Code wins: where they disagree, the finding states what the code does. Each finding closes in the canonical doc named on its **Resolved in** line; until that doc is written the finding stays open. Finding ids `D-1` to `D-86` are frozen and cited by later documents. Severity: HIGH weakens or fakes a safety gate or makes a core claim false; MEDIUM misleads results or operations; LOW is cosmetic or contained. Counts: 14 HIGH, 37 MEDIUM, 35 LOW (86 total). Code paths are relative to `src/silver_bot/` unless they start with a root filename. Code hazards that contradict no old document are listed separately under "Code hazards (not doc drift)".
+This audit records findings, not decisions. It compares the old root documents (README.md, AGENTS.md, ARCHITECTURE.md, BACKTESTING.md, CONFIGURATION.md, DEPLOYMENT.md, ML_MODEL.md, RISK_POLICY.md, STRATEGY_NOTES.md, PROGRESS.md, TODO.md) with the code at the reconciled commit. Code wins: where they disagree, the finding states what the code does. Each finding closes in the canonical doc named on its **Resolved in** line; until that doc is written the finding stays open. Finding ids `D-1` to `D-86` are frozen and cited by later documents. Severity: HIGH weakens or fakes a safety gate or makes a core claim false; MEDIUM misleads results or operations; LOW is cosmetic or contained. Counts: 14 HIGH, 37 MEDIUM, 35 LOW (86 total). Code paths are relative to `src/silver_bot/` unless they start with a root filename. Code hazards that contradict no old document are listed separately under "Code hazards (not doc drift)". Two registers follow the hazards: the stub register (S-1 to S-34) and the unknowns register (U-1 to U-21); the ids are cited by other suite documents.
 
 
 ## HIGH
@@ -652,6 +652,75 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Status:** Recorded, not fixed: code changes are out of scope for this pass.
 
 
+## Stub register (S-#)
+
+Stubs, partial and missing items found while reading the code, with ids as recorded in the fact index. Each row names the gap in docs/scrutiny-silverbot.md section 3 that tracks it.
+
+| S-# | What is stubbed or partial | Evidence (file:line) | Gap (G-#) |
+|---|---|---|---|
+| S-1 | Binance OHLCV fetch raises NotImplementedError | `exchange/binance_futures.py:71` | G-13 |
+| S-2 | Order placement and cancellation always raise OrderPlacementDisabled | `exchange/base.py:44-52` | G-17 |
+| S-3 | No request signing, REST, websockets, account endpoints | `exchange/binance_futures.py:32-33` | G-13, G-17 |
+| S-4 | No WebSocket stream; no REST fallback except the self-declared skeleton polling class | `data/stream.py:72-78` | G-13 |
+| S-5 | Polling stream depends on S-1 and would fail with NotImplementedError (not retried by reconnect wrapper) | `data/stream.py:64,100` | G-13 |
+| S-6 | MockMarketDataStream is the only working stream (canned data) | `data/stream.py:31-42` | G-13 |
+| S-7 | HistoricalOHLCVFetcher: no pagination, rate limit, retry, gap detection, persistence | `data/fetcher.py:38-44` | G-13 |
+| S-8 | `main()` has no mode dispatch, no subcommands, no paper/backtest/demo runtime | `main.py:14-50` | G-3 |
+| S-9 | PaperTradingEngine has no production entry point | grep of `src/` (definition `execution/paper_trading.py:31` only) | G-3 |
+| S-10 | BacktestEngine, validation suite and fetcher not wired into any entry point | grep of `src/` | G-3 |
+| S-11 | Walk-forward, Monte Carlo, sensitivity, multi-symbol, pass/fail criteria absent; OOS split helper unwired | `backtest/validation.py:1-58` | G-12 |
+| S-12 | Missing backtest outputs: daily_summary.csv, median/largest/average win-loss, symbol and risk-hit metrics, per-session drawdown | `backtest/reporting.py:20-25`, `backtest/metrics.py:30-46` | G-20 |
+| S-13 | Backtest lacks trailing stop, session-end exit, market/confirmation entry, extra exit reasons, funding, gap fills, unrealized drawdown | `backtest/models.py:17-23`, `backtest/engine.py:314,326` | G-20 |
+| S-14 | SQLite `signals` and `trades` tables unused; no migrations; no candle read API | `storage/sqlite.py:41-61` | G-14 |
+| S-15 | Strategy config not wired to settings | `backtest/engine.py:39`, `execution/paper_trading.py:48` | G-18 |
+| S-16 | Strategy: liquidity from swings only; no invalidation; no spread/ATR/news filters; no entry/SL/TP option selectors; crude HTF bias; midnight-spanning sessions unsupported | `strategy/liquidity.py:37`, `strategy/silver_bullet.py:67-209`, `strategy/sessions.py:43-45` | G-19 |
+| S-17 | Redundant strategy code: MSS direction check cannot fire; fallback "No complete setup after sweep" effectively unreachable | `strategy/silver_bullet.py:149-150,107` | G-19 |
+| S-18 | Risk: no emergency shutdown, no kill-switch trigger/reset tooling, no automatic triggers | `risk/kill_switch.py:8-17` | G-6 |
+| S-19 | Execution: no partial TP/breakeven/trailing/time exit; no stale-order cancel/expiry/partial fills; gap-through-stop not modelled; ERROR event never emitted | `execution/trade_management.py:9-33`, `execution/models.py:22` | G-21 |
+| S-20 | Live executor and live trading: absent, rejected by config | `config/settings.py:104-107` | G-17 |
+| S-21 | ML offline pipeline (dataset, train, calibrate, promote, register) has no entry point | `ml/__init__.py:7-46` | G-9, G-22 |
+| S-22 | ML settings-to-filter wiring missing | `execution/paper_trading.py:53` | G-9 |
+| S-23 | No shipped model; `models/` empty | directory listing | G-9 |
+| S-24 | Calibration report-only; training emits no test_metrics/calibration; no staleness/drift/regime/alt labels | `ml/calibration.py`, `ml/training.py:218-223` | G-22 |
+| S-25 | Demo-mode runtime: config and readiness exist, no runtime | `main.py:14-50` | G-3 |
+| S-26 | Live readiness is report-only, not consulted; "report exists" is existence-only | `readiness.py:1-5,159` | G-2 |
+| S-27 | Health check only validates config; live branch unreachable | `health.py:11-17` | G-27 |
+| S-28 | config.yaml parser is a minimal line parser; risk limits unchecked outside demo | `config/settings.py:281-301,170-191` | G-24 |
+| S-29 | requirements.txt absent; no runtime dependencies declared (scikit-learn optional and undeclared) | `pyproject.toml:10-15` | G-25 |
+| S-30 | Telegram: no real transport; not wired in `main()`; daily_report() and error() never called | `monitoring/telegram.py:9-32,80-91` | G-15 |
+| S-31 | Reports (daily, weekly, journal, dashboard JSON) have builders only; no caller; no dashboard UI | `monitoring/reports.py:18,52,92,140`, `monitoring/dashboard.py` | G-16 |
+| S-32 | App log is plain text; extra fields not rendered | `utils/logging.py:13` | G-16 |
+| S-33 | Deploy hardening missing: compose healthcheck, read_only/cap_drop/limits, systemd sandboxing | `docker-compose.yaml`, `deploy/systemd/silver-bot.service` | G-26 |
+| S-34 | Untested: health.py, main.py, prepare-host.sh, logrotate; sheet 06 lists further gaps | sheet 06 "Test gaps" | G-28 |
+
+## Unknowns register (U-#)
+
+Questions the code and old documents do not answer. Tag: owner (only the owner can answer), open (answerable from code, documents or tests), resolved (answered, kept for traceability). Owner unknowns are collected in BRD §8 ([brd-silverbot.md](brd-silverbot.md)).
+
+| U-# | Question | Tag (owner / open / resolved) | Gap (G-#) |
+|---|---|---|---|
+| U-1 | Is the repeated restart of the `bot` container after `main()` exits intentional? (no doc explains it) | owner | G-30 (owner input, BRD §8 in [brd-silverbot.md](brd-silverbot.md)) |
+| U-2 | Is `config.yaml` expected inside the container? (.dockerignore:4 excludes it; Dockerfile does not copy it) | owner | G-30 (owner input, BRD §8 in [brd-silverbot.md](brd-silverbot.md)) |
+| U-3 | Which component is intended to build `MLFilterConfig` from `AppConfig` for paper runs? | owner | G-30 (owner input, BRD §8 in [brd-silverbot.md](brd-silverbot.md)) |
+| U-4 | How is `ReconnectPolicy` meant to be configured from `AppConfig` (no config key)? | owner | G-30 (owner input, BRD §8 in [brd-silverbot.md](brd-silverbot.md)) |
+| U-5 | Does any script outside `src/` (scripts/, root) build non-default strategy, risk or paper-engine configs? | open | G-29 |
+| U-6 | Does `higher_timeframe_candles` leak future data into dataset features and labels (dataset passes the full HTF series unsliced)? Needs strategy HTF audit | open | G-29, G-22 |
+| U-7 | Is `SilverBulletStrategyEngine.evaluate` free of lookahead internally? | open | G-29 |
+| U-8 | Is tzdata guaranteed in deployment (python:3.11-slim; fallback DST path at `strategy/sessions.py:31-33`)? | open | G-29 |
+| U-9 | Does the bind-mounted `./data` (mode 700, host owner) work with container user `silverbot` (UID not pinned)? Depends on host UID | open | G-29, G-26 |
+| U-10 | Does `.env.example` contain every key referenced by compose and readiness? | open | G-29 |
+| U-11 | Is CONFIGURATION.md complete (TODO.md:105)? | open | G-29 |
+| U-12 | Does compose `env_file: required: false` need a minimum Compose version? | open | G-29, G-26 |
+| U-13 | Do scikit-learn-dependent ML tests run in CI (sklearn is optional)? | open | G-29, G-25 |
+| U-14 | Does `docs/` hold newer ML documentation (deliberately not read)? | open | G-29 |
+| U-15 | Do other modules consume AppConfig risk_engine_enabled, kill_switch_*, max_*, exchange_name, symbol, timeframe? | open | G-29 |
+| U-16 | Does the real `.env` load cleanly and which mode does it select? (not opened by design; demo report 2026-06-15 was ready=true) | open | G-29 |
+| U-17 | Does any caller invoke `BinanceFuturesAdapter.from_config` at runtime? | open | G-29 |
+| U-18 | Can `signal.session_name` be None in practice (engine falls back to "unknown")? | open | G-29 |
+| U-19 | Where are kill-switch file semantics (location, content, KILL_SWITCH_PATH default) documented? | open | G-29 |
+| U-20 | Does `.git` presence matter to the secret scan's `_git_tracked_files` when git reports no repository? | open | G-29 |
+| U-21 | RESOLVED, kept for traceability: ML `risk_multiplier` is bounded (0,1] by MLFilterConfig validation (`ml/filter.py:42-43`), so the paper loop's unclamped multiply cannot raise risk | resolved | None (resolved) |
+
 ## Clean
 
 Areas checked that matched the old documents (no finding raised):
@@ -676,4 +745,5 @@ No automated check existed for docs-vs-code drift before this pass. The old docu
 - [x] Every hazard H-1 to H-14 has severity, evidence and a gap row pointing into docs/scrutiny-silverbot.md.
 - [x] Severity counts in the opening paragraph (14 HIGH, 37 MEDIUM, 35 LOW) match the headings.
 - [x] No bot code, config or test file was changed to produce this audit.
+- [x] The stub register has 34 rows (S-1 to S-34) and the unknowns register 21 rows (U-1 to U-21), each pointing at a G-# (owner unknowns at G-30 and BRD §8).
 - [ ] Each finding is closed in its named canonical doc (open until those documents are written and reviewed).
