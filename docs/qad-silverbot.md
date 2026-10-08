@@ -337,7 +337,7 @@ By gap: G-1: QAD-T80; G-2: QAD-T120, QAD-T121; G-3: QAD-T73, QAD-T83; G-4: QAD-T
 
 ## 4. Automation vs Manual
 
-**Automated (pytest, runs offline).** All 108 automated scenarios in section 3, covering strategy, backtest, risk, paper run, config, readiness, exchange guards, storage, ML, monitoring and deployment-file text. Run it with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q`.
+**Automated (pytest, runs offline).** All 108 automated scenarios in section 3, covering strategy, backtest, risk, paper run, config, readiness, exchange guards, storage, ML, monitoring and deployment-file text. Run it with `.venv/Scripts/python -m pytest -q` from the repo root.
 
 **Manual checks.** None of these can be performed today; each names what blocks it. They become release-gate items in section 6 once their blockers close.
 
