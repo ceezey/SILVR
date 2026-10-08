@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from silver_bot.readiness import evaluate_live_readiness, export_readiness_report
 
 
@@ -144,3 +146,32 @@ def test_readiness_messages_explain_missing_report_and_invalid_boolean(tmp_path:
 
     assert "Set BACKTEST_REPORT_PATH" in reasons["backtest_report_exists"]
     assert "boolean value" in reasons["risk_engine_enabled"]
+
+
+@pytest.mark.parametrize(
+    ("content", "fragment"),
+    [
+        ("", "is empty"),
+        ("   \n", "is empty"),
+        ("not json", "not valid JSON"),
+        ("[]", "JSON object"),
+    ],
+)
+def test_live_readiness_rejects_unusable_report(tmp_path: Path, content: str, fragment: str) -> None:
+    create_required_reports(tmp_path)
+    (tmp_path / "reports" / "backtest_report.json").write_text(content, encoding="utf-8")
+
+    report = evaluate_live_readiness(project_root=tmp_path, environ=required_env())
+    reasons = {item.name: item.reason for item in report.failed_checks}
+
+    assert report.ready is False
+    assert fragment in reasons["backtest_report_exists"]
+
+
+def test_live_readiness_accepts_report_with_utf8_bom(tmp_path: Path) -> None:
+    create_required_reports(tmp_path)
+    (tmp_path / "reports" / "backtest_report.json").write_text("\ufeff{}", encoding="utf-8")
+
+    report = evaluate_live_readiness(project_root=tmp_path, environ=required_env())
+
+    assert "backtest_report_exists" not in {item.name for item in report.failed_checks}

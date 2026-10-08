@@ -31,8 +31,8 @@ class BacktestConfig:
     risk: RiskConfig = field(default_factory=RiskConfig)
     maker_fee: float = 0.0002
     taker_fee: float = 0.0005
-    slippage_bps: float = 0.0
-    spread_bps: float = 0.0
+    slippage_bps: float = 5.0
+    spread_bps: float = 3.0
     enable_partial_tp: bool = False
     partial_tp_r: float = 1.0
     partial_tp_fraction: float = 0.5
