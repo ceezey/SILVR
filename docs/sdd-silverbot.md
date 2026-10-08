@@ -4,7 +4,7 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
+**Last updated:** 2026-10-09
 **Last reconciled:** 2026-10-08 against code at commit `62037d1`
 
 This document describes how Silver Bot is built, as coded, and how the unbuilt parts are intended to fit. It replaces the old `ARCHITECTURE.md` and `CONFIGURATION.md`; the full configuration reference is section 3.4. Product scope and feature status are in [prd-silverbot.md](prd-silverbot.md) (ids `PRD-F1` to `PRD-F12`); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and code hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design records are the four RFCs ([rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md)) and the test matrix is [qad-silverbot.md](qad-silverbot.md); AIA, OPS and BUILD are [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md) and [build-silverbot.md](build-silverbot.md).
@@ -118,6 +118,36 @@ As built, nothing branches on the resulting mode after load. `main()` records `c
 | `live` | Real orders after readiness and owner approval | `Planned, blocked` (PRD-F12); not a state the application can enter |
 
 The mode state machine is drawn in PRD section 5.2.
+
+### 2.4 Tech Stack
+
+Verified 2026-10-09 against commit `2b916d1`. Version pins and the deprecations register are in [build-silverbot.md](build-silverbot.md) section 3; this table names the technology used for each concern and how far it is built. Status uses the PRD vocabulary: `Built`, `Partial`, `Planned`.
+
+| Concern | Choice | Status | Evidence |
+|---|---|---|---|
+| Language | Python, `>=3.11` | Built | `pyproject.toml` (`requires-python`) |
+| Runtime dependencies | Standard library only; `dependencies = []` | Built | `pyproject.toml`; undeclared optional deps are G-25 |
+| Concurrency | `asyncio` for the market stream, exchange adapter and alerter interfaces | Partial | `data/stream.py:5`, `exchange/binance_futures.py:52`, `monitoring/telegram.py:12`; no network transport behind them (S-1 to S-6) |
+| Configuration | Defaults, flat `config.yaml`, `.env`, process env; hand-written parser, no YAML library | Built | `config/settings.py:56-191`, `:281`; quirks are G-24, shipped `.env.example` fails (G-4) |
+| Time zones | `zoneinfo` for session windows | Built | `strategy/sessions.py:6`; tzdata in the container is unverified (U-8) |
+| Storage | SQLite via `sqlite3`, one file, seven tables | Partial | `storage/sqlite.py:6,270`; no migrations, `signals` and `trades` unused (G-14) |
+| File artifacts | JSON and CSV via `json` and `csv` | Built | `backtest/reporting.py:5-6`, `monitoring/reports.py:5-6`; section 3.3 |
+| Logging and audit | `logging` with a plain-text format; audit events as JSON lines | Built | `utils/logging.py:8-15`, `monitoring/audit.py:74-75`; structured app log is G-16 |
+| ML | Dependency-free logistic regression baseline; scikit-learn RandomForest and GradientBoosting only if it imports | Partial | `ml/training.py:28,171`; filter not wired to settings (G-9) |
+| Model artifacts | `pickle` | Built | `ml/training.py:214`, `ml/registry.py:131`; loaded without trust checks (H-8, G-23) |
+| Exchange | Binance Futures REST, testnet only | Partial | `exchange/binance_futures.py`; OHLCV fetch raises `NotImplementedError` (`:71`), orders are stubs (G-17) |
+| Market data stream | Binance WebSocket | Planned | Abstract `MarketDataStream` only (`data/stream.py:15-20`; G-13) |
+| Alerts | Telegram Bot API | Planned | `TelegramClient` Protocol and an in-memory test client only (`monitoring/telegram.py:9-33`; G-15) |
+| CLI | `argparse` for the readiness checkers; the main entrypoint takes no arguments | Partial | `readiness.py:138`, `demo_readiness.py:102`; entrypoint is a stub (G-3); section 4.6 |
+| Packaging | setuptools `>=68`, `src/` layout, console script `silver-bot` | Built | `pyproject.toml` |
+| Container | Docker, `python:3.11-slim`, non-root `silverbot` user, config-only `HEALTHCHECK` | Built | `Dockerfile:1,20,24,28`; health semantics are G-27 |
+| Orchestration | Docker Compose services `bot`, `paper`, `demo`, `backtest`, `research` | Partial | `docker-compose.yaml:24,34,44,65,76`; no compose healthcheck (G-26) |
+| Host supervision | systemd unit running `docker compose up bot`; logrotate (daily, 14 kept) | Partial | `deploy/systemd/silver-bot.service`, `deploy/logrotate/silver-bot`, `deploy/scripts/prepare-host.sh`; the unit runs as `User=silverbot`, which nothing creates on the host, and hardening is missing (G-26) |
+| Tests | pytest `>=8.0` (optional extra `dev`), 20 test files | Built | `pyproject.toml`, `tests/`; gaps are G-28 |
+| Continuous integration | None | Planned | No CI configuration in the repo |
+| Doc tooling | `tools/materialize_docs.py` builds `AGENTS.md`, `MODEL_CARD.md` and `.claude/agents/*.md`; `--check` verifies | Built | `tools/materialize_docs.py`, `tests/test_materialize_docs.py` |
+
+When a row's technology changes, update this table and BUILD section 3 in the same change.
 
 ## 3. Data Architecture
 
@@ -753,6 +783,7 @@ AIA ([aia-silverbot.md](aia-silverbot.md)) carries the risk register for these; 
 
 - [x] Every `PRD-F1` to `PRD-F12` appears in this document (section 2.2 table covers each package; PRD-F12 is `Planned, blocked`).
 - [x] Every package under `src/silver_bot/` appears in the section 2.2 table.
+- [x] Section 2.4 names the technology for each concern with a status and evidence; version pins are not repeated from BUILD section 3.
 - [x] Section 3.4 documents all 27 `AppConfig` environment names and all 6 readiness-only names listed in the fact index, with defaults, validation and `file:line`.
 - [x] SQLite columns (section 3.2), exchange adapter signatures (section 4.2) and live-block checks (section 5.1) were copied from `storage/sqlite.py`, `exchange/base.py`, `config/settings.py` and `exchange/binance_futures.py`.
 - [x] As-built behaviour is separated from intended behaviour, and every discrepancy cites a `D-#`, `H-#` or `G-#` from the committed audit and scrutiny documents.

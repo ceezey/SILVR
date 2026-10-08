@@ -59,6 +59,7 @@ Start at [docs/index.md](docs/index.md); it lists every document, its status and
 
 - What and why: [docs/prd-silverbot.md](docs/prd-silverbot.md), [docs/brd-silverbot.md](docs/brd-silverbot.md)
 - How it is built: [docs/sdd-silverbot.md](docs/sdd-silverbot.md), [docs/build-silverbot.md](docs/build-silverbot.md)
+- Tech stack: [docs/sdd-silverbot.md](docs/sdd-silverbot.md) section 2.4; version pins in [docs/build-silverbot.md](docs/build-silverbot.md) section 3
 - Strategy, risk, ML and readiness: [RFC-001](docs/rfc-silverbot-signal-engine.md), [RFC-002](docs/rfc-silverbot-risk-kill-switch.md), [RFC-003](docs/rfc-silverbot-ml-filter-gate.md), [RFC-004](docs/rfc-silverbot-readiness-gates.md)
 - Testing and gates: [docs/qad-silverbot.md](docs/qad-silverbot.md)
 - Operations: [docs/ops-silverbot.md](docs/ops-silverbot.md)
