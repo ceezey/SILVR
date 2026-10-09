@@ -6,9 +6,17 @@ project root. The page has no controls and the server answers GET only.
 
 from __future__ import annotations
 
+import argparse
 import html
 import string
+import sys
+from collections.abc import Callable
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
+
+from silver_bot.config import AppConfig, load_config
+from silver_bot.monitoring.status import collect_status
 
 BIND_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -85,3 +93,96 @@ def _render_panel(panel: dict[str, Any]) -> str:
         '<thead><tr><th scope="col">item</th><th scope="col">state</th><th scope="col">detail</th></tr></thead>'
         f"<tbody>{body}</tbody></table></section>"
     )
+
+
+class DashboardServer(ThreadingHTTPServer):
+    """HTTP server fixed to 127.0.0.1 that serves the status page."""
+
+    daemon_threads = True
+    # On Windows SO_REUSEADDR lets a second socket share a busy port; refuse that.
+    allow_reuse_address = sys.platform != "win32"
+
+    def __init__(self, port: int, *, root: Path, load: Callable[[], AppConfig] = load_config) -> None:
+        self.root = Path(root)
+        self.load = load
+        super().__init__((BIND_HOST, port), DashboardHandler)
+
+
+class DashboardHandler(BaseHTTPRequestHandler):
+    """Answer GET / with the page; refuse every other method, path and host."""
+
+    server: DashboardServer
+    server_version = "silver-bot-dashboard"
+    sys_version = ""
+
+    def parse_request(self) -> bool:
+        if not super().parse_request():
+            return False
+        if self.command != "GET":
+            self._send(405, "method not allowed\n", headers={"Allow": "GET"})
+            return False
+        return True
+
+    def do_GET(self) -> None:
+        if not self._host_allowed():
+            self._send(400, "bad host\n")
+            return
+        if self.path != "/":
+            self._send(404, "not found\n")
+            return
+        status = collect_status(self.server.root, load=self.server.load)
+        self._send(200, render_page(status), content_type="text/html; charset=utf-8")
+
+    def _host_allowed(self) -> bool:
+        port = self.server.server_address[1]
+        names = {"127.0.0.1", "localhost"}
+        allowed = {f"{name}:{port}" for name in names} | (names if port == 80 else set())
+        return self.headers.get("Host", "") in allowed
+
+    def _send(
+        self,
+        code: int,
+        body: str,
+        *,
+        content_type: str = "text/plain; charset=utf-8",
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        payload = body.encode("utf-8")
+        self.send_response(code)
+        for name, value in {
+            "Content-Type": content_type,
+            "Content-Length": str(len(payload)),
+            **SECURITY_HEADERS,
+            **(headers or {}),
+        }.items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(payload)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Serve the read-only status page until interrupted."""
+
+    parser = argparse.ArgumentParser(
+        prog="python -m silver_bot.monitoring.dashboard_server",
+        description="Read-only Silver Bot status page on 127.0.0.1.",
+    )
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"port on 127.0.0.1 (default {DEFAULT_PORT})")
+    args = parser.parse_args(argv)
+    try:
+        server = DashboardServer(args.port, root=Path.cwd())
+    except OSError as exc:
+        print(f"cannot listen on {BIND_HOST}:{args.port}: {exc.strerror or exc}", file=sys.stderr)
+        return 2
+    print(f"silver-bot status: http://{BIND_HOST}:{server.server_address[1]}/ (read-only; Ctrl+C to stop)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
