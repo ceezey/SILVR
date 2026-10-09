@@ -266,3 +266,13 @@ def test_shipped_env_example_loads_as_paper(tmp_path: Path) -> None:
     assert config.paper_trading is True
     assert config.demo_trading is False
     assert config.live_trading is False
+
+
+def test_shipped_env_example_lets_trading_mode_select_backtest(tmp_path: Path) -> None:
+    config = load_config(
+        env_path=REPO_ROOT / ".env.example",
+        yaml_path=tmp_path / "missing.yaml",
+        environ={"TRADING_MODE": "backtest", "PAPER_TRADING": "false"},
+    )
+
+    assert config.mode == TradingMode.BACKTEST

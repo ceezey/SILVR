@@ -62,7 +62,7 @@ def test_systemd_propagates_exit_code_and_stops_on_mode_unavailable() -> None:
     service = read("deploy/systemd/silver-bot.service")
 
     assert "up bot --exit-code-from bot" in service
-    assert "RestartPreventExitStatus=78" in service
+    assert "RestartPreventExitStatus=2 78" in service
 
 
 def test_compose_bot_does_not_self_restart() -> None:

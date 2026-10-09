@@ -128,3 +128,22 @@ def test_unknown_flag_exits_2(workdir: Path) -> None:
         main(["--live"])
 
     assert info.value.code == 2
+
+
+def test_crash_during_backtest_still_audits_bot_stopped(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import silver_bot.main as entry
+
+    backtest_env(monkeypatch)
+    csv_path = write_klines(workdir / "a.csv")
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("engine failure")
+
+    monkeypatch.setattr(entry, "run_backtest", explode)
+
+    with pytest.raises(RuntimeError, match="engine failure"):
+        main(["--candles", str(csv_path)])
+
+    last = audit_events(workdir)[-1]
+    assert last["event_type"] == "bot_stopped"
+    assert last["context"]["exit_code"] == 1

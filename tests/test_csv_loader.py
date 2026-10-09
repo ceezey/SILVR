@@ -82,12 +82,15 @@ def test_gap_is_counted(tmp_path: Path) -> None:
     assert load(file).gaps == 1
 
 
-def test_coarser_file_passes_finer_timeframe_but_not_reverse(tmp_path: Path) -> None:
+def test_candle_duration_must_match_timeframe_both_ways(tmp_path: Path) -> None:
     five = 5 * MINUTE_MS
     coarse = write(tmp_path / "five.csv", [kline(START_MS + i * five, step_ms=five) for i in range(3)])
     fine = write(tmp_path / "one.csv", [kline(START_MS + i * MINUTE_MS) for i in range(3)])
 
-    assert len(load(coarse, timeframe="1m").candles) == 3
+    assert len(load(coarse, timeframe="5m").candles) == 3
+    with pytest.raises(CandleDataError, match="duration .* TIMEFRAME=1m") as info:
+        load(coarse, timeframe="1m")
+    assert f"{coarse}:1" in str(info.value)
     with pytest.raises(CandleDataError, match="TIMEFRAME=5m"):
         load(fine, timeframe="5m")
 

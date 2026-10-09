@@ -55,6 +55,11 @@ def load_binance_kline_csv(
     for file in files:
         for line_number, row in _rows(file):
             candle = _parse_row(row, where=f"{file}:{line_number}", symbol=symbol, timeframe=timeframe)
+            duration = candle.close_time - candle.open_time
+            if duration != interval:
+                raise CandleDataError(
+                    f"{file}:{line_number}: candle duration {duration} does not match TIMEFRAME={timeframe}"
+                )
             existing = by_open_time.get(candle.open_time)
             if existing is None:
                 by_open_time[candle.open_time] = candle

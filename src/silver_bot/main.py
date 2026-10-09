@@ -72,8 +72,11 @@ def main(argv: list[str] | None = None) -> int:
             "telegram_enabled": config.telegram_enabled,
         },
     )
-    exit_code = _dispatch(config, args, audit)
-    audit.log("bot_stopped", "Silver bot stopped", context={"mode": config.mode.value, "exit_code": exit_code})
+    exit_code = 1  # reported if dispatch raises; matches Python's uncaught-exception exit
+    try:
+        exit_code = _dispatch(config, args, audit)
+    finally:
+        audit.log("bot_stopped", "Silver bot stopped", context={"mode": config.mode.value, "exit_code": exit_code})
     return exit_code
 
 

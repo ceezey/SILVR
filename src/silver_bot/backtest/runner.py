@@ -71,7 +71,7 @@ def run_backtest(
     directory = Path(output_dir)
     ordered = sorted(candles, key=lambda candle: candle.open_time)
 
-    full, full_trip = _simulate(config, ordered, export_dir=directory)
+    full, full_trip, full_config = _simulate(config, ordered, export_dir=directory)
 
     split = BacktestValidationSuite().chronological_split(
         ordered,
@@ -97,9 +97,7 @@ def run_backtest(
         },
     )
 
-    risk = build_risk_config(config)
     run_path = directory / "backtest_run.json"
-    defaults = BacktestConfig()
     _write_json(
         run_path,
         {
@@ -109,12 +107,12 @@ def run_backtest(
             "candles": len(ordered),
             "first_open_time": ordered[0].open_time.isoformat(),
             "last_open_time": ordered[-1].open_time.isoformat(),
-            "slippage_bps": defaults.slippage_bps,
-            "spread_bps": defaults.spread_bps,
-            "maker_fee": defaults.maker_fee,
-            "taker_fee": defaults.taker_fee,
-            "ml_filter_enabled": config.ml_filter_enabled,
-            "risk_per_trade": risk.risk_per_trade,
+            "slippage_bps": full_config.slippage_bps,
+            "spread_bps": full_config.spread_bps,
+            "maker_fee": full_config.maker_fee,
+            "taker_fee": full_config.taker_fee,
+            "ml_filter_enabled": full_config.ml_filter.enabled,
+            "risk_per_trade": full_config.risk.risk_per_trade,
             "kill_switch": {"mode": "simulated_per_run", **full_trip},
             "package_version": silver_bot.__version__,
         },
@@ -131,16 +129,17 @@ def _simulate(
     candles: list[Candle],
     *,
     export_dir: Path | None,
-) -> tuple[BacktestResult, dict[str, Any]]:
-    """Run one engine with its own simulated kill switch; return the result and trip record."""
+) -> tuple[BacktestResult, dict[str, Any], BacktestConfig]:
+    """Run one engine with its own simulated kill switch.
+
+    Returns the result, the trip record and the config the engine ran with.
+    """
 
     with tempfile.TemporaryDirectory() as scratch:
         kill_switch_path = Path(scratch) / KILL_SWITCH_FILENAME
-        engine = BacktestEngine(
-            config=build_backtest_config(config, export_dir=export_dir, kill_switch_path=kill_switch_path)
-        )
-        result = engine.run(candles)
-        return result, _read_trip(kill_switch_path)
+        backtest_config = build_backtest_config(config, export_dir=export_dir, kill_switch_path=kill_switch_path)
+        result = BacktestEngine(config=backtest_config).run(candles)
+        return result, _read_trip(kill_switch_path), backtest_config
 
 
 def _read_trip(path: Path) -> dict[str, Any]:
@@ -160,7 +159,7 @@ def _read_trip(path: Path) -> dict[str, Any]:
 def _segment(config: AppConfig, candles: list[Candle]) -> dict[str, Any]:
     if not candles:
         return {"candles": 0, "start": None, "end": None, "metrics": None, "kill_switch": None}
-    result, trip = _simulate(config, candles, export_dir=None)
+    result, trip, _ = _simulate(config, candles, export_dir=None)
     return {
         "candles": len(candles),
         "start": candles[0].open_time.isoformat(),
