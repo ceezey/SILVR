@@ -25,11 +25,12 @@
 | ED-2 | Out-of-sample report | Yes: chronological 60/20/20 split with the existing helper; each segment backtested separately; no tuning. |
 | ED-3 | Paper and demo meanwhile | Exit code 78 with a clear message; supervisors stop restarting on 78. |
 | ED-4 | Mode selection | From config (`TRADING_MODE`), as today. Flags supply backtest inputs only. No subcommands. |
+| ED-5 | Kill switch in backtests (decided after the permission classifier refused a design that dropped the kill-switch path) | A simulated per-run kill switch in a temp directory, always on, tripping and halting like live; the real file is never used. |
 
 ### Invariants
 
 - No change loosens a risk, kill-switch, readiness or live gate. `LIVE_TRADING=true` and `TRADING_MODE=live` stay rejected at load.
-- A backtest never reads or writes the real kill-switch file.
+- A backtest never reads or writes the real kill-switch file; it runs on its own simulated, always-on kill switch.
 - No new dependency. No network I/O. Reports go to `reports/`, which is gitignored and never committed.
 - No performance claim is written into any committed doc.
 
@@ -65,8 +66,9 @@ Paths are relative to `src/silver_bot/` unless they start with a root filename.
 
 ### 2.3 Runner (new `backtest/runner.py`) and factory refactor
 
-- `risk/factory.py` gains `build_risk_config(config: AppConfig, *, kill_switch: bool = True) -> RiskConfig`. `build_risk_engine` uses it. With `kill_switch=False` the returned config has `kill_switch_path=None`.
-- `build_backtest_config(config: AppConfig, *, export_dir: Path | None) -> BacktestConfig`: `risk=build_risk_config(config, kill_switch=False)`, `ml_filter=MLFilterConfig(enabled=config.ml_filter_enabled, registry_path=config.ml_registry_path, min_probability=config.ml_min_probability, reduce_risk_threshold=config.ml_reduce_risk_threshold)`, `export_dir=export_dir`. Costs and balance keep `BacktestConfig` defaults.
+- `risk/factory.py` gains `build_risk_config(config: AppConfig) -> RiskConfig` (settings caps and the real kill-switch path when enabled). `build_risk_engine` uses it.
+- `build_backtest_config(config: AppConfig, *, export_dir: Path | None, kill_switch_path: Path) -> BacktestConfig`: `risk=replace(build_risk_config(config), kill_switch_path=kill_switch_path)`, the ML filter config from settings, `export_dir=export_dir`. Costs and balance keep `BacktestConfig` defaults.
+- **Simulated kill switch (ED-5).** Every engine run (the full period and each segment) gets its own kill-switch file inside a fresh `tempfile.TemporaryDirectory()`. The engine checks and trips it as live would, so a trip halts the rest of that simulated run. It is on even when `KILL_SWITCH_ENABLED=false`. The real `KILL_SWITCH_PATH` is never given to a backtest engine. The trip record is read before cleanup and reported in `backtest_run.json` (`kill_switch: {mode: simulated_per_run, tripped, reason, tripped_at}`) and in each OOS segment (`kill_switch: {tripped, reason, tripped_at}`).
 - `run_backtest(config: AppConfig, candles: Sequence[Candle], output_dir: Path, *, inputs: Mapping[str, Any]) -> BacktestRunSummary`:
   1. Full period: `BacktestEngine(config=build_backtest_config(config, export_dir=output_dir)).run(candles)`. Writes `backtest_report.json`, `trades.csv`, `equity_curve.csv`, `rejected_signals.csv` through the existing export.
   2. Out of sample: `BacktestValidationSuite().chronological_split(list(candles))` with default fractions 0.6 and 0.2. Each non-empty segment runs in a new engine (fresh risk state, `export_dir=None`). Writes `out_of_sample_validation_report.json`:
@@ -97,7 +99,7 @@ Wave 1 lanes run in parallel worktrees branched from `dev` and share no files. T
 ## 4. Testing
 
 - Loader: header and no header; ms and µs timestamps; directory input; overlapping identical rows dropped; each rejection in 2.2 raises `CandleDataError` naming the file and line; a 5m file loaded as `1m` passes spacing (multiple) but a 1m file loaded as `5m` fails; gap count.
-- Runner: the six report files exist; `out_of_sample_validation_report.json` and `backtest_report.json` pass `readiness` report checks (non-empty JSON objects); the backtest risk config has `kill_switch_path=None` even when settings enable the kill switch, and an existing kill file does not block the backtest and is not modified; settings caps reach `RiskConfig`; ML settings reach `MLFilterConfig`; empty candles raise.
+- Runner: the six report files exist; `out_of_sample_validation_report.json` and `backtest_report.json` pass `readiness` report checks (non-empty JSON objects); the backtest risk config points at the run's simulated kill switch even when settings enable or disable the real one, and an existing real kill file does not block the backtest and is not modified; trip records appear in the reports; settings caps reach `RiskConfig`; ML settings reach `MLFilterConfig`; empty candles raise.
 - Entrypoint: paper and demo return 78 and audit `mode_unavailable`; backtest without `--candles` returns 2; `--candles` in paper returns 2; a bad CSV returns 2; an end-to-end run on a small Binance-format CSV returns 0 and writes reports that pass the readiness report checks; `LIVE_TRADING=true` still returns 2.
 - Deploy: systemd has `--exit-code-from bot` and `RestartPreventExitStatus=78`; compose `bot` has `restart: "no"`; backtest and research pass `--candles`; existing safety assertions still hold.
 

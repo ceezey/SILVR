@@ -15,7 +15,7 @@
 - Run tests with `python -m pytest -q` from the repo root. Baseline at `f8a51b4`: 170 passed.
 - No new dependencies; `pyproject.toml` `dependencies = []` stays empty. No network I/O.
 - Never loosen a risk, kill-switch, readiness or live gate. `LIVE_TRADING=true` stays rejected at load.
-- A backtest never reads or writes the real kill-switch file.
+- A backtest never reads or writes the real kill-switch file; it runs on a simulated per-run kill switch that is always on (ED-5).
 - Exit codes: 0 success, 2 usage, config or data error, 78 mode unavailable.
 - Commit only the files a task names. Never `git add -A` or `git add .`; the shared tree holds another session's untracked files (for example `docs/cr-silverbot-operator-dashboard.md`).
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -26,7 +26,7 @@
 - A CSV file saved with a UTF-8 BOM before the header: must still detect the header (Task A1, `utf-8-sig`).
 - Two monthly files that overlap by one identical row: the duplicate is dropped, not an error (Task A1).
 - A microsecond-timestamp file (Binance spot since 2025): `close_time` must be open plus one interval, not plus 1 ms (Task A1).
-- A backtest run while a real `KILL_SWITCH` file exists and settings enable the kill switch: the backtest runs and the file is byte-identical afterwards (Task B2).
+- A backtest run while a real `KILL_SWITCH` file exists and settings enable the kill switch: the backtest runs on its own simulated switch and the real file is byte-identical afterwards (Task B2).
 - `main()` called with an unknown flag: argparse exits 2 (Task M1).
 
 ---
@@ -357,66 +357,67 @@ def _to_utc(raw: int) -> datetime:
 
 ---
 
-## Wave 1, Lane B: runner (branch `feat/backtest-runner`)
+## Wave 1, Lane B: runner (branch `feat/backtest-runner-v2`)
 
-### Task B1: `build_risk_config` with optional kill switch
+Revised 2026-10-09 by owner decision ED-5: backtests use a **simulated per-run kill switch**, not the real one and not none. Nothing is removed from the risk config.
+
+### Task B1: `build_risk_config`
 
 **Files:**
 - Modify: `src/silver_bot/risk/factory.py`, `src/silver_bot/risk/__init__.py`
 - Test: `tests/test_risk_engine.py` (append)
 
 **Interfaces:**
-- Produces: `build_risk_config(config: AppConfig, *, kill_switch: bool = True) -> RiskConfig`. `build_risk_engine(config, storage=None)` is unchanged in behaviour.
+- Produces: `build_risk_config(config: AppConfig) -> RiskConfig` (settings caps; real kill-switch path when `KILL_SWITCH_ENABLED=true`). `build_risk_engine(config, storage=None)` uses it and keeps its behaviour.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_risk_engine.py`:
+- [ ] **Step 1: Write the failing test.** Append to `tests/test_risk_engine.py`:
 
 ```python
 from silver_bot.config import AppConfig, TradingMode
 from silver_bot.risk import build_risk_config
 
 
-def test_build_risk_config_can_drop_kill_switch(tmp_path) -> None:
+def test_build_risk_config_maps_settings(tmp_path) -> None:
     config = AppConfig(
         mode=TradingMode.BACKTEST,
         paper_trading=False,
         kill_switch_enabled=True,
         kill_switch_path=tmp_path / "KILL_SWITCH",
         max_risk_per_trade=0.004,
+        max_daily_loss=0.01,
+        max_leverage=2.0,
     )
 
-    assert build_risk_config(config).kill_switch_path == tmp_path / "KILL_SWITCH"
-    without = build_risk_config(config, kill_switch=False)
-    assert without.kill_switch_path is None
-    assert without.risk_per_trade == 0.004
+    risk = build_risk_config(config)
+
+    assert risk.kill_switch_path == tmp_path / "KILL_SWITCH"
+    assert (risk.risk_per_trade, risk.max_daily_loss, risk.max_leverage) == (0.004, 0.01, 2.0)
+    assert build_risk_engine(config).config == risk
 ```
 
 - [ ] **Step 2: Run to verify failure.** `python -m pytest -q tests/test_risk_engine.py`. Expected: ImportError for `build_risk_config`.
 
-- [ ] **Step 3: Implement.** In `src/silver_bot/risk/factory.py` add, above `build_risk_engine`:
+- [ ] **Step 3: Implement.** In `src/silver_bot/risk/factory.py` add above `build_risk_engine`:
 
 ```python
-def build_risk_config(config: AppConfig, *, kill_switch: bool = True) -> RiskConfig:
-    """Return risk limits from settings.
-
-    `kill_switch=False` drops the kill-switch path. Backtests use it so a
-    simulated loss streak can never write the real kill-switch file.
-    """
+def build_risk_config(config: AppConfig) -> RiskConfig:
+    """Return risk limits and the kill-switch path from settings."""
 
     return RiskConfig(
         risk_per_trade=config.max_risk_per_trade,
         max_daily_loss=config.max_daily_loss,
         max_leverage=config.max_leverage,
-        kill_switch_path=config.kill_switch_path if kill_switch and config.kill_switch_enabled else None,
+        kill_switch_path=config.kill_switch_path if config.kill_switch_enabled else None,
     )
 ```
 
-and make `build_risk_engine` body `return RiskManagementEngine(build_risk_config(config), state_store=storage)` (keep its docstring). Export `build_risk_config` from `risk/__init__.py` (sorted `__all__`).
+and make `build_risk_engine`'s body `return RiskManagementEngine(build_risk_config(config), state_store=storage)` (keep its docstring). Export `build_risk_config` from `risk/__init__.py` (sorted `__all__`).
 
-- [ ] **Step 4: Run the full suite.** `python -m pytest -q`. Expected: all pass.
+- [ ] **Step 4: Run the full suite.** Expected: all pass.
 
-- [ ] **Step 5: Commit.** `git add src/silver_bot/risk/factory.py src/silver_bot/risk/__init__.py tests/test_risk_engine.py` then `git commit -m "refactor(risk): add build_risk_config with optional kill switch"`.
+- [ ] **Step 5: Commit.** `git add src/silver_bot/risk/factory.py src/silver_bot/risk/__init__.py tests/test_risk_engine.py` then `git commit -m "refactor(risk): extract build_risk_config from build_risk_engine"`.
 
-### Task B2: settings-driven backtest runner with out-of-sample report
+### Task B2: settings-driven backtest runner with a simulated kill switch and out-of-sample report
 
 **Files:**
 - Create: `src/silver_bot/backtest/runner.py`
@@ -425,7 +426,9 @@ and make `build_risk_engine` body `return RiskManagementEngine(build_risk_config
 
 **Interfaces:**
 - Consumes: `build_risk_config` (B1).
-- Produces: `build_backtest_config(config: AppConfig, *, export_dir: Path | None) -> BacktestConfig`; `run_backtest(config: AppConfig, candles: Sequence[Candle], output_dir: str | Path, *, inputs: Mapping[str, Any]) -> BacktestRunSummary`; `BacktestRunSummary(candles: int, report_paths: dict[str, Path])` with keys `backtest_report`, `trades`, `equity_curve`, `rejected_signals`, `out_of_sample_validation_report`, `backtest_run`.
+- Produces: `build_backtest_config(config: AppConfig, *, export_dir: Path | None, kill_switch_path: Path) -> BacktestConfig`; `run_backtest(config: AppConfig, candles: Sequence[Candle], output_dir: str | Path, *, inputs: Mapping[str, Any]) -> BacktestRunSummary`; `BacktestRunSummary(candles: int, report_paths: dict[str, Path])` with keys `backtest_report`, `trades`, `equity_curve`, `rejected_signals`, `out_of_sample_validation_report`, `backtest_run`.
+
+**Kill-switch rule.** Every engine run (the full period and each segment) gets its own kill-switch file inside a fresh `tempfile.TemporaryDirectory()`. The engine checks it and trips it exactly as live would, so a trip halts the rest of that simulated run. The kill switch is on in every backtest even when `KILL_SWITCH_ENABLED=false`. The real `KILL_SWITCH_PATH` is never passed to a backtest engine. Before the directory is cleaned up, the trip record (if any) is read and written into the reports.
 
 - [ ] **Step 1: Write the failing tests.** Create `tests/test_backtest_runner.py`:
 
@@ -438,6 +441,7 @@ import pytest
 
 import silver_bot
 from silver_bot.backtest import build_backtest_config, run_backtest
+from silver_bot.backtest.runner import _read_trip
 from silver_bot.config import AppConfig, TradingMode
 from silver_bot.models import Candle
 from silver_bot.readiness import evaluate_live_readiness
@@ -465,14 +469,14 @@ def candles(count: int = 50) -> list[Candle]:
     return result
 
 
-def backtest_settings(tmp_path: Path, **overrides) -> AppConfig:
+def backtest_settings(**overrides) -> AppConfig:
     values = dict(mode=TradingMode.BACKTEST, paper_trading=False)
     values.update(overrides)
     return AppConfig(**values)
 
 
 def test_run_writes_all_reports(tmp_path: Path) -> None:
-    summary = run_backtest(backtest_settings(tmp_path), candles(), tmp_path / "reports", inputs={"files": ["x.csv"], "gaps": 0})
+    summary = run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={"files": ["x.csv"], "gaps": 0})
 
     assert summary.candles == 50
     assert set(summary.report_paths) == {
@@ -488,7 +492,7 @@ def test_run_writes_all_reports(tmp_path: Path) -> None:
 
 
 def test_reports_pass_readiness_report_checks(tmp_path: Path) -> None:
-    summary = run_backtest(backtest_settings(tmp_path), candles(), tmp_path / "reports", inputs={})
+    summary = run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={})
 
     report = evaluate_live_readiness(
         project_root=tmp_path,
@@ -504,7 +508,7 @@ def test_reports_pass_readiness_report_checks(tmp_path: Path) -> None:
 
 
 def test_out_of_sample_report_structure(tmp_path: Path) -> None:
-    summary = run_backtest(backtest_settings(tmp_path), candles(), tmp_path / "reports", inputs={})
+    summary = run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={})
 
     oos = json.loads(summary.report_paths["out_of_sample_validation_report"].read_text(encoding="utf-8"))
 
@@ -515,10 +519,12 @@ def test_out_of_sample_report_structure(tmp_path: Path) -> None:
     assert oos["segments"]["training"]["end"] < oos["segments"]["validation"]["start"]
     assert oos["segments"]["validation"]["end"] < oos["segments"]["final_test"]["start"]
     assert isinstance(oos["segments"]["final_test"]["metrics"], dict)
+    for name in ("training", "validation", "final_test"):
+        assert oos["segments"][name]["kill_switch"] == {"tripped": False, "reason": None, "tripped_at": None}
 
 
-def test_run_record_lists_inputs_and_costs(tmp_path: Path) -> None:
-    summary = run_backtest(backtest_settings(tmp_path), candles(), tmp_path / "reports", inputs={"files": ["a.csv"], "gaps": 2})
+def test_run_record_lists_inputs_costs_and_kill_switch_mode(tmp_path: Path) -> None:
+    summary = run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={"files": ["a.csv"], "gaps": 2})
 
     run = json.loads(summary.report_paths["backtest_run"].read_text(encoding="utf-8"))
 
@@ -532,23 +538,47 @@ def test_run_record_lists_inputs_and_costs(tmp_path: Path) -> None:
     assert run["ml_filter_enabled"] is False
     assert run["package_version"] == silver_bot.__version__
     assert run["first_open_time"] == "2026-01-02T14:00:00+00:00"
+    assert run["kill_switch"] == {"mode": "simulated_per_run", "tripped": False, "reason": None, "tripped_at": None}
 
 
-def test_backtest_ignores_and_preserves_real_kill_switch(tmp_path: Path) -> None:
-    kill_file = tmp_path / "KILL_SWITCH"
-    kill_file.write_text('{"reason": "owner"}', encoding="utf-8")
-    settings = backtest_settings(tmp_path, kill_switch_enabled=True, kill_switch_path=kill_file)
+def test_backtest_never_uses_real_kill_switch(tmp_path: Path) -> None:
+    real = tmp_path / "KILL_SWITCH"
+    real.write_text('{"reason": "owner"}', encoding="utf-8")
+    settings = backtest_settings(kill_switch_enabled=True, kill_switch_path=real)
 
-    assert build_backtest_config(settings, export_dir=None).risk.kill_switch_path is None
+    sim = tmp_path / "sim" / "KILL_SWITCH"
+    assert build_backtest_config(settings, export_dir=None, kill_switch_path=sim).risk.kill_switch_path == sim
     summary = run_backtest(settings, candles(), tmp_path / "reports", inputs={})
 
-    assert kill_file.read_text(encoding="utf-8") == '{"reason": "owner"}'
+    assert real.read_text(encoding="utf-8") == '{"reason": "owner"}'
     assert "Kill switch is active" not in summary.report_paths["rejected_signals"].read_text(encoding="utf-8")
+
+
+def test_simulated_kill_switch_is_on_even_when_settings_disable_it(tmp_path: Path) -> None:
+    sim = tmp_path / "sim" / "KILL_SWITCH"
+
+    config = build_backtest_config(backtest_settings(kill_switch_enabled=False), export_dir=None, kill_switch_path=sim)
+
+    assert config.risk.kill_switch_path == sim
+
+
+def test_read_trip_reports_trip_record(tmp_path: Path) -> None:
+    path = tmp_path / "KILL_SWITCH"
+    assert _read_trip(path) == {"tripped": False, "reason": None, "tripped_at": None}
+
+    path.write_text('{"reason": "Max daily loss limit reached", "tripped_at": "2026-01-02T15:00:00+00:00"}', encoding="utf-8")
+    assert _read_trip(path) == {
+        "tripped": True,
+        "reason": "Max daily loss limit reached",
+        "tripped_at": "2026-01-02T15:00:00+00:00",
+    }
+
+    path.write_text("not json", encoding="utf-8")
+    assert _read_trip(path) == {"tripped": True, "reason": None, "tripped_at": None}
 
 
 def test_settings_reach_backtest_config(tmp_path: Path) -> None:
     settings = backtest_settings(
-        tmp_path,
         max_risk_per_trade=0.004,
         max_daily_loss=0.01,
         max_leverage=2.0,
@@ -558,7 +588,7 @@ def test_settings_reach_backtest_config(tmp_path: Path) -> None:
         ml_reduce_risk_threshold=0.6,
     )
 
-    config = build_backtest_config(settings, export_dir=tmp_path)
+    config = build_backtest_config(settings, export_dir=tmp_path, kill_switch_path=tmp_path / "sim" / "KILL_SWITCH")
 
     assert (config.risk.risk_per_trade, config.risk.max_daily_loss, config.risk.max_leverage) == (0.004, 0.01, 2.0)
     assert config.ml_filter.enabled is True
@@ -570,7 +600,7 @@ def test_settings_reach_backtest_config(tmp_path: Path) -> None:
 
 def test_empty_candles_raise(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="at least one candle"):
-        run_backtest(backtest_settings(tmp_path), [], tmp_path / "reports", inputs={})
+        run_backtest(backtest_settings(), [], tmp_path / "reports", inputs={})
 ```
 
 - [ ] **Step 2: Run to verify failure.** `python -m pytest -q tests/test_backtest_runner.py`. Expected: ImportError for `build_backtest_config`.
@@ -583,14 +613,15 @@ def test_empty_candles_raise(tmp_path: Path) -> None:
 from __future__ import annotations
 
 import json
+import tempfile
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import silver_bot
 from silver_bot.backtest.engine import BacktestEngine
-from silver_bot.backtest.models import BacktestConfig
+from silver_bot.backtest.models import BacktestConfig, BacktestResult
 from silver_bot.backtest.reporting import _json_safe
 from silver_bot.backtest.validation import BacktestValidationSuite
 from silver_bot.config import AppConfig
@@ -600,6 +631,7 @@ from silver_bot.risk import build_risk_config
 
 TRAINING_FRACTION = 0.6
 VALIDATION_FRACTION = 0.2
+KILL_SWITCH_FILENAME = "KILL_SWITCH"
 
 
 @dataclass(frozen=True, slots=True)
@@ -610,15 +642,21 @@ class BacktestRunSummary:
     report_paths: dict[str, Path]
 
 
-def build_backtest_config(config: AppConfig, *, export_dir: Path | None) -> BacktestConfig:
+def build_backtest_config(
+    config: AppConfig,
+    *,
+    export_dir: Path | None,
+    kill_switch_path: Path,
+) -> BacktestConfig:
     """Return a backtest config whose risk and ML settings come from AppConfig.
 
-    The kill switch is always dropped: a backtest must never read or write the
-    real kill-switch file.
+    `kill_switch_path` is the run's simulated kill switch. It replaces the real
+    path, so the simulation halts on its own trips and never touches the real
+    kill-switch file.
     """
 
     return BacktestConfig(
-        risk=build_risk_config(config, kill_switch=False),
+        risk=replace(build_risk_config(config), kill_switch_path=kill_switch_path),
         ml_filter=MLFilterConfig(
             enabled=config.ml_filter_enabled,
             registry_path=config.ml_registry_path,
@@ -643,7 +681,7 @@ def run_backtest(
     directory = Path(output_dir)
     ordered = sorted(candles, key=lambda candle: candle.open_time)
 
-    full = BacktestEngine(config=build_backtest_config(config, export_dir=directory)).run(ordered)
+    full, full_trip = _simulate(config, ordered, export_dir=directory)
 
     split = BacktestValidationSuite().chronological_split(
         ordered,
@@ -669,8 +707,9 @@ def run_backtest(
         },
     )
 
-    settings = build_backtest_config(config, export_dir=None)
+    risk = build_risk_config(config)
     run_path = directory / "backtest_run.json"
+    defaults = BacktestConfig()
     _write_json(
         run_path,
         {
@@ -680,12 +719,13 @@ def run_backtest(
             "candles": len(ordered),
             "first_open_time": ordered[0].open_time.isoformat(),
             "last_open_time": ordered[-1].open_time.isoformat(),
-            "slippage_bps": settings.slippage_bps,
-            "spread_bps": settings.spread_bps,
-            "maker_fee": settings.maker_fee,
-            "taker_fee": settings.taker_fee,
-            "ml_filter_enabled": settings.ml_filter.enabled,
-            "risk_per_trade": settings.risk.risk_per_trade,
+            "slippage_bps": defaults.slippage_bps,
+            "spread_bps": defaults.spread_bps,
+            "maker_fee": defaults.maker_fee,
+            "taker_fee": defaults.taker_fee,
+            "ml_filter_enabled": config.ml_filter_enabled,
+            "risk_per_trade": risk.risk_per_trade,
+            "kill_switch": {"mode": "simulated_per_run", **full_trip},
             "package_version": silver_bot.__version__,
         },
     )
@@ -696,15 +736,47 @@ def run_backtest(
     return BacktestRunSummary(candles=len(ordered), report_paths=paths)
 
 
+def _simulate(
+    config: AppConfig,
+    candles: list[Candle],
+    *,
+    export_dir: Path | None,
+) -> tuple[BacktestResult, dict[str, Any]]:
+    """Run one engine with its own simulated kill switch; return the result and trip record."""
+
+    with tempfile.TemporaryDirectory() as scratch:
+        kill_switch_path = Path(scratch) / KILL_SWITCH_FILENAME
+        engine = BacktestEngine(
+            config=build_backtest_config(config, export_dir=export_dir, kill_switch_path=kill_switch_path)
+        )
+        result = engine.run(candles)
+        return result, _read_trip(kill_switch_path)
+
+
+def _read_trip(path: Path) -> dict[str, Any]:
+    """Describe a simulated kill-switch file: whether it tripped, and why."""
+
+    if not path.exists():
+        return {"tripped": False, "reason": None, "tripped_at": None}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return {"tripped": True, "reason": payload.get("reason"), "tripped_at": payload.get("tripped_at")}
+
+
 def _segment(config: AppConfig, candles: list[Candle]) -> dict[str, Any]:
     if not candles:
-        return {"candles": 0, "start": None, "end": None, "metrics": None}
-    result = BacktestEngine(config=build_backtest_config(config, export_dir=None)).run(candles)
+        return {"candles": 0, "start": None, "end": None, "metrics": None, "kill_switch": None}
+    result, trip = _simulate(config, candles, export_dir=None)
     return {
         "candles": len(candles),
         "start": candles[0].open_time.isoformat(),
         "end": candles[-1].open_time.isoformat(),
         "metrics": result.metrics,
+        "kill_switch": trip,
     }
 
 
@@ -713,13 +785,13 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.write_text(json.dumps(_json_safe(dict(payload)), indent=2, sort_keys=True), encoding="utf-8")
 ```
 
-Each segment gets a new engine, so risk state starts fresh per segment. No parameter is chosen from any segment.
+The cost fields in `backtest_run.json` come from `BacktestConfig()` defaults, which `build_backtest_config` does not override. Each segment gets a new engine and a new simulated kill switch, so risk state and halts start fresh per segment. No parameter is chosen from any segment.
 
-- [ ] **Step 4: Export.** In `src/silver_bot/backtest/__init__.py` add `from silver_bot.backtest.runner import BacktestRunSummary, build_backtest_config, run_backtest` and the names to `__all__`, sorted. Then confirm no import cycle: `PYTHONPATH=src python -c "import silver_bot.backtest, silver_bot.risk, silver_bot.ml"` and `PYTHONPATH=src python -c "import silver_bot.ml, silver_bot.backtest"`.
+- [ ] **Step 4: Export.** In `src/silver_bot/backtest/__init__.py` add `from silver_bot.backtest.runner import BacktestRunSummary, build_backtest_config, run_backtest` and the names to `__all__`, sorted. Confirm no import cycle: `PYTHONPATH=src python -c "import silver_bot.backtest, silver_bot.risk, silver_bot.ml"` and `PYTHONPATH=src python -c "import silver_bot.ml, silver_bot.backtest"`.
 
-- [ ] **Step 5: Run the full suite.** `python -m pytest -q`. Expected: all pass. If `test_out_of_sample_report_structure` shows split sizes other than 30/10/10 for 50 candles, read `chronological_split` and fix the test expectation only if the helper's arithmetic (`int(len * fraction)`) gives different numbers; record that in the report.
+- [ ] **Step 5: Run the full suite.** `python -m pytest -q`. Expected: all pass. If split sizes differ from 30/10/10 for 50 candles, check `chronological_split` arithmetic (`int(len * fraction)`) and fix only the expectation; record it.
 
-- [ ] **Step 6: Commit.** `git add src/silver_bot/backtest/runner.py src/silver_bot/backtest/__init__.py tests/test_backtest_runner.py` then `git commit -m "feat(backtest): settings-driven runner with out-of-sample report (G-3, G-1)"`.
+- [ ] **Step 6: Commit.** `git add src/silver_bot/backtest/runner.py src/silver_bot/backtest/__init__.py tests/test_backtest_runner.py` then `git commit -m "feat(backtest): settings-driven runner with simulated kill switch and OOS report (G-3, G-1)"`.
 
 ---
 
@@ -1042,7 +1114,7 @@ Check `StructuredAuditLogger.log` accepts `level=` as a keyword (`monitoring/aud
 ## Integration
 
 ### Task I1: Merge wave 1
-- [ ] `git merge --no-ff` `feat/csv-loader`, `feat/backtest-runner`, `feat/deploy-no-restart-loop` into `dev` in that order; `python -m pytest -q` after each.
+- [ ] `git merge --no-ff` `feat/csv-loader`, `feat/deploy-no-restart-loop` (merged), then `feat/backtest-runner-v2` into `dev` in that order; `python -m pytest -q` after each.
 
 ### Task I2: Docs pass (after M1)
 Per spec section 5. Cite `file:line` on `dev`. Commit only the edited docs and materialized files: `docs: reconcile suite with G-3 entrypoint batch 2`.
