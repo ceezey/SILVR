@@ -5,11 +5,11 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 1, 3.2, 3.4, 4.3, 5.3, 5.5, 7 and 8 and every `file:line` into the files changed by the HIGH safety fixes batch 1 re-checked 2026-10-09 against `70ccaec`
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 1, 3.2, 3.4, 4.3, 5.3, 5.5, 7 and 8 and every `file:line` into the files changed by the HIGH safety fixes batch 1 re-checked 2026-10-09 against `70ccaec`; sections 2.1 to 2.4, 3.3, 4.1, 4.6, 5.3, 5.5 and 6 re-checked 2026-10-09 against `099085b` (G-3 entrypoint batch 2)
 
 This document describes how Silver Bot is built, as coded, and how the unbuilt parts are intended to fit. It replaces the old `ARCHITECTURE.md` and `CONFIGURATION.md`; the full configuration reference is section 3.4. Product scope and feature status are in [prd-silverbot.md](prd-silverbot.md) (ids `PRD-F1` to `PRD-F12`); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and code hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design records are the four RFCs ([rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md)) and the test matrix is [qad-silverbot.md](qad-silverbot.md); AIA, OPS and BUILD are [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md) and [build-silverbot.md](build-silverbot.md).
 
-Reading convention. **As built** states what the code does today, with `file:line` relative to `src/silver_bot/` unless the path starts with a root filename. **Intended** states design direction and is labelled `Planned`. Where the two differ, as built wins and the difference is cited. The headline fact: the application entrypoint is a startup stub that initialises storage, writes two audit events and exits 0 (`main.py:14-50`, D-1, G-3). Every runtime described below (backtest, paper, demo) exists as a tested library, not as something the command line can start. No performance claim is made anywhere in this document; the three evidence reports are 0 bytes (G-1, D-86).
+Reading convention. **As built** states what the code does today, with `file:line` relative to `src/silver_bot/` unless the path starts with a root filename. **Intended** states design direction and is labelled `Planned`. Where the two differ, as built wins and the difference is cited. The headline fact: since `099085b` the entrypoint dispatches on the configured mode (`main.py:80-88`). Backtest mode loads local Binance kline CSV files and writes six reports (`main.py:91-109`, `backtest/runner.py:60-126`); paper and demo modes exit 78 with `mode not available yet: needs market data (G-13)` (`main.py:25-26,86-88`). The paper and demo runtimes exist as tested libraries only (G-3 partial, G-13, G-17). No performance claim is made anywhere in this document; the local evidence reports are empty until the owner runs a backtest on real data (G-1, D-86).
 
 ## 1. Architectural Vision & Principles
 
@@ -17,8 +17,8 @@ Silver Bot is a personal research, backtesting, paper and (eventually) demo/live
 
 1. **Safety first, fail closed.** Configuration that is unsafe or ambiguous raises `ConfigError` at load rather than running with a guess (`config/settings.py:57-194`). Live trading cannot be reached from any input (section 5.1). The default mode is `paper` (`config/settings.py:29,69`).
 2. **Rule-based signals only.** The strategy engine is deterministic and returns exactly `LONG`, `SHORT` or `NO_TRADE`; every `NO_TRADE` carries a reason (`models.py:11-16`, `strategy/models.py:190-202`).
-3. **The risk engine is mandatory and sits between signal and order.** Every candidate in the backtester and the paper loop goes through `RiskManagementEngine.evaluate` (`backtest/engine.py:157-166`, `execution/paper_trading.py:207-216`). Caveat: both loops still build the engine with default limits and no kill-switch path. `build_risk_engine` (`risk/factory.py:15-28`) builds it from settings with the kill-switch path and SQLite state, but no runtime path calls it until the G-3 entrypoint exists (G-5, G-6, G-7 partial).
-4. **ML is a filter, never a generator.** The ML filter can approve an unchanged signal, reject it, or scale risk by a multiplier in (0, 1]; it takes an existing signal and cannot create one (`ml/filter.py:49-61,99-110`; section 8.1). It is disabled by default and not wired to settings (D-4, G-9).
+3. **The risk engine is mandatory and sits between signal and order.** Every candidate in the backtester and the paper loop goes through `RiskManagementEngine.evaluate` (`backtest/engine.py:157-166`, `execution/paper_trading.py:207-216`). Caveat: a backtest started from the CLI takes its limits from settings through `build_risk_config` (`risk/factory.py:15-23`, `backtest/runner.py:48-49`) with a simulated per-run kill switch (section 5.3); the paper loop still builds its engine with default limits and no kill-switch path. `build_risk_engine` (`risk/factory.py:26-33`) adds SQLite state, but no runtime calls it until the paper runtime exists (G-5, G-6, G-7 partial).
+4. **ML is a filter, never a generator.** The ML filter can approve an unchanged signal, reject it, or scale risk by a multiplier in (0, 1]; it takes an existing signal and cannot create one (`ml/filter.py:49-61,99-110`; section 8.1). It is disabled by default; the `ML_*` settings reach it in backtests only (`backtest/runner.py:50-55`), not in the paper loop (D-4, G-9 partial).
 5. **No look-ahead.** The backtester hands the strategy and ML filter only `ordered[: index + 1]` (`backtest/engine.py:106,128-131`); swing, sweep and structure detection use only prior candles (`strategy/structure.py:30-50`).
 6. **Modular adapters behind narrow interfaces.** The exchange is an abstract `ExchangeAdapter` (`exchange/base.py:29-52`); the market stream is an abstract `MarketDataStream` (`data/stream.py:15-20`); alerts go through a `TelegramClient` Protocol (`monitoring/telegram.py:9-13`). Real network transport behind these interfaces is not built (S-1 to S-6, S-30).
 7. **Auditable.** Decisions are written as JSON lines with secret redaction (`monitoring/audit.py:34-103`); trades, paper events and ML predictions can be stored in SQLite (`storage/sqlite.py`).
@@ -30,20 +30,22 @@ Non-goals for this release: live order placement, multi-symbol operation, a web 
 
 ### 2.1 Module map
 
-How configuration, the as-built entrypoints and the library pipeline connect. Entrypoints do not start the pipeline; it is exercised by tests and by Python callers only.
+How configuration, the as-built entrypoints and the library pipeline connect. Backtest mode starts the backtest part of the pipeline from the CLI; paper and demo modes exit 78, so the paper loop is exercised by tests and by Python callers only.
 
 ```mermaid
 flowchart TD
     SRC["config.yaml, .env, process env"] --> CFG["config/settings.py<br/>load_config returns AppConfig (fail closed)"]
 
     subgraph EP["Entrypoints (as built)"]
-        E1["python -m silver_bot<br/>python main.py<br/>silver-bot console script"] --> M1["main.py: load_config, SQLiteStorage.initialize,<br/>audit bot_started + bot_stopped, exit 0<br/>(no mode dispatch)"]
+        E1["python -m silver_bot [--candles PATH ...] [--output-dir DIR]<br/>python main.py<br/>silver-bot console script"] --> M1["main.py: parse args, load_config, SQLiteStorage.initialize,<br/>audit bot_started, dispatch on mode, audit bot_stopped with exit_code<br/>backtest: exit 0 or 2; paper, demo: exit 78 (or 2)"]
+        M1 --> CSV["data/csv_loader.py<br/>load_binance_kline_csv"]
+        CSV --> RUN["backtest/runner.py run_backtest<br/>full period plus 60/20/20 chronological split,<br/>simulated per-run kill switch"]
         E2["python -m silver_bot.health"] --> M2["load_config only<br/>(Docker HEALTHCHECK)"]
         E3["python -m silver_bot.readiness<br/>python -m silver_bot.demo_readiness"] --> M3["report JSON (advisory only)"]
     end
     CFG --> EP
 
-    subgraph LP["Library pipeline (exercised by tests and by Python callers, no CLI starts it)"]
+    subgraph LP["Library pipeline (backtest path started by the CLI; paper path by tests and Python callers only)"]
         ADP["exchange/ ExchangeAdapter<br/>BinanceFuturesAdapter (skeleton, no network I/O)"]
         STR["data/stream.py<br/>MarketDataStream"]
         FET["data/fetcher.py<br/>HistoricalOHLCVFetcher"]
@@ -67,6 +69,8 @@ flowchart TD
         BT --> OUT1
         PT --> OUT2
     end
+    RUN --> BT
+    RUN --> OUT3["out_of_sample_validation_report.json,<br/>backtest_run.json"]
 ```
 
 ### 2.2 Module table
@@ -77,22 +81,22 @@ Every package under `src/silver_bot/` and the top-level modules.
 |---|---|---|---|
 | `config/` | Typed, fail-closed configuration loading: defaults, `config.yaml`, `.env`, process env; mode rules; live rejection | `config/settings.py` (`AppConfig`, `TradingMode`, `ConfigError`, `load_config`) | PRD-F9 |
 | `exchange/` | Abstract exchange adapter; order types; Binance Futures skeleton with testnet URL guard. Orders disabled, OHLCV fetch raises `NotImplementedError` | `exchange/base.py`, `exchange/binance_futures.py` | PRD-F5, PRD-F12 |
-| `data/` | Historical OHLCV fetch wrapper; market stream interface, mock stream, reconnect wrapper, polling skeleton | `data/fetcher.py`, `data/stream.py` | PRD-F10, PRD-F4 |
+| `data/` | Offline Binance kline CSV loader (validate, de-duplicate, sort, count gaps); historical OHLCV fetch wrapper; market stream interface, mock stream, reconnect wrapper, polling skeleton | `data/csv_loader.py`, `data/fetcher.py`, `data/stream.py` | PRD-F10, PRD-F2, PRD-F4 |
 | `strategy/` | ICT Silver Bullet rules: sessions, swings, liquidity, sweep, displacement, MSS, FVG, HTF bias, quality score; signal output | `strategy/silver_bullet.py`, `sessions.py`, `structure.py`, `liquidity.py`, `displacement.py`, `fvg.py`, `bias.py`, `scoring.py`, `models.py` | PRD-F1 |
 | `risk/` | Position sizing, 14 ordered validation gates, per-day and per-streak limits, fail-closed file kill switch that auto-trips on loss limits, optional persisted state, factory from settings | `risk/engine.py`, `risk/kill_switch.py`, `risk/models.py`, `risk/factory.py` | PRD-F3 |
 | `execution/` | Paper order lifecycle: pending limit order, fill on touch, stop/target exit, cost model; paper trading loop tying stream, strategy, ML, risk, storage and alerts | `execution/paper_executor.py`, `execution/paper_trading.py`, `execution/trade_management.py`, `execution/models.py` | PRD-F4 |
-| `backtest/` | Event-driven backtester, cost simulation, metrics, CSV/JSON exports, chronological split helper | `backtest/engine.py`, `metrics.py`, `reporting.py`, `validation.py`, `models.py` | PRD-F2 |
+| `backtest/` | Event-driven backtester, cost simulation, metrics, CSV/JSON exports, chronological split helper; settings-driven runner that writes the out-of-sample and run-record reports | `backtest/engine.py`, `metrics.py`, `reporting.py`, `validation.py`, `models.py`, `runner.py` | PRD-F2 |
 | `ml/` | Offline dataset, features, training, calibration report, promotion policy, JSON registry, probability filter | `ml/dataset.py`, `features.py`, `training.py`, `calibration.py`, `promotion.py`, `registry.py`, `filter.py` | PRD-F6 |
 | `monitoring/` | Audit JSONL with redaction, Telegram facade (no transport), daily/weekly reports, trade journal, dashboard JSON | `monitoring/audit.py`, `telegram.py`, `reports.py`, `dashboard.py` | PRD-F7 |
 | `storage/` | SQLite persistence: eight tables, six writers, risk-state load, row counts | `storage/sqlite.py` | PRD-F10 |
 | `utils/` | Plain-text application logger | `utils/logging.py` | PRD-F7 |
 | `models.py` (top level) | Core shared models: `Candle`, `SignalDirection`, `TradeSide`, `TradeStatus`, `TradingSignal`, `Trade`, `LogEvent` | `models.py` | PRD-F1, PRD-F10 |
 | `readiness.py`, `demo_readiness.py` (top level) | Live (15 checks) and demo (18 checks) readiness checkers and report export; advisory, never consulted at runtime | `readiness.py`, `demo_readiness.py` | PRD-F8, PRD-F5 |
-| `main.py`, `__main__.py`, `health.py` (top level) | Startup stub, module entry, container health command | `main.py`, `__main__.py`, `health.py` | PRD-F11, PRD-F9 |
+| `main.py`, `__main__.py`, `health.py` (top level) | Entrypoint with mode dispatch (backtest run; paper and demo exit 78), module entry, container health command | `main.py`, `__main__.py`, `health.py` | PRD-F11, PRD-F9 |
 | Deployment files (repo root) | Image, compose services, systemd unit, logrotate, host prep | `Dockerfile`, `docker-compose.yaml`, `deploy/` | PRD-F11 |
 | (none) | Live trading: no executor, rejected at config load | n/a | PRD-F12 |
 
-Package dependency direction: `config` and `models` are leaves; `strategy`, `risk`, `ml` and `exchange` depend on `models`; `backtest/models.py` imports `ml`, `risk` and `strategy`; `execution/models.py` imports `backtest.models`, `risk` and `strategy`; `monitoring` and `storage` are consumed by `execution`, `backtest` and `main`. The `execution` package imports no exchange client (`execution/__init__.py:1-4`), which is one of the reasons no real order can leave the process (section 5.1).
+Package dependency direction: `config` and `models` are leaves; `strategy`, `risk`, `ml` and `exchange` depend on `models`; `backtest/models.py` imports `ml`, `risk` and `strategy`; `execution/models.py` imports `backtest.models`, `risk` and `strategy`; `monitoring` and `storage` are consumed by `execution`, `backtest` and `main`; `backtest/runner.py` imports `config`, `ml` and `risk` (`backtest/runner.py:12-20`); `main` imports `backtest.runner` and `data.csv_loader` (`main.py:13-15`). The `execution` package imports no exchange client (`execution/__init__.py:1-4`), which is one of the reasons no real order can leave the process (section 5.1).
 
 ### 2.3 Runtime modes and the code that selects them
 
@@ -108,20 +112,20 @@ The only modes are `backtest`, `paper` and `demo` (`TradingMode`, `config/settin
 | Consistency | `config/settings.py:109-116` | paper needs `PAPER_TRADING=true`; demo needs `DEMO_TRADING=true`; `DEMO_TRADING=true` needs `PAPER_TRADING=false` (in any mode) |
 | Demo requirements | `config/settings.py:141-194` | enforced whenever `DEMO_TRADING=true`: keys, testnet flag, testnet URL, risk engine, kill switch, kill-switch path, stop-loss flag, risk caps |
 
-As built, nothing branches on the resulting mode after load. `main()` records `config.mode.value` in an audit context and exits (`main.py:30-49`). Mode semantics therefore live in the libraries a caller composes:
+After load, `main()` branches once on the mode (`_dispatch`, `main.py:80-88`, since `099085b`). Command-line flags supply backtest inputs only; they never select the mode (decision ED-4 in the [G-3 entrypoint spec](superpowers/specs/2026-10-09-g3-entrypoint-design.md)):
 
 | Mode | Intended behaviour | As built |
 |---|---|---|
-| `backtest` | Replay historical candles through strategy, ML, risk and a simulated fill model; export reports | `BacktestEngine.run` works when called from Python (`backtest/engine.py:45`); no CLI, no data source (S-10, G-12, G-13) |
-| `paper` | Live-like candle stream through strategy, ML, risk and simulated fills; store trades; alert | `PaperTradingEngine.run` works against a mock stream in tests; no production entry point and no real stream (S-9, S-4, S-5, G-3, G-13) |
-| `demo` | Same loop against Binance Futures testnet with real testnet orders | Config rules, 18-check readiness and URL guard exist; no adapter is built at runtime and all network I/O is a stub (D-46, S-25, G-17) |
+| `backtest` | Replay historical candles through strategy, ML, risk and a simulated fill model; export reports | Runs from the CLI: `python -m silver_bot --candles PATH` loads Binance kline CSV files (`data/csv_loader.py:44-79`) and calls `run_backtest` (`backtest/runner.py:60-126`), which writes six reports (section 3.3) and returns exit 0. No `--candles` or a bad file returns 2 (`main.py:91-99`). Data must be downloaded by the owner; there is no network fetch (G-13). No walk-forward or Monte Carlo (G-12) |
+| `paper` | Live-like candle stream through strategy, ML, risk and simulated fills; store trades; alert | Exit 78 and audit `mode_unavailable` (`main.py:86-88`); `--candles` returns 2 (`main.py:83-85`). `PaperTradingEngine.run` works against a mock stream in tests only; no real stream (S-9, S-4, S-5, G-3 partial, G-13) |
+| `demo` | Same loop against Binance Futures testnet with real testnet orders | Exit 78 as for paper. Config rules, 18-check readiness and URL guard exist; no adapter is built at runtime and all network I/O is a stub (D-46, S-25, G-17) |
 | `live` | Real orders after readiness and owner approval | `Planned, blocked` (PRD-F12); not a state the application can enter |
 
 The mode state machine is drawn in PRD section 5.2.
 
 ### 2.4 Tech Stack
 
-Verified 2026-10-09 against commit `2b916d1`. Version pins and the deprecations register are in [build-silverbot.md](build-silverbot.md) section 3; this table names the technology used for each concern and how far it is built. Status uses the PRD vocabulary: `Built`, `Partial`, `Planned`.
+Verified 2026-10-09 against commit `2b916d1`; the Market data loader, Orchestration, Host supervision, CLI and Tests rows re-verified 2026-10-09 against `099085b`. Version pins and the deprecations register are in [build-silverbot.md](build-silverbot.md) section 3; this table names the technology used for each concern and how far it is built. Status uses the PRD vocabulary: `Built`, `Partial`, `Planned`.
 
 | Concern | Choice | Status | Evidence |
 |---|---|---|---|
@@ -133,17 +137,18 @@ Verified 2026-10-09 against commit `2b916d1`. Version pins and the deprecations 
 | Storage | SQLite via `sqlite3`, one file, eight tables (including `risk_state`) | Partial | `storage/sqlite.py:7,351`; no migrations, `signals` and `trades` unused (G-14) |
 | File artifacts | JSON and CSV via `json` and `csv` | Built | `backtest/reporting.py:5-6`, `monitoring/reports.py:5-6`; section 3.3 |
 | Logging and audit | `logging` with a plain-text format; audit events as JSON lines | Built | `utils/logging.py:8-15`, `monitoring/audit.py:74-75`; structured app log is G-16 |
-| ML | Dependency-free logistic regression baseline; scikit-learn RandomForest and GradientBoosting only if it imports | Partial | `ml/training.py:28,171`; filter not wired to settings (G-9) |
+| ML | Dependency-free logistic regression baseline; scikit-learn RandomForest and GradientBoosting only if it imports | Partial | `ml/training.py:28,171`; settings reach the filter in backtests only (`backtest/runner.py:50-55`, G-9 partial) |
 | Model artifacts | `pickle` | Built | `ml/training.py:214`, `ml/registry.py:131`; loaded without trust checks (H-8, G-23) |
 | Exchange | Binance Futures REST, testnet only | Partial | `exchange/binance_futures.py`; OHLCV fetch raises `NotImplementedError` (`:72`), orders are stubs (G-17) |
+| Market data loader | Binance public kline CSV files (data.binance.vision) read offline with `csv`; the owner downloads them | Built | `data/csv_loader.py:44-79` (`e5baec7`); ms and µs timestamps, header skip, duplicate and spacing checks, gap count; no network I/O |
 | Market data stream | Binance WebSocket | Planned | Abstract `MarketDataStream` only (`data/stream.py:15-20`; G-13) |
 | Alerts | Telegram Bot API | Planned | `TelegramClient` Protocol and an in-memory test client only (`monitoring/telegram.py:9-33`; G-15) |
-| CLI | `argparse` for the readiness checkers; the main entrypoint takes no arguments | Partial | `readiness.py:138`, `demo_readiness.py:102`; entrypoint is a stub (G-3); section 4.6 |
+| CLI | `argparse` for the readiness checkers and the main entrypoint (`--candles`, `--output-dir`); exit codes 0, 2 and 78 | Partial | `readiness.py:138`, `demo_readiness.py:102`, `main.py:29-48` (`099085b`); backtest runs, paper and demo exit 78 (G-3 partial); section 4.6 |
 | Packaging | setuptools `>=68`, `src/` layout, console script `silver-bot` | Built | `pyproject.toml` |
 | Container | Docker, `python:3.11-slim`, non-root `silverbot` user, config-only `HEALTHCHECK` | Built | `Dockerfile:1,20,24,28`; health semantics are G-27 |
-| Orchestration | Docker Compose services `bot`, `paper`, `demo`, `backtest`, `research` | Partial | `docker-compose.yaml:24,34,44,65,76`; no compose healthcheck (G-26) |
-| Host supervision | systemd unit running `docker compose up bot`; logrotate (daily, 14 kept) | Partial | `deploy/systemd/silver-bot.service`, `deploy/logrotate/silver-bot`, `deploy/scripts/prepare-host.sh`; the unit runs as `User=silverbot`, which nothing creates on the host, and hardening is missing (G-26) |
-| Tests | pytest `>=8.0` (optional extra `dev`), 20 test files | Built | `pyproject.toml`, `tests/`; gaps are G-28 |
+| Orchestration | Docker Compose services `bot`, `paper`, `demo`, `backtest`, `research`; every service has `restart: "no"`; `backtest` and `research` pass `--candles /app/data/candles` | Partial | `docker-compose.yaml:24,32,34,44,65,73,76,84` (`f6bc017`); no compose healthcheck (G-26) |
+| Host supervision | systemd unit running `docker compose up bot --exit-code-from bot` with `Restart=always` and `RestartPreventExitStatus=78`; logrotate (daily, 14 kept) | Partial | `deploy/systemd/silver-bot.service:11,13,15` (`f6bc017`), `deploy/logrotate/silver-bot`, `deploy/scripts/prepare-host.sh`; the unit runs as `User=silverbot`, which nothing creates on the host, and hardening is missing (G-26) |
+| Tests | pytest `>=8.0` (optional extra `dev`), 23 test files | Built | `pyproject.toml`, `tests/`; gaps are G-28 |
 | Continuous integration | None | Planned | No CI configuration in the repo |
 | Doc tooling | `tools/materialize_docs.py` builds `AGENTS.md`, `MODEL_CARD.md`, `BRAND.md`, `DESIGN.md` and `.claude/agents/*.md`; `--check` verifies | Built | `tools/materialize_docs.py`, `tests/test_materialize_docs.py` |
 
@@ -294,19 +299,21 @@ erDiagram
     }
 ```
 
-`risk_state` holds at most one row (`id = 1`). `load_risk_state` returns None when the row is absent and raises `RiskStateError` when the read fails with `sqlite3.Error`, `current_day` is not an ISO date, `daily_realized_pnl` is not a finite number, or a count is not a non-negative integer (`storage/sqlite.py:283-319`). `RiskManagementEngine` loads it once at construction, saves after `reserve_trade`, `release_trade` and a day roll in `evaluate`, and stops saving once a load has failed (`risk/engine.py:28-46,115,127-133`). Only `build_risk_engine(config, storage)` attaches a store (`risk/factory.py:28`); the backtest and paper engines do not. `open_positions` survives a restart but paper positions do not, so after a crash with an open trade the engine keeps rejecting at gate 13 until the owner resets the row ([ops-silverbot.md](ops-silverbot.md)).
+`risk_state` holds at most one row (`id = 1`). `load_risk_state` returns None when the row is absent and raises `RiskStateError` when the read fails with `sqlite3.Error`, `current_day` is not an ISO date, `daily_realized_pnl` is not a finite number, or a count is not a non-negative integer (`storage/sqlite.py:283-319`). `RiskManagementEngine` loads it once at construction, saves after `reserve_trade`, `release_trade` and a day roll in `evaluate`, and stops saving once a load has failed (`risk/engine.py:28-46,115,127-133`). Only `build_risk_engine(config, storage)` attaches a store (`risk/factory.py:33`); the backtest and paper engines do not. `open_positions` survives a restart but paper positions do not, so after a crash with an open trade the engine keeps rejecting at gate 13 until the owner resets the row ([ops-silverbot.md](ops-silverbot.md)).
 
 Other methods: `count_rows(table_name)` accepts only a whitelist of the eight names and raises `ValueError("unknown table name")` otherwise; `table_names()` lists user tables (`storage/sqlite.py:321-347`). There is no read or query API for candles, signals or trades, no table for orders, performance metrics or backtest runs (G-14). The existing `test_database_initialization_creates_phase_one_tables` asserts five of the seven tables.
 
-Callers: `main()` calls `initialize` only (`main.py:27-28`); `PaperTradingEngine` calls the paper and ML writers when a storage object is injected (`execution/paper_trading.py:99-100,140-160,281-288`).
+Callers: `main()` calls `initialize` only (`main.py:61-62`); `PaperTradingEngine` calls the paper and ML writers when a storage object is injected (`execution/paper_trading.py:99-100,140-160,281-288`).
 
 ### 3.3 File artifacts
 
 | Artifact | Producer | Consumer | Status |
 |---|---|---|---|
-| `logs/audit.jsonl` | `StructuredAuditLogger` (path hard-coded in `main.py:29`; engines write when given a logger) | operator; `build_daily_performance_report` reads `ml_decision` events | Written by every `main()` run; today only `bot_started` and `bot_stopped` |
-| `trades.csv`, `equity_curve.csv`, `rejected_signals.csv`, `backtest_report.json` | `export_backtest_result` when `BacktestConfig.export_dir` is set (`backtest/reporting.py:15-25`; header sets `backtest/models.py:90-139`) | operator; intended input to readiness | Library only. `backtest_report.json` holds the metrics dict only, `inf` as the string `"inf"`. `daily_summary.csv` is not produced (D-25) |
-| `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json`, `reports/paper_trading_report.json` | intended evidence reports | live readiness "exists" checks (`readiness.py:76-90,150-177`) | 0 bytes today (G-1, D-86, H-2) |
+| `logs/audit.jsonl` | `StructuredAuditLogger` (path hard-coded in `main.py:63`; engines write when given a logger) | operator; `build_daily_performance_report` reads `ml_decision` events | Written by every `main()` run that loads a config: `bot_started`, then `mode_unavailable` (WARNING) in paper and demo, then `bot_stopped` with `exit_code` in its context (`main.py:64-77,87`) |
+| `trades.csv`, `equity_curve.csv`, `rejected_signals.csv`, `backtest_report.json` | `export_backtest_result` when `BacktestConfig.export_dir` is set (`backtest/reporting.py:15-25`; header sets `backtest/models.py:90-139`); a CLI backtest writes them to `--output-dir` (default `reports/`) for the full period only (`backtest/runner.py:74`) | operator; `backtest_report.json` is the live readiness `backtest_report_exists` input | Written by `python -m silver_bot --candles PATH` in backtest mode. `backtest_report.json` holds the metrics dict only, `inf` as the string `"inf"`. A zero-trade run writes a 0-byte `trades.csv`. `daily_summary.csv` is not produced (D-25) |
+| `out_of_sample_validation_report.json` | `run_backtest` (`backtest/runner.py:76-98`, `f84557e`) | live readiness `out_of_sample_validation_report_exists` | Keys `method` (`chronological_split`), `fractions` (0.6 / 0.2 / 0.2), `parameters_tuned` (always false; nothing is tuned), `segments.training`, `segments.validation`, `segments.final_test`; each segment holds `candles`, `start`, `end`, `metrics` and `kill_switch` (`tripped`, `reason`, `tripped_at`), from its own engine with fresh risk state (`backtest/runner.py:160-170`). No pass or fail verdict (G-12) |
+| `backtest_run.json` | `run_backtest` (`backtest/runner.py:100-121`) | operator; the run record | `inputs` (`files`, `gaps` from the loader), `symbol`, `timeframe`, `candles`, `first_open_time`, `last_open_time`, `slippage_bps`, `spread_bps`, `maker_fee`, `taker_fee`, `ml_filter_enabled`, `risk_per_trade`, `kill_switch` (`mode: simulated_per_run`, `tripped`, `reason`, `tripped_at`) and `package_version` |
+| `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json`, `reports/paper_trading_report.json` | backtest CLI (first two); nothing yet for the paper report | live readiness "exists" checks (`readiness.py:76-90,150-177`) | Local files under the git-ignored `reports/` (`.gitignore:7`); empty until the owner runs a backtest on real data (G-1, D-86); no paper report writer (G-3) |
 | `reports/live_readiness_report.json` | `python -m silver_bot.readiness` (`readiness.py:126-147`) | operator only; not consulted by any code (D-10) | Present, `ready=false` |
 | `reports/demo_readiness_report.json` | `python -m silver_bot.demo_readiness` (`demo_readiness.py:99-111`) | operator only | Present, generated 2026-06-15, `ready=true` |
 | `models/model_registry.json` | `ModelRegistry` (`ml/registry.py`) | `MLProbabilityFilter` (`ml/filter.py:112-133`) | `models/` is empty; no model shipped (S-23) |
@@ -314,7 +321,8 @@ Callers: `main()` calls `initialize` only (`main.py:27-28`); `PaperTradingEngine
 | `calibration_report.json`, `calibration_bins.csv` | `build_calibration_report` / export (`ml/calibration.py:90-119`) | promotion input | Library only |
 | Promotion decision JSON | `export_promotion_decision` (`ml/promotion.py:185-190`) | operator; advisory | Library only |
 | Trade journal CSV, daily and weekly report JSON, dashboard JSON | `monitoring/reports.py:140,156`, `monitoring/dashboard.py:27` | operator | Builders only, no caller (S-31, G-16) |
-| Kill-switch file at `KILL_SWITCH_PATH` | created by the operator, or by `KillSwitch.trip` when the risk engine hits the daily-loss or consecutive-loss limit (JSON `reason` and `tripped_at`, `risk/kill_switch.py:53-60`); deleted only by the operator | `KillSwitch.is_active` (`risk/kill_switch.py:22-33`), both readiness checkers | Compose `demo` uses `/app/data/KILL_SWITCH` (`docker-compose.yaml:57`) |
+| Kill-switch file at `KILL_SWITCH_PATH` | created by the operator, or by `KillSwitch.trip` when the risk engine hits the daily-loss or consecutive-loss limit (JSON `reason` and `tripped_at`, `risk/kill_switch.py:53-60`); deleted only by the operator | `KillSwitch.is_active` (`risk/kill_switch.py:22-33`), both readiness checkers | Compose `demo` uses `/app/data/KILL_SWITCH` (`docker-compose.yaml:57`). Never read or written by a backtest |
+| Simulated kill-switch file `KILL_SWITCH` in a fresh temporary directory, one per engine run | `_simulate` (`backtest/runner.py:129-143`); tripped by the backtest risk engine like the real file | `_read_trip` (`backtest/runner.py:146-157`) reads it before the directory is deleted | Not kept. Its trip record goes into `backtest_run.json` and each OOS segment (ED-5) |
 | `data/silver_bot.sqlite3` | `SQLiteStorage` | storage, tests | Created at startup |
 
 ### 3.4 Configuration reference
@@ -357,17 +365,17 @@ yaml column: the spelling accepted in `config.yaml` (`section.key`). Line number
 | `TELEGRAM_ENABLED` | `telegram.enabled`, `alerts.telegram_enabled` | bool | `false` | `true` requires token and chat id | 79, 147, 150-151 |
 | `TELEGRAM_BOT_TOKEN` | `telegram.bot_token`, `alerts.telegram_bot_token` | str or None | none | Required when enabled; never read by the alerter (D-3) | 148 |
 | `TELEGRAM_CHAT_ID` | `telegram.chat_id`, `alerts.telegram_chat_id` | str or None | none | Required when enabled | 149 |
-| `ML_FILTER_ENABLED` | `ml.filter_enabled`, `ml.enabled` (alias `ML_ENABLED`) | bool | `false` | Boolean only; no check that a registry exists; not wired to the filter (D-4, G-9) | 80, 152, 325-326 |
+| `ML_FILTER_ENABLED` | `ml.filter_enabled`, `ml.enabled` (alias `ML_ENABLED`) | bool | `false` | Boolean only; no check that a registry exists; reaches `MLFilterConfig` in backtests only (`backtest/runner.py:50-55`), not in the paper loop (D-4, G-9 partial) | 80, 152, 325-326 |
 | `ML_REGISTRY_PATH` | `ml.registry_path` | Path | `models/model_registry.json` | Required; same file-path rules as `DATABASE_PATH` | 81, 153-159 |
 | `ML_MIN_PROBABILITY` | `ml.min_probability` | float | `0.60` | Number in [0, 1] | 82, 160, 167-168 |
 | `ML_REDUCE_RISK_THRESHOLD` | `ml.reduce_risk_threshold` | float | `0.55` | Number in [0, 1] and at most `ML_MIN_PROBABILITY` | 83, 161-166, 169-170 |
 | `RISK_ENGINE_ENABLED` | none usable (`risk.engine_enabled` is ignored, D-44) | bool | `true` | Must be true in demo only; not consumed by any engine | 84, 171, 182-184 |
-| `KILL_SWITCH_ENABLED` | `risk.kill_switch_enabled` | bool | `false` | Must be true in demo; when true in any mode `KILL_SWITCH_PATH` must be set; `build_risk_engine` passes the path only when true (`risk/factory.py:26`) | 85, 172, 174-175, 185-186 |
-| `KILL_SWITCH_PATH` | `risk.kill_switch_path` | Path or None | blank (None) | Required when `KILL_SWITCH_ENABLED=true` (any mode); no traversal or directory check; reaches `RiskConfig.kill_switch_path` only through `build_risk_engine`, which has no runtime caller (G-6 partial) | 86, 173, 174-175, 187-188 |
+| `KILL_SWITCH_ENABLED` | `risk.kill_switch_enabled` | bool | `false` | Must be true in demo; when true in any mode `KILL_SWITCH_PATH` must be set; `build_risk_config` passes the path only when true (`risk/factory.py:22`); a backtest replaces it with its simulated per-run path whatever the value (`backtest/runner.py:49`) | 85, 172, 174-175, 185-186 |
+| `KILL_SWITCH_PATH` | `risk.kill_switch_path` | Path or None | blank (None) | Required when `KILL_SWITCH_ENABLED=true` (any mode); no traversal or directory check; reaches `RiskConfig.kill_switch_path` only through `build_risk_config`; no running engine uses it, because backtests swap in a simulated path and the paper runtime is not built (G-6 partial) | 86, 173, 174-175, 187-188 |
 | `STOP_LOSS_REQUIRED` | `risk.stop_loss_required` | bool | `true` | Must be true in demo only; not consumed (the risk engine requires a stop unconditionally, `risk/engine.py:54-55`) | 87, 176, 189-190 |
-| `MAX_RISK_PER_TRADE` | `risk.max_risk_per_trade` | float | `0.005` | `0 < x <= 0.005` in every mode (`5e4acc5`); mapped to `RiskConfig.risk_per_trade` by `build_risk_engine` (G-5 partial: no runtime caller) | 88, 177, 180-181 |
-| `MAX_DAILY_LOSS` | `risk.max_daily_loss` | float | `0.02` | Demo: `0 < x <= 0.02`; other modes any float (`RiskConfig` still requires (0, 1]); mapped by `build_risk_engine` | 89, 178, 191-192 |
-| `MAX_LEVERAGE` | `risk.max_leverage` | float | `3` | Demo: `0 < x <= 3`; other modes any float (`RiskConfig` still requires positive); mapped by `build_risk_engine` | 90, 179, 193-194 |
+| `MAX_RISK_PER_TRADE` | `risk.max_risk_per_trade` | float | `0.005` | `0 < x <= 0.005` in every mode (`5e4acc5`); mapped to `RiskConfig.risk_per_trade` by `build_risk_config`, which CLI backtests use (G-5 partial: no paper runtime) | 88, 177, 180-181 |
+| `MAX_DAILY_LOSS` | `risk.max_daily_loss` | float | `0.02` | Demo: `0 < x <= 0.02`; other modes any float (`RiskConfig` still requires (0, 1]); mapped by `build_risk_config` | 89, 178, 191-192 |
+| `MAX_LEVERAGE` | `risk.max_leverage` | float | `3` | Demo: `0 < x <= 3`; other modes any float (`RiskConfig` still requires positive); mapped by `build_risk_config` | 90, 179, 193-194 |
 
 Alias table (`config/settings.py:306-339`, 31 entries). yaml flattened name to canonical env name: `MODE` to `TRADING_MODE`; `DATABASE_PATH`, `EXCHANGE_NAME`, `TRADING_MODE` to themselves; `TRADING_LIVE_TRADING`, `TRADING_PAPER_TRADING`, `TRADING_DEMO_TRADING` to `LIVE_TRADING`, `PAPER_TRADING`, `DEMO_TRADING`; `EXCHANGE_SYMBOL`, `EXCHANGE_TIMEFRAME`, `EXCHANGE_BINANCE_API_KEY`, `EXCHANGE_BINANCE_API_SECRET`, `EXCHANGE_BINANCE_TESTNET`, `EXCHANGE_BINANCE_FUTURES_BASE_URL` to the unprefixed names; `TELEGRAM_*` to themselves and `ALERTS_TELEGRAM_*` to `TELEGRAM_*`; `ML_ENABLED` to `ML_FILTER_ENABLED` and the four `ML_*` names to themselves; `RISK_ENGINE_ENABLED` to itself; `RISK_KILL_SWITCH_ENABLED`, `RISK_KILL_SWITCH_PATH`, `RISK_STOP_LOSS_REQUIRED`, `RISK_MAX_RISK_PER_TRADE`, `RISK_MAX_DAILY_LOSS`, `RISK_MAX_LEVERAGE` to the unprefixed names.
 
@@ -392,11 +400,11 @@ Readiness environment sources differ (D-45). Live readiness reads only the proce
 
 #### 3.4.3 Code-level defaults (not reachable from env or yaml)
 
-No loader builds these dataclasses from settings; callers construct them in Python. The one exception is `build_risk_engine(config, storage=None)` (`risk/factory.py:15-28`), which builds `RiskConfig` from `max_risk_per_trade`, `max_daily_loss`, `max_leverage` and (when enabled) `kill_switch_path`; the other `RiskConfig` fields keep their defaults. No runtime path calls it yet (G-3).
+No loader builds these dataclasses from settings; callers construct them in Python. The exceptions are `build_risk_config(config)` (`risk/factory.py:15-23`, `4726cb5`), which builds `RiskConfig` from `max_risk_per_trade`, `max_daily_loss`, `max_leverage` and (when enabled) `kill_switch_path`, with the other `RiskConfig` fields at their defaults; `build_risk_engine(config, storage=None)` (`risk/factory.py:26-33`), which wraps it with an optional state store; and `build_backtest_config` (`backtest/runner.py:35-57`), which takes `build_risk_config`, swaps in the simulated kill-switch path and builds `MLFilterConfig` from the four `ML_*` settings. CLI backtests use `build_backtest_config`; nothing calls `build_risk_engine` at runtime yet (G-3 partial).
 
 | Setting | Default | Defined at |
 |---|---|---|
-| `RiskConfig` | see 3.1; `risk_per_trade` allowed (0, 0.005], default 0.005; `kill_switch_path` None (switch inert unless built by `build_risk_engine` with `KILL_SWITCH_ENABLED=true`) | `risk/models.py:21-29,32-33` |
+| `RiskConfig` | see 3.1; `risk_per_trade` allowed (0, 0.005], default 0.005; `kill_switch_path` None (switch inert unless built by `build_risk_config` with `KILL_SWITCH_ENABLED=true`, or given a simulated path by the backtest runner) | `risk/models.py:21-29,32-33` |
 | `PaperExecutionConfig` maker / taker / slippage_bps / spread_bps | 0.0002 / 0.0005 / 1.0 / 1.0 | `execution/models.py:30-33` |
 | `PaperTradingEngine.initial_equity` | 10000.0 | `execution/paper_trading.py:45` |
 | `BacktestConfig` initial_balance / maker_fee / taker_fee | 10000.0 / 0.0002 / 0.0005 | `backtest/models.py:30-33` |
@@ -416,9 +424,9 @@ No loader builds these dataclasses from settings; callers construct them in Pyth
 | Baseline logistic regression learning rate / iterations | 0.1 / 500 | `ml/training.py:44-45` |
 | Calibration bin_count | 10 | `ml/calibration.py:63` |
 | `TelegramAlertConfig` | enabled False, token None, chat_id None | `monitoring/telegram.py:16-22` |
-| Audit log path | `logs/audit.jsonl`, hard-coded, not configurable | `main.py:29` |
+| Audit log path | `logs/audit.jsonl`, hard-coded, not configurable | `main.py:63` |
 
-Sessions, strategy parameters, ML thresholds beyond the three parsed keys, reconnect policy, risk limits and paper costs are therefore not configurable from the outside today (D-14, U-4, G-18, G-24).
+Sessions, strategy parameters, ML thresholds beyond the three parsed keys, reconnect policy, backtest costs and balance, risk limits outside backtests and paper costs are therefore not configurable from the outside today (D-14, U-4, G-18, G-24). A CLI backtest runs `SilverBulletStrategyEngine()` with defaults (`backtest/engine.py:39`, H-6).
 
 #### 3.4.4 Container settings
 
@@ -428,7 +436,7 @@ Dockerfile `ENV`: `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`, `TRADING_MO
 
 ### 4.1 Runtime sequences
 
-The first two sequences describe code that exists and is exercised by tests; they run only when called from Python. The third mixes the real startup with the intended demo flow and marks which steps do not exist.
+The first two sequences describe code that exists and is exercised by tests. Sequence A also runs from the CLI in backtest mode, once for the full period and once per out-of-sample segment (`backtest/runner.py:74,93-95`); Sequence B runs only when called from Python. The third mixes the real startup with the intended demo flow and marks which steps do not exist.
 
 #### Sequence A: backtest bar loop (as built, `backtest/engine.py`)
 
@@ -554,12 +562,14 @@ sequenceDiagram
     OP->>DR: 2. python -m silver_bot.demo_readiness (exists, advisory)
     Note over DR: 18 checks in order: config valid, mode demo, demo/live/paper flags, testnet flag and endpoint, keys present, risk engine, kill switch enabled/path/not active, stop loss required, three risk limits, .env ignored by git, no committed secrets (demo_readiness.py:56-222)<br/>writes reports/demo_readiness_report.json, exit 0 ready or 2 not ready
     OP->>MN: 3. python -m silver_bot (AS BUILT)
-    MN->>CF: load_config (main.py:21-25)
+    MN->>CF: load_config (main.py:55-59)
     alt ConfigError
         MN-->>OP: log "configuration rejected", exit 2
     else accepted
-        MN->>SQ: initialize() (main.py:27-28)
-        MN->>AU: audit bot_started, audit bot_stopped, exit 0 (main.py:30-50)
+        MN->>SQ: initialize() (main.py:61-62)
+        MN->>AU: audit bot_started (main.py:64-74)
+        MN->>AU: demo mode: log and audit mode_unavailable, needs market data (G-13) (main.py:86-87)
+        MN->>AU: audit bot_stopped with exit_code 78, exit 78 (main.py:76-77,88)
     end
     Note over MN: STOP. Nothing below this line exists.
     rect rgb(255, 240, 240)
@@ -571,7 +581,7 @@ sequenceDiagram
     end
 ```
 
-Step 3 is also what every compose service runs, in every mode (D-1). In demo, even with the configuration rules satisfied, `KILL_SWITCH_PATH` reaches a `KillSwitch` only through `build_risk_engine`, which `main()` does not call, so the switch is inert at runtime until G-3 (G-6 partial).
+Step 3 is what the compose `bot`, `paper` and `demo` services run; each exits 78 (D-46 partial). In demo, even with the configuration rules satisfied, `KILL_SWITCH_PATH` reaches a `KillSwitch` only through `build_risk_config` or `build_risk_engine`, and no demo runtime calls either, so the switch is inert at runtime until the demo runtime exists (G-3 partial, G-6 partial).
 
 ### 4.2 Exchange adapter interface
 
@@ -627,24 +637,32 @@ Binance Futures REST and WebSocket endpoints, signing and rate limits are not ve
 - `MockMarketDataStream` replays a fixed list and can raise `ConnectionError("mock stream failure")` at `fail_after` (`:31-42`). It is the only stream that works offline.
 - `ReconnectingMarketDataStream` rebuilds the stream from a factory after a `ConnectionError` (only that type), sleeps `reconnect_delay_seconds` if above zero and re-raises after more than `max_reconnects` failures; it does not de-duplicate after a reconnect (`:45-69`).
 - `BinancePollingMarketDataStream` polls `exchange.fetch_ohlcv` forever, windowing `now - max(limit, 2)` minutes regardless of timeframe, and yields each `open_time` once; it may yield a still-forming candle (H-12). Its docstring calls it a skeleton, and against the current adapter it would fail on the first poll with `NotImplementedError`, which the reconnect wrapper does not catch (`:72-112`, S-5).
-- There is no WebSocket client and no REST fallback from a WebSocket (S-4). `HistoricalOHLCVFetcher.fetch` validates input and makes one adapter call with `limit=1000`; no pagination, rate limiting, retry, gap detection or storage call (`data/fetcher.py:29-44`, S-7). Neither the fetcher nor the backtester is referenced outside their own packages and tests (S-10).
+- There is no WebSocket client and no REST fallback from a WebSocket (S-4). `HistoricalOHLCVFetcher.fetch` validates input and makes one adapter call with `limit=1000`; no pagination, rate limiting, retry, gap detection or storage call (`data/fetcher.py:29-44`, S-7). The fetcher is referenced nowhere outside its package and tests (S-10). Historical candles reach the backtester only from local Binance kline CSV files through `load_binance_kline_csv` (`data/csv_loader.py:44-79`, `e5baec7`): integer ms timestamps, or µs from `10**15` up, converted to UTC; a first-row header whose first cell is `open_time` is skipped (`:105-106`); `close_time` is the file value plus one unit; identical duplicates are dropped and conflicting ones rejected; consecutive spacing must be a positive multiple of `TIMEFRAME`, and larger steps are counted as `gaps` (`:69-78`); every bad row raises `CandleDataError` naming `file:line`. It does no network I/O.
 
 ### 4.5 Telegram
 
-`TelegramClient` is a Protocol with one method, `async send_message(chat_id: str, text: str) -> None` (`monitoring/telegram.py:9-13`). `InMemoryTelegramClient` records messages (`:25-32`). `TelegramAlerter` has 12 message methods (bot started, bot stopped, signal detected, signal rejected, risk rejection, ML approval, ML rejection, paper trade opened, paper trade closed, daily report, error, kill switch active; texts in PRD section 5.1). `_send` returns silently when disabled, when no client is set or when `chat_id` is falsy; otherwise it awaits `client.send_message(chat_id, f"[{title}] {message}")` with no try/except, retry or fallback (`:96-103`). `bot_token` is stored but never read. There is no HTTP client for the Telegram Bot API anywhere in the repository (D-3, S-30, G-15). `main()` never builds an alerter. The paper loop sends the alerts described in PRD section 5.1 (paper loop alerts); `daily_report()` and `error()` are never called.
+`TelegramClient` is a Protocol with one method, `async send_message(chat_id: str, text: str) -> None` (`monitoring/telegram.py:9-13`). `InMemoryTelegramClient` records messages (`:25-32`). `TelegramAlerter` has 12 message methods (bot started, bot stopped, signal detected, signal rejected, risk rejection, ML approval, ML rejection, paper trade opened, paper trade closed, daily report, error, kill switch active; texts in PRD section 5.1). `_send` returns silently when disabled, when no client is set or when `chat_id` is falsy; otherwise it awaits `client.send_message(chat_id, f"[{title}] {message}")` with no try/except, retry or fallback (`:96-103`). `bot_token` is stored but never read. There is no HTTP client for the Telegram Bot API anywhere in the repository (D-3, S-30, G-15). `main()` never builds an alerter (`main.py:51-77`). The paper loop sends the alerts described in PRD section 5.1 (paper loop alerts); `daily_report()` and `error()` are never called.
 
 ### 4.6 CLI entrypoints
 
 | Entrypoint | Code | Behaviour | Exit codes |
 |---|---|---|---|
-| `python -m silver_bot` | `__main__.py:3-7` calls `silver_bot.main.main` | Startup stub (below) | 0, 2 |
-| `python main.py` | root `main.py:7-13` prepends `<repo>/src` to `sys.path` and calls `silver_bot.main.main` | Same | 0, 2 |
-| `silver-bot` console script | `pyproject.toml:17-18` (`silver_bot.main:main`) | Same | 0, 2 |
+| `python -m silver_bot [--candles PATH ...] [--output-dir DIR]` | `__main__.py:3-7` calls `silver_bot.main.main` | Mode dispatch (below) | 0, 2, 78 |
+| `python main.py` (same flags) | root `main.py:7-13` prepends `<repo>/src` to `sys.path` and calls `silver_bot.main.main` | Same | 0, 2, 78 |
+| `silver-bot` console script (same flags) | `pyproject.toml:17-18` (`silver_bot.main:main`) | Same | 0, 2, 78 |
 | `python -m silver_bot.health` | `health.py:8-21` | Calls `load_config()`; 2 on `ConfigError`, 3 if `config.live_trading` (unreachable), else 0; no output, no connectivity, database or kill-switch check | 0, 2, 3 |
 | `python -m silver_bot.readiness` | `readiness.py:126-147` | 15 live checks from process env; `--output` default `reports/live_readiness_report.json` | 0 ready, 2 not ready |
 | `python -m silver_bot.demo_readiness` | `demo_readiness.py:99-111` | 18 demo checks from `.env` plus process env; `--output` default `reports/demo_readiness_report.json` | 0 ready, 2 not ready |
 
-`main()` (`main.py:14-50`): load config; on `ConfigError` log `configuration rejected: %s` and return 2; otherwise `SQLiteStorage(config.database_path).initialize()`, write audit `bot_started` (context: mode, paper_trading, database_path, ml_filter_enabled, telegram_enabled), log once, write `bot_stopped`, return 0. It has no argument parsing, no subcommands and catches only `ConfigError`; storage and audit errors propagate. It connects to no exchange, builds no stream, strategy, backtest, alerter or order code (D-1, G-3, S-8). Because it exits 0 immediately, supervisors with restart policies loop it (H-4). There is no backtest runner, paper runner, demo runner, report scheduler, ML training command or kill-switch command (PRD section 5.1).
+`main(argv=None)` (`main.py:51-77`, `099085b`): parse arguments with `argparse` (`main.py:29-48`; an unknown or malformed flag makes argparse exit 2); load config, and on `ConfigError` log `configuration rejected: %s` and return 2; `SQLiteStorage(config.database_path).initialize()`; write audit `bot_started` (context: mode, paper_trading, database_path, ml_filter_enabled, telegram_enabled); dispatch on the mode; write `bot_stopped` with `exit_code` in its context; return the code. Flags: `--candles PATH` (repeatable; a `.csv` file or a directory whose `*.csv` files are read in name order) and `--output-dir DIR` (default `reports`). There are no subcommands and no flag selects the mode.
+
+| Mode | Behaviour | Exit |
+|---|---|---|
+| `backtest` | No `--candles`: log `backtest mode needs --candles`, return 2. `CandleDataError` from the loader: log `candle data rejected: ...`, return 2. Otherwise load with `SYMBOL` and `TIMEFRAME` from settings, call `run_backtest`, log each report path and `backtest complete: N candles, G gaps`, return 0 (`main.py:91-109`) | 0 or 2 |
+| `paper`, `demo` | `--candles` given: log `--candles only applies to backtest mode`, return 2. Otherwise log and audit `mode_unavailable` (level WARNING) with `mode not available yet: needs market data (G-13)` and return `EXIT_MODE_UNAVAILABLE = 78` (`main.py:25-26,83-88`) | 2 or 78 |
+| `live` | Cannot be configured; `load_config` raises first | 2 |
+
+Exit code meanings: 0, backtest finished and wrote its reports; 2, bad arguments, rejected configuration or rejected candle data; 78, the configured mode has no runtime yet. Supervisors are set not to restart on 78 (section 6). `run_backtest` raises `ValueError` on empty candles (`backtest/runner.py:69-70`), which the loader already prevents. Storage, audit and engine errors propagate. A backtest writes six reports into `--output-dir`: `backtest_report.json`, `trades.csv`, `equity_curve.csv`, `rejected_signals.csv`, `out_of_sample_validation_report.json` and `backtest_run.json` (section 3.3). `main()` connects to no exchange and builds no stream, alerter or order code. There is no paper runner, demo runner, report scheduler, ML training command or kill-switch command (S-8 partial, S-9, S-25, PRD section 5.1).
 
 ## 5. Security & Safety
 
@@ -662,10 +680,10 @@ Live trading is blocked in layers. Each layer is cited; any one of the first two
 | 6 | Base `place_order` | `exchange/base.py:44-47` | Always raises `OrderPlacementDisabled("Real order placement is disabled in Phase 1")`; no subclass overrides it |
 | 7 | Base `cancel_order` | `exchange/base.py:49-52` | Always raises `OrderPlacementDisabled("Real order cancellation is disabled in Phase 1")` |
 | 8 | No live executor, no exchange import in `execution/` | `execution/__init__.py:1-4`; grep of `src/` finds one `def place_order` | The paper executor and loop cannot reach an exchange |
-| 9 | Image and compose | `Dockerfile:6,31`; `docker-compose.yaml:3-8` | `LIVE_TRADING=false` forced; the only command is `python -m silver_bot`; no live service |
+| 9 | Image and compose | `Dockerfile:6,31`; `docker-compose.yaml:3-8,31,41,62,73,84` | `LIVE_TRADING=false` forced; every command is `python -m silver_bot`, with `--candles /app/data/candles` for `backtest` and `research`; no live service and no flag selects a mode |
 | 10 | Health command | `health.py:15-16` | Exit 3 on a live flag; unreachable because the config cannot load with one |
 
-What is not a block: the live readiness report is advisory. No code reads any readiness report (D-10, G-2), the report checks now reject empty or non-JSON-object files (H-2 resolved, `88220e6`) but the committed reports are 0 bytes so they fail, and a ready live report requires `LIVE_TRADING=true`, which the application refuses to load (H-3). The old documents described a live gate (mode, flags, readiness, no-withdraw key, inactive kill switch); that gate does not exist and is `Planned`; see [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md). Until it is built and the owner approves, the unconditional block in checks 1 to 3 and 6 to 7 is the control. This is safe but is not the gate the old documents described.
+What is not a block: the live readiness report is advisory. No code reads any readiness report (D-10, G-2), the report checks now reject empty or non-JSON-object files (H-2 resolved, `88220e6`) but the local reports are empty until the owner runs a backtest on real data, so they fail, and a ready live report requires `LIVE_TRADING=true`, which the application refuses to load (H-3). The old documents described a live gate (mode, flags, readiness, no-withdraw key, inactive kill switch); that gate does not exist and is `Planned`; see [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md). Until it is built and the owner approves, the unconditional block in checks 1 to 3 and 6 to 7 is the control. This is safe but is not the gate the old documents described.
 
 ### 5.2 Secrets handling
 
@@ -678,13 +696,14 @@ What is not a block: the live readiness report is advisory. No code reads any re
 
 ### 5.3 Kill switch
 
-`KillSwitch(path)` (`risk/kill_switch.py:12-60`, since `08c81ad`) fails closed. With `path` None it is never active (backtests). Otherwise `is_active` returns True when `os.stat(path)` succeeds (a file with any content, or a directory), when it raises any `OSError` other than `FileNotFoundError`, or when the path is missing and its nearest existing ancestor is not a directory (`_ancestor_blocks_path`, `:22-51`). The ancestor check exists because Windows reports a regular-file parent as "path not found" rather than `NotADirectoryError`. It is checked on every `RiskManagementEngine.evaluate` call after the state-load check and the day roll and before the other 13 gates, and is not latched (`risk/engine.py:41-49`). As built:
+`KillSwitch(path)` (`risk/kill_switch.py:12-60`, since `08c81ad`) fails closed. With `path` None it is never active. Otherwise `is_active` returns True when `os.stat(path)` succeeds (a file with any content, or a directory), when it raises any `OSError` other than `FileNotFoundError`, or when the path is missing and its nearest existing ancestor is not a directory (`_ancestor_blocks_path`, `:22-51`). The ancestor check exists because Windows reports a regular-file parent as "path not found" rather than `NotADirectoryError`. It is checked on every `RiskManagementEngine.evaluate` call after the state-load check and the day roll and before the other 13 gates, and is not latched (`risk/engine.py:41-49`). As built:
 
-- Inert by default: `RiskConfig.kill_switch_path` is None (`risk/models.py:29`), and the default engines in the backtester and paper loop have no path (`execution/paper_trading.py:49`). `build_risk_engine` passes `KILL_SWITCH_PATH` when `KILL_SWITCH_ENABLED=true` (`risk/factory.py:26`), and `load_config` rejects an enabled switch with no path in every mode (`config/settings.py:174-175`), but nothing calls `build_risk_engine` until G-3 (D-12, G-6 partial).
+- Inert by default: `RiskConfig.kill_switch_path` is None (`risk/models.py:29`), and the default engines in the backtester and paper loop have no path (`execution/paper_trading.py:49`). `build_risk_config` passes `KILL_SWITCH_PATH` when `KILL_SWITCH_ENABLED=true` (`risk/factory.py:22`), and `load_config` rejects an enabled switch with no path in every mode (`config/settings.py:174-175`), but no paper or demo runtime uses it yet (D-12, G-6 partial).
+- Simulated per run in CLI backtests (ED-5, `f84557e`): each engine run, the full period and each out-of-sample segment, gets its own `KILL_SWITCH` file path inside a fresh `tempfile.TemporaryDirectory()` (`backtest/runner.py:129-143`). The path replaces the settings path even when `KILL_SWITCH_ENABLED=false` (`backtest/runner.py:49`), so the switch is always on in a backtest, trips on the loss limits as above and blocks every later entry in that simulated run. The real `KILL_SWITCH_PATH` is never given to a backtest engine, so a real kill file neither blocks a backtest nor is modified by one. The trip record is read before cleanup (`_read_trip`, `backtest/runner.py:146-157`) and reported in `backtest_run.json` as `kill_switch: {mode: simulated_per_run, tripped, reason, tripped_at}` and in each segment of `out_of_sample_validation_report.json` as `kill_switch: {tripped, reason, tripped_at}`. Tests: `tests/test_backtest_runner.py:109,122,130`.
 - Automatic trip: `trip(reason)` creates parent directories and writes `{"reason": ..., "tripped_at": <UTC ISO-8601>}` as JSON (`risk/kill_switch.py:53-60`). If the switch is already active it writes nothing, so the first reason is kept. The engine trips it when `evaluate` rejects on the max-daily-loss limit (gate 10) or the max-consecutive-losses limit (gate 11, which also covers a streak loaded from `risk_state`), and when `release_trade` brings `consecutive_losses` to `max_consecutive_losses` (`risk/engine.py:83,86,129`). The halt outlasts the day roll and a restart until the owner deletes the file.
 - Not built: no command or reset tool (reset is deleting the file, [ops-silverbot.md](ops-silverbot.md)), no emergency shutdown, and open positions are not closed (S-18, G-21).
 - Evidence of behaviour: tests cover the risk rejection, the paper `KILL_SWITCH_ACTIVE` event and alert, and the backtest rejection (`test_kill_switch_active`, `test_paper_trading_kill_switch_alert_and_risk_rejection`, `test_backtest_logs_risk_rejection_when_kill_switch_active`), plus the fail-closed and trip cases in `tests/test_risk_engine.py:172-248` (directory, `OSError`, file parent, missing file, JSON payload, first reason kept, no-path no-op, three losing releases, daily-loss rejection).
-- Intended (`Planned`, [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md)): the runtime builds its engine with `build_risk_engine` and SQLite storage (G-3), and a trip closes or reduces open exposure (G-21).
+- Intended (`Planned`, [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md)): the paper and demo runtimes build their engines with `build_risk_engine` and SQLite storage (G-3), and a trip closes or reduces open exposure (G-21).
 
 ### 5.4 Stop-loss requirement
 
@@ -692,7 +711,7 @@ No trade proceeds without a stop loss, enforced at four points: the strategy emi
 
 ### 5.5 Leverage cap and position limits
 
-`RiskConfig.max_leverage=3.0`; gate 14 rejects when `notional / equity > max_leverage`, with sizing computed first (`risk/engine.py:93-98`). The settings value `MAX_LEVERAGE` (default 3, capped at 3 in demo only) reaches the engine only through `build_risk_engine`. The per-trade risk cap is 0.5%: `RiskConfig` rejects `risk_per_trade` outside (0, 0.005] (`risk/models.py:10,32-33`) and `load_config` rejects `MAX_RISK_PER_TRADE` outside (0, 0.005] in every mode (`config/settings.py:180-181`), so backtests are capped too (`5e4acc5`; `tests/test_risk_engine.py:129,134`, `tests/test_config.py:228`). `build_risk_engine` maps the settings value; it has no runtime caller (G-5 partial). Other gates: reward-to-risk at least 2.0 (gate 9), daily loss 2% of current equity (gate 10, evaluated against current rather than start-of-day equity), 3 consecutive losses (gate 11), 3 trades per day (gate 12), 1 open position (gate 13). Before the gates, `evaluate` rejects with `Risk state could not be loaded; trading halted` if a store failed to load (`risk/engine.py:41-42`). The 14 gates run in this order: kill switch, equity positive, entry present, stop present, take profit present, stop side, minimum stop distance, take-profit side, reward-to-risk, daily loss, consecutive losses, trades per day, open positions, leverage (`risk/engine.py:48-107`). Pending unfilled orders hold a reservation that is never released (H-10).
+`RiskConfig.max_leverage=3.0`; gate 14 rejects when `notional / equity > max_leverage`, with sizing computed first (`risk/engine.py:93-98`). The settings value `MAX_LEVERAGE` (default 3, capped at 3 in demo only) reaches the engine only through `build_risk_config` (CLI backtests and `build_risk_engine`). The per-trade risk cap is 0.5%: `RiskConfig` rejects `risk_per_trade` outside (0, 0.005] (`risk/models.py:10,32-33`) and `load_config` rejects `MAX_RISK_PER_TRADE` outside (0, 0.005] in every mode (`config/settings.py:180-181`), so backtests are capped too (`5e4acc5`; `tests/test_risk_engine.py:129,134`, `tests/test_config.py:228`). `build_risk_config` maps the settings value and CLI backtests use it (`backtest/runner.py:49`); no paper runtime does yet (G-5 partial). Other gates: reward-to-risk at least 2.0 (gate 9), daily loss 2% of current equity (gate 10, evaluated against current rather than start-of-day equity), 3 consecutive losses (gate 11), 3 trades per day (gate 12), 1 open position (gate 13). Before the gates, `evaluate` rejects with `Risk state could not be loaded; trading halted` if a store failed to load (`risk/engine.py:41-42`). The 14 gates run in this order: kill switch, equity positive, entry present, stop present, take profit present, stop side, minimum stop distance, take-profit side, reward-to-risk, daily loss, consecutive losses, trades per day, open positions, leverage (`risk/engine.py:48-107`). Pending unfilled orders hold a reservation that is never released (H-10).
 
 ### 5.6 Withdrawals-disabled expectation
 
@@ -706,19 +725,19 @@ The exchange API key used with this bot is expected to have withdrawal permissio
 
 ## 6. Infrastructure & Deployment
 
-Operational steps belong to OPS ([ops-silverbot.md](ops-silverbot.md)); this section records what the files are. All of it is PRD-F11 and is `Partial`: the files exist and have four file-content tests, but the container runs the startup stub (D-1, H-4).
+Operational steps belong to OPS ([ops-silverbot.md](ops-silverbot.md)); this section records what the files are. All of it is PRD-F11 and is `Partial`: the files exist and have seven file-content tests (`tests/test_deployment_files.py`); the `bot` service now exits 78 because paper mode has no runtime (G-3 partial), and supervisors no longer restart it (H-4 fixed, `f6bc017`).
 
 | Component | Facts | Source |
 |---|---|---|
 | Image | `python:3.11-slim`; copies `pyproject.toml`, `README.md`, `main.py`, `src/`; `pip install --no-cache-dir .` (no third-party runtime dependencies); creates user `silverbot` (shell `/usr/sbin/nologin`, UID not pinned); creates `/app/{data,logs,models,reports}`; `USER silverbot`; `VOLUME` for those four directories; `CMD ["python", "-m", "silver_bot"]` | `Dockerfile:1-31` |
 | Health check | `HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 CMD python -m silver_bot.health`; validates configuration only; defined only in the Dockerfile, compose has none (D-82, G-27) | `Dockerfile:28-29`, `health.py` |
-| Compose | Project `silver-bot`; shared image `silver-bot:local`; `env_file: .env` (`required: false`); four bind mounts `./data`, `./logs`, `./models`, `./reports`; five services: `bot` (container `silver-bot-paper`, paper, `restart: unless-stopped`, no profile), `paper` (profile paper), `demo` (profile demo, testnet and risk limits forced), `backtest` (profile backtest), `research` (profile research, ML forced off); every service runs `python -m silver_bot`; no healthcheck, resource limits, `read_only` or `cap_drop` | `docker-compose.yaml:1-85` |
-| systemd | `silver-bot.service`: `Type=simple`, `WorkingDirectory=/opt/silver-bot`, `ExecStart=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up bot`, `ExecStop` ... `down`, `Restart=always`, `RestartSec=10`, `User=silverbot`, `Group=docker`, `WantedBy=multi-user.target`; no sandboxing directives; `/opt/silver-bot` is hard-coded (D-83) | `deploy/systemd/silver-bot.service:1-19` |
+| Compose | Project `silver-bot`; shared image `silver-bot:local`; `env_file: .env` (`required: false`); four bind mounts `./data`, `./logs`, `./models`, `./reports`; five services, all `restart: "no"`: `bot` (container `silver-bot-paper`, paper, no profile; `restart: "no"` since `f6bc017` so that systemd is the only supervisor), `paper` (profile paper), `demo` (profile demo, testnet and risk limits forced), `backtest` (profile backtest), `research` (profile research, ML forced off); `bot`, `paper` and `demo` run `python -m silver_bot`, `backtest` and `research` run `python -m silver_bot --candles /app/data/candles` (host `./data/candles`); no healthcheck, resource limits, `read_only` or `cap_drop` | `docker-compose.yaml:1-85` (restart `:32`, commands `:73,84`) |
+| systemd | `silver-bot.service`: `Type=simple`, `WorkingDirectory=/opt/silver-bot`, `ExecStart=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up bot --exit-code-from bot`, `ExecStop` ... `down`, `Restart=always`, `RestartSec=10`, `RestartPreventExitStatus=78`, `User=silverbot`, `Group=docker`, `WantedBy=multi-user.target`; no sandboxing directives; `/opt/silver-bot` is hard-coded (D-83) | `deploy/systemd/silver-bot.service:1-20` (`:11`, `:13-15`; `f6bc017`) |
 | logrotate | `/opt/silver-bot/logs/*.log` and `*.jsonl`: daily, `rotate 14`, `missingok`, `notifempty`, `compress`, `copytruncate`. The only log file produced is `logs/audit.jsonl`, so the `*.log` glob matches nothing (D-85) | `deploy/logrotate/silver-bot:1-8` |
 | Host prep | `prepare-host.sh` (POSIX sh, `set -eu`): creates `data logs models reports` in the current directory, copies `.env.example` to `.env` with mode 600 if `.env` is missing, `chmod 700` the four directories, prints a reminder. It does not create the `silverbot` user, install logrotate or systemd, or touch Docker (D-50, G-26) | `deploy/scripts/prepare-host.sh:1-13` |
 | `.dockerignore` | excludes `.env`, `.env.*` (keeps `.env.example`), `config.yaml`, `logs/`, `data/`, `models/`, `reports/`, databases, `.git/`, caches | `.dockerignore:1-21` |
 
-Restart loop (H-4): `main()` returns 0 after two audit lines, so compose `restart: unless-stopped` and systemd `Restart=always` restart it indefinitely. Each restart would reset the risk counters of an engine built without a store; an engine built by `build_risk_engine` with SQLite storage reloads them (H-11 partial, G-7). Whether the loop is intentional is an owner question (U-1). Bind-mount ownership against the unpinned container UID is Open (U-9). Install path, user creation, log shipping and the deployment checklist are OPS content.
+Restart behaviour (H-4, fixed in `f6bc017` with `099085b`): `docker compose up` exits 0 when a container stops unless `--exit-code-from` is given, so the unit passes `--exit-code-from bot` and systemd sees the bot's own exit code. Paper mode exits 78, `RestartPreventExitStatus=78` stops systemd from restarting it, and the unit ends in a failed state with status 78. Compose no longer restarts the `bot` container (`restart: "no"`). `Restart=always` still applies to every other code: exit 2 (rejected configuration) is retried every 10 s, and exit 0 too. Each restart would reset the risk counters of an engine built without a store; an engine built by `build_risk_engine` with SQLite storage reloads them (H-11 partial, G-7). U-1 (was the old loop intended) no longer affects behaviour. Bind-mount ownership against the unpinned container UID is Open (U-9). Install path, user creation, log shipping and the deployment checklist are OPS content.
 
 ## 7. Non-Functional Requirements
 
@@ -726,14 +745,14 @@ Mirrors PRD section 5.5. The right-hand column says how each requirement is met 
 
 | Area | Requirement | How it is met | Status |
 |---|---|---|---|
-| Safety | Default paper; live rejected at load; no trade without a stop; no martingale or averaging down; ML and the risk engine cannot be bypassed; no real orders | Section 5.1 (layered live block), 5.4 (stop loss at four points), 1 (principles). Risk engine called on every candidate in both loops (`backtest/engine.py:157-166`, `execution/paper_trading.py:207-216`); ML runs before risk and cannot raise size (section 8.1). Order methods raise | Enforced for the points tested. Kill switch, settings caps and risk-state persistence are built and tested but reach no runtime until G-3 (G-5, G-6, G-7 partial) |
+| Safety | Default paper; live rejected at load; no trade without a stop; no martingale or averaging down; ML and the risk engine cannot be bypassed; no real orders | Section 5.1 (layered live block), 5.4 (stop loss at four points), 1 (principles). Risk engine called on every candidate in both loops (`backtest/engine.py:157-166`, `execution/paper_trading.py:207-216`); ML runs before risk and cannot raise size (section 8.1). Order methods raise | Enforced for the points tested. CLI backtests take settings caps and a simulated per-run kill switch; the real kill switch and risk-state persistence reach no runtime until the paper runtime exists (G-5, G-6, G-7 partial) |
 | Determinism of backtests | Same candles and configuration give the same result; one pending or open trade at a time | Candles sorted by `open_time` (`backtest/engine.py:48`); strategy sees only the prefix (`:106`); signal evaluated only when idle (`:103-104`); no randomness in the engine | Implemented; not pinned by a test ([qad-silverbot.md](qad-silverbot.md) §3.8, AC-04.9, G-32). Strategy-internal look-ahead freedom is Open (U-7) |
-| No real keys in tests | Tests use mocks and in-memory clients | `InMemoryTelegramClient`, `MockMarketDataStream`, adapter that never touches the network | Holds for the 20 test files (145 test functions, 167 collected tests) |
+| No real keys in tests | Tests use mocks and in-memory clients | `InMemoryTelegramClient`, `MockMarketDataStream`, adapter that never touches the network | Holds for the 23 test files (179 test functions, 218 collected tests) |
 | Python version | 3.11 or newer | `requires-python = ">=3.11"`; Docker `python:3.11-slim`; `pyproject.toml` declares no runtime dependencies; scikit-learn is optional and undeclared (G-25) | Holds |
 | Timezone correctness | Sessions evaluated in America/New_York with daylight saving; audit timestamps UTC | `zoneinfo` conversion with a hand-rolled fixed-offset fallback for New York only when tzdata is missing (`strategy/sessions.py:28-33,61-73`); naive timestamps assumed UTC (`:56-59`); audit `created_at` UTC | Tests cover June and January. tzdata in deployment is Open (U-8) |
 | Secrets | No keys in the repository; `.env` ignored and excluded from the image; logs redact | Section 5.2 | Redaction tested; secret scan outside git is Open (U-20) |
-| Robustness | Supervisor-safe exit; persisted risk state | `main()` exits 0; `RiskState` persists in `risk_state` when the engine has a store, and an unreadable row halts trading (section 3.2) | Not met (G-3, H-4); persistence partial (G-7) |
-| Standing rules | Never enable live by default, hardcode keys, use martingale, average down, trade without a stop, let ML place trades, bypass risk or kill switch; never optimise on the final test set | Sections 1, 5, 8.1. The final-test rule is enforced only inside model promotion (`ml/promotion.py:98-99`); `chronological_split` is unwired (D-33) | Partly enforced; the kill-switch rule rests on the runtime building its engine with `build_risk_engine` (G-3) |
+| Robustness | Supervisor-safe exit; persisted risk state | `main()` exits 78 for a mode with no runtime and systemd does not restart on 78 (section 6); `RiskState` persists in `risk_state` when the engine has a store, and an unreadable row halts trading (section 3.2) | Supervisor-safe exit met (H-4 fixed); no long-running runtime (G-3 partial); persistence partial (G-7) |
+| Standing rules | Never enable live by default, hardcode keys, use martingale, average down, trade without a stop, let ML place trades, bypass risk or kill switch; never optimise on the final test set | Sections 1, 5, 8.1. The final-test rule is enforced only inside model promotion (`ml/promotion.py:98-99`); CLI backtests call `chronological_split` and tune nothing (`backtest/runner.py:76-80,91`), but no code stops a caller tuning on the final test (D-33) | Partly enforced; the kill-switch rule holds in backtests through the simulated switch and for paper rests on a runtime building its engine with `build_risk_engine` (G-3) |
 | Observability | Structured decision log | Audit JSONL (section 3.3); application log is plain text (`utils/logging.py:13`, D-81); no metrics endpoint or tracing | Partial |
 
 No performance, latency or throughput target is defined in the code or the old documents, so none is stated here (Open).
@@ -759,7 +778,7 @@ Pipeline (offline, then inference). Nothing outside `ml/` and tests calls `train
 
 **Hazards.** The NaN hazard (H-1, G-8) is fixed: before `8e66054`, `max(0.0, min(1.0, nan))` turned NaN into 1.0 and approved; now an invalid probability rejects (`tests/test_ml_probability_filter.py:197,210`). Still open: a missing or corrupt artifact, feature-build error or row-length mismatch is not caught and propagates out of `evaluate` (`:126-133`); pickle load executes code (H-8). The risk engine still gates an approved signal. No test covers a stale model or a corrupt artifact (H-13, G-28).
 
-**Wiring gap.** The four `ML_*` settings are parsed and validated but nothing converts them to an `MLFilterConfig`; the paper loop constructs `MLProbabilityFilter()` with defaults (disabled) and the backtester uses `BacktestConfig.ml_filter` (default disabled) (`execution/paper_trading.py:53`, `backtest/models.py:41`, D-4, G-9, U-3).
+**Wiring gap.** The four `ML_*` settings reach `MLFilterConfig` only in CLI backtests, through `build_backtest_config` (`backtest/runner.py:50-55`, `f84557e`); the paper loop constructs `MLProbabilityFilter()` with defaults (disabled) (`execution/paper_trading.py:53`, D-4, G-9 partial, U-3).
 
 ### 8.1 Leakage & Misuse Surface
 
@@ -801,6 +820,6 @@ AIA ([aia-silverbot.md](aia-silverbot.md)) carries the risk register for these; 
 - [x] Section 3.4 documents all 27 `AppConfig` environment names and all 6 readiness-only names listed in the fact index, with defaults, validation and `file:line`.
 - [x] SQLite columns (section 3.2), exchange adapter signatures (section 4.2) and live-block checks (section 5.1) were copied from `storage/sqlite.py`, `exchange/base.py`, `config/settings.py` and `exchange/binance_futures.py`.
 - [x] As-built behaviour is separated from intended behaviour, and every discrepancy cites a `D-#`, `H-#` or `G-#` from the committed audit and scrutiny documents.
-- [x] No performance claim is made; the three evidence reports are stated as 0 bytes.
+- [x] No performance claim is made; the evidence reports are stated as empty until the owner runs the backtest CLI on real data (G-1).
 - [x] References to the RFCs and QAD are links to existing files; AIA, OPS, CLR and BUILD are links to existing files too.
 - [ ] Every `G-#` is closed or re-scoped in this document (open: most gaps are described here but remain code work, so this box stays unchecked until they are fixed).

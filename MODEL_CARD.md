@@ -82,7 +82,7 @@ scikit-learn is not a declared dependency (`pyproject.toml:10-15`, `dependencies
 ### 1.3 Limitations and performance caveats
 
 - **No model, no performance claim.** `models/` is empty. No accuracy, AUC, calibration or trading result exists to cite, and none may be inferred from the code. Test fixtures use stand-in probabilities (for example 0.72, 0.57, 0.40) that say nothing about real behaviour.
-- **Not wired.** The ML environment settings have no runtime effect (D-4, G-9). There is no command for the offline pipeline (G-22).
+- **Wired for backtests only.** The ML environment settings reach the filter in CLI backtests and nowhere else (D-4, G-9 partial). There is no command for the offline pipeline (G-22).
 - **Invalid probability rejects (H-1, G-8 fixed in `8e66054`).** The raw `predict_proba` value is no longer clamped (`ml/filter.py:193`); NaN, infinite or out-of-[0, 1] output rejects the signal (`ml/filter.py:134-146`). Before the fix NaN became 1.0 and approved. Pinned by `tests/test_ml_probability_filter.py:197,210` (QAD-T145).
 - **Errors propagate.** A corrupt artifact, a feature-build error or a row-length mismatch is not caught by `evaluate` (`filter.py:126-133`). Only registry read errors fall back (`filter.py:112-124,174-178`).
 - **Fail-open when no model.** A missing registry silently returns the unchanged rule-based signal, so an enabled filter with no model is indistinguishable from a disabled one except by the reason string.

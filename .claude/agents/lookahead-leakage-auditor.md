@@ -18,7 +18,7 @@ Known hazards (already documented; do not report them as newly introduced, but f
 - Possible HTF lookahead: the dataset builder passes the full higher_timeframe_candles series, unsliced, to every strategy call (ml/dataset.py), and whether SilverBulletStrategyEngine.evaluate uses only HTF candles up to the signal time is Open (U-6, U-7, G-29).
 - The leakage control is a keyword list on feature names (D-39); an innocently named leaky feature passes.
 - No purge or embargo between train, validation and test (D-73), and labels look ahead up to max_lookahead_candles, so adjacent splits can overlap in label horizon.
-- The out-of-sample split helper is not wired into any entry point, and walk-forward, Monte Carlo and sensitivity runs do not exist (S-11, G-12).
+- The out-of-sample split runs only in the CLI backtest (src/silver_bot/backtest/runner.py lines 76-98: fractions 0.6 and 0.2, each segment in a fresh engine, parameters_tuned false), no code stops a caller tuning on the final test (D-33), and walk-forward, Monte Carlo and sensitivity runs do not exist (S-11, G-12). FAIL any change that reorders the segments, lets one segment see another's candles, or tunes anything on final_test.
 - The three evidence reports are 0 bytes (G-1): no performance claim is supported. FAIL any diff or comment that cites a performance number without a non-empty evidence report.
 - The polling stream may yield a still-forming candle once (H-12).
 

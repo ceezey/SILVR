@@ -5,7 +5,7 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; risk, cost and kill-switch statements re-checked 2026-10-09 against `70ccaec`
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; risk, cost and kill-switch statements re-checked 2026-10-09 against `70ccaec`; the section 5 risk-wiring sentence and OI-8 and OI-11 re-checked 2026-10-09 against `099085b`
 
 This document states why the project exists, what it must achieve, and which numbers only the owner can supply. It defines the ids `BRD-V#` (impact variables), `BRD-M#` (success metrics) and `OI-#` (owner inputs) that the PRD, SDD and index cite. Context: [idea-silverbot.md](idea-silverbot.md), [val-silverbot.md](val-silverbot.md), [ues-silverbot.md](ues-silverbot.md), [scrutiny-silverbot.md](scrutiny-silverbot.md) and [audit-docs-drift.md](audit-docs-drift.md). The documents that cite these ids are [prd-silverbot.md](prd-silverbot.md), [sdd-silverbot.md](sdd-silverbot.md), [qad-silverbot.md](qad-silverbot.md) and [clr-silverbot.md](clr-silverbot.md).
 
@@ -57,7 +57,7 @@ These rules are not tunable per trade; they are conditions for the project to ex
 | Leverage cap | Default 3.0 (`risk/models.py:28`); rejection at `risk/engine.py:97-98`. | Enforced in the risk engine. |
 | Kill switch | `kill_switch_path` default None, which makes it inert (`risk/models.py:29`); active check at `risk/engine.py:48-49`; fail-closed check and automatic trip at `risk/kill_switch.py:22-60`. | Inert by default; when a path is set it fails closed and trips on the daily-loss and consecutive-loss limits. No position close (G-6 partial). |
 
-**Precision on where the percentages apply.** The Settings caps `MAX_RISK_PER_TRADE` 0.005, `MAX_DAILY_LOSS` 0.02 and `MAX_LEVERAGE` 3 (`config/settings.py:177-179`) behave differently since `5e4acc5`. `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode (`config/settings.py:180-181`), and `RiskConfig` rejects a per-trade risk above 0.005 (`risk/models.py:10,32-33`), so 0.5% is both the default and the ceiling. `MAX_DAILY_LOSS` and `MAX_LEVERAGE` are still validated only in demo mode (`config/settings.py:191-194`). `build_risk_engine` maps all three into `RiskConfig` (`risk/factory.py:15-28`), but nothing calls it until the entrypoint exists (D-11, G-5 partial, G-3). Details are in [RFC-002](rfc-silverbot-risk-kill-switch.md) (risk and kill switch).
+**Precision on where the percentages apply.** The Settings caps `MAX_RISK_PER_TRADE` 0.005, `MAX_DAILY_LOSS` 0.02 and `MAX_LEVERAGE` 3 (`config/settings.py:177-179`) behave differently since `5e4acc5`. `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode (`config/settings.py:180-181`), and `RiskConfig` rejects a per-trade risk above 0.005 (`risk/models.py:10,32-33`), so 0.5% is both the default and the ceiling. `MAX_DAILY_LOSS` and `MAX_LEVERAGE` are still validated only in demo mode (`config/settings.py:191-194`). `build_risk_config` maps all three into `RiskConfig` (`risk/factory.py:15-23`) and CLI backtests use it since `099085b`; `build_risk_engine` (`risk/factory.py:26-33`) adds SQLite state, but no paper runtime calls it yet (D-11, G-5 partial, G-3 partial). Details are in [RFC-002](rfc-silverbot-risk-kill-switch.md) (risk and kill switch).
 
 The ML filter can only approve, reject or reduce risk; it never creates a trade, places an order, raises risk or bypasses the stop loss or kill switch (AGENTS.md ML rules; `ml/filter.py`). A NaN or out-of-range model probability rejects since `8e66054` (G-8 closed).
 
@@ -101,10 +101,10 @@ Every number or decision that only the owner can give. Referenced as `Owner inpu
 | OI-5 | Monitoring hours per day the owner can give | Decides alerting, restart and kill-switch requirements for unattended runs | BRD §3, [ops-silverbot.md](ops-silverbot.md) |
 | OI-6 | Jurisdiction and tax treatment (kept generic here) | Determines legal and tax obligations for personal trading | [clr-silverbot.md](clr-silverbot.md), scrutiny §6 |
 | OI-7 | Target instruments and timeframe for the first evidence run (code default BTCUSDT, 1m) | Fixes the data and cost assumptions for the evidence run | IDEA §6, BRD-M3, QAD |
-| OI-8 | Historical data source and how far back to test | Without data no backtest exists (fetch raises NotImplementedError, G-13) | BRD-M3, UES §3 |
+| OI-8 | Historical data source and how far back to test | Without data no evidence backtest exists. The backtest CLI reads Binance kline CSV files the owner downloads ([runbook-backtest.md](runbook-backtest.md)); the network fetch raises NotImplementedError (G-13) | BRD-M3, UES §3 |
 | OI-9 | Minimum number of trades the owner accepts as meaningful evidence | The old document requires "enough trades" but gives no number | BRD-M5, VALIDATION K6 |
 | OI-10 | Intended venue account for demo and, if ever, live (and whether it is already opened) | Needed for API key handling, withdrawal restrictions and venue terms | [clr-silverbot.md](clr-silverbot.md), [RFC-004](rfc-silverbot-readiness-gates.md) |
-| OI-11 | Is the container restart loop after `main()` exits intentional, and should `config.yaml` be present in the container (U-1, U-2) | Decides the supervisor behaviour and the configuration source in deployment | [ops-silverbot.md](ops-silverbot.md), [sdd-silverbot.md](sdd-silverbot.md) |
+| OI-11 | Is the container restart loop after `main()` exits intentional, and should `config.yaml` be present in the container (U-1, U-2) | Decides the configuration source in deployment. The restart part is moot: since `f6bc017` paper exits 78 and the supervisors do not restart it | [ops-silverbot.md](ops-silverbot.md), [sdd-silverbot.md](sdd-silverbot.md) |
 | OI-12 | Who builds the ML filter configuration from settings, and how should stream reconnection be configured (U-3, U-4) | Closes two design questions only the owner can decide | [sdd-silverbot.md](sdd-silverbot.md), [RFC-003](rfc-silverbot-ml-filter-gate.md) |
 
 ## 9. Stakeholders

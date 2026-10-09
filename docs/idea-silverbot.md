@@ -4,7 +4,7 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
+**Last updated:** 2026-10-09
 **Last reconciled:** N/A (not a code-describing doc)
 
 Silver Bot is a personal Python bot that looks for ICT Silver Bullet setups in crypto futures, checks every candidate against a mandatory risk engine, and runs first as a backtest, then as paper trading, then against the exchange demo/testnet. Live trading is `Planned, blocked`. This brief is the starting point; evidence and costs follow in [val-silverbot.md](val-silverbot.md), [brd-silverbot.md](brd-silverbot.md) and [ues-silverbot.md](ues-silverbot.md). Gaps are tracked in [scrutiny-silverbot.md](scrutiny-silverbot.md). The design and test documents are [prd-silverbot.md](prd-silverbot.md), [sdd-silverbot.md](sdd-silverbot.md) and [qad-silverbot.md](qad-silverbot.md); compliance awareness is in [clr-silverbot.md](clr-silverbot.md).
@@ -58,7 +58,7 @@ flowchart TD
     E --> F["Monitoring: logs, audit log, journal, Telegram alerts, reports<br/>PRD-F7"]
 ```
 
-Backtesting (PRD-F2) feeds the same strategy and risk engines with historical candles. Today the entrypoint is a startup stub, so this pipeline is not yet runnable end to end (G-3).
+Backtesting (PRD-F2) feeds the same strategy and risk engines with historical candles. Since `099085b` this pipeline runs end to end from the command line on Binance kline files the owner downloads; paper and demo do not run yet (G-3 partial, G-13).
 
 ## 6. Open Questions
 

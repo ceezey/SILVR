@@ -13,7 +13,7 @@ What the gate is today (verify each is still intact):
 - Readiness report checks: _report_check in src/silver_bot/readiness.py lines 150-177 passes only a readable, non-empty file that parses as a JSON object (fixed H-2). FAIL any change that lets an empty, non-JSON or non-object report pass.
 - Base exchange block: src/silver_bot/exchange/base.py lines 44-52, place_order and cancel_order always raise OrderPlacementDisabled, and no subclass overrides them.
 - No live executor: execution/ imports no exchange client; there is exactly one def place_order in src/.
-- Image and compose force LIVE_TRADING=false and run only python -m silver_bot.
+- Image and compose force LIVE_TRADING=false and run only python -m silver_bot (the backtest and research services add --candles /app/data/candles). The CLI takes only --candles and --output-dir and no flag selects the mode (src/silver_bot/main.py lines 29-48); paper and demo modes exit 78 (lines 86-88). FAIL any new flag, subcommand or environment key that selects or enables live.
 - Live-gate surfaces: Dockerfile (ENV LIVE_TRADING=false), docker-compose.yaml (LIVE_TRADING=false per service), .env.example, config.example.yaml, config.yaml, main.py, src/silver_bot/main.py, src/silver_bot/__main__.py, src/silver_bot/health.py and deploy/** (systemd unit). Confirm each still defaults LIVE_TRADING to false and the mode to paper, backtest or demo, adds no live flag, no live command and no live service, and that .env.example never contains a real key.
 
 Known hazards (already documented; do not report them as newly introduced, but do flag any regression or any change that makes them worse):

@@ -5,11 +5,11 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the URL, risk-limit and kill-switch statements in step 3 re-checked 2026-10-09 against `70ccaec`
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the URL, risk-limit and kill-switch statements in step 3 re-checked 2026-10-09 against `70ccaec`; steps 5 and 7 and the step 5 Verify rows re-run 2026-10-09 against `099085b`
 
 This runbook prepares and checks Binance Futures demo (testnet) mode: creating testnet keys, setting the demo environment, running the demo readiness checker, a dry startup, verification and stopping. It absorbs the demo steps of the old `DEPLOYMENT.md` and the demo example of the old `CONFIGURATION.md`.
 
-**What is not possible yet.** Demo mode today is configuration plus a readiness report. The Binance adapter performs no network I/O: no HTTP, no request signing, no endpoint paths; `fetch_ohlcv` raises `NotImplementedError`, and `place_order` and `cancel_order` always raise `OrderPlacementDisabled`. The entrypoint ignores the mode and runs a startup stub (G-3). So you cannot connect to the testnet, fetch candles, place a testnet order or run a demo session. A "dry startup" here means: configuration loads, the readiness checker passes, the health check passes, and the startup stub exits 0. A ready report also does not prove the keys are valid: the checker only tests that both values are non-blank. Live trading remains blocked at configuration load (`Planned, blocked`).
+**What is not possible yet.** Demo mode today is configuration plus a readiness report. The Binance adapter performs no network I/O: no HTTP, no request signing, no endpoint paths; `fetch_ohlcv` raises `NotImplementedError`, and `place_order` and `cancel_order` always raise `OrderPlacementDisabled`. In demo mode the entrypoint logs `demo mode not available yet: needs market data (G-13)` and exits 78 (`main.py:86-88`, G-3). So you cannot connect to the testnet, fetch candles, place a testnet order or run a demo session. A "dry startup" here means: configuration loads, the readiness checker passes, the health check passes, and the startup stub exits 0. A ready report also does not prove the keys are valid: the checker only tests that both values are non-blank. Live trading remains blocked at configuration load (`Planned, blocked`).
 
 Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (the 18 demo checks and the 15 live checks), [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configuration, section 2.3 modes), [ops-silverbot.md](ops-silverbot.md) (compose `demo` profile, stopping), [prd-silverbot.md](prd-silverbot.md) (PRD-F5), [runbook-local-dev.md](runbook-local-dev.md) (setup), [scrutiny-silverbot.md](scrutiny-silverbot.md) (G-3, G-6, G-10).
 
@@ -64,14 +64,14 @@ Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-ga
 
    The default output path is `reports/demo_readiness_report.json`, the repository evidence folder, which is why these steps write to `out/` instead. Exit code 0 means all 18 checks passed; exit code 2 means at least one failed, and the report lists each failed check with its reason. The checker reads `.env` from the current folder and overlays the process environment. It does not read values that exist only in `config.yaml` (except for the first check), so put demo values in `.env`.
 
-5. **Dry startup.** Confirm the health check and the startup stub accept the configuration:
+5. **Dry startup.** Confirm the health check and the entrypoint accept the configuration:
 
    ```bash
    python -m silver_bot.health
    python -m silver_bot
    ```
 
-   Both exit 0. The second logs `silver bot initialized`, creates the SQLite file and writes `bot_started` and `bot_stopped` to `logs/audit.jsonl`. It does not connect to Binance. To use the container instead, `docker compose --profile demo run --rm demo` runs the same stub with the `demo` profile settings (see [ops-silverbot.md](ops-silverbot.md)); and `docker compose --profile demo run --rm demo python -m silver_bot.demo_readiness` runs the checker inside it.
+   The first exits 0. The second creates the SQLite file, writes `bot_started`, `mode_unavailable` and `bot_stopped` (`"exit_code": 78`) to `logs/audit.jsonl`, logs `demo mode not available yet: needs market data (G-13)` and exits 78: the configuration loaded, and the demo runtime does not exist yet. A rejected configuration exits 2 instead. It does not connect to Binance. To use the container instead, `docker compose --profile demo run --rm demo` runs the same entrypoint with the `demo` profile settings and exits 78 (see [ops-silverbot.md](ops-silverbot.md)); and `docker compose --profile demo run --rm demo python -m silver_bot.demo_readiness` runs the checker inside it.
 
 6. **Test the kill-switch file the way the checkers see it.** The readiness check `kill_switch_not_active` fails while the file exists, so the file must be absent when you want a ready report:
 
@@ -83,7 +83,7 @@ Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-ga
 
    The first run exits 2 with the switch present; after removing the file the checker passes again. This proves the gate, not an emergency stop: nothing in the running bot consults the file today.
 
-7. **Stop.** The startup stub exits by itself. If you started the compose `bot` service or the systemd unit, stop it with the commands in [ops-silverbot.md](ops-silverbot.md) section 4.1 (use `sudo systemctl stop silver-bot` when the unit is enabled, because it restarts the container otherwise). Remove testnet keys from `.env` when you finish, or revoke them on the testnet site.
+7. **Stop.** The entrypoint exits 78 by itself, and supervisors do not restart on 78 ([ops-silverbot.md](ops-silverbot.md) section 4.8). If a unit is still restarting (any exit code other than 78), stop it with `sudo systemctl stop silver-bot` ([ops-silverbot.md](ops-silverbot.md) section 4.1). Remove testnet keys from `.env` when you finish, or revoke them on the testnet site.
 
 ## Verify
 
@@ -94,13 +94,13 @@ Run against a temporary folder holding only a demo `.env` with placeholder key v
 | 4 | `python -m silver_bot.demo_readiness --output out/demo_readiness_report.json` | exit 0; `ready` true; 18 checks, all passed (`demo_config_validation` through `no_committed_secrets`) |
 | 4 (negative) | same, with `BINANCE_TESTNET=false` and `BINANCE_FUTURES_BASE_URL=https://fapi.binance.com` in the process environment | exit 2; `ready` false; failed: `demo_config_validation` (`BINANCE_TESTNET must be true when MODE=demo`), `binance_testnet_enabled`, `binance_testnet_endpoint` |
 | 5 | `python -m silver_bot.health; echo $?` | no output, `0` |
-| 5 | `python -m silver_bot; echo $?` | `INFO silver_bot.main silver bot initialized`, `0` |
+| 5 | `python -m silver_bot; echo $?` | `ERROR silver_bot.main demo mode not available yet: needs market data (G-13)`, `78` (2026-10-09, `099085b`) |
 | 5 (negative) | `BINANCE_TESTNET=false python -m silver_bot` | `ERROR silver_bot.main configuration rejected: BINANCE_TESTNET must be true when MODE=demo`, exit `2` |
 | 6 | `touch data/KILL_SWITCH`, then the checker | exit `2` (file removed afterwards) |
 
 The placeholder keys passed, which confirms that the checker does not validate keys with the exchange. Not run: step 1 (it needs a testnet account and the network), the compose commands (no Docker daemon was used), and any command that would contact Binance (none exists).
 
-Done means: the checker exits 0 with 18 passed checks, health and startup exit 0, the kill-switch file is absent, `LIVE_TRADING` is `false`, and no key value appears in any tracked file, in the readiness report or in the audit log.
+Done means: the checker exits 0 with 18 passed checks, health exits 0 and startup exits 78 (not 2), the kill-switch file is absent, `LIVE_TRADING` is `false`, and no key value appears in any tracked file, in the readiness report or in the audit log.
 
 ## Self-Check
 

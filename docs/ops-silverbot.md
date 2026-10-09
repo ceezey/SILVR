@@ -5,7 +5,7 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 4.1, 4.4 and 4.7 and the kill-switch and risk-state statements re-checked 2026-10-09 against `70ccaec`
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 4.1, 4.4 and 4.7 and the kill-switch and risk-state statements re-checked 2026-10-09 against `70ccaec`; the opening notes, sections 0 to 2, 4.1, 4.4, 4.6 to 4.8, 5.1, 5.4, 5.5 and 6 re-checked 2026-10-09 against `099085b` (exit 78, supervisors, backtest in the container)
 
 This runbook says how to run, watch and stop Silver Bot, and what to do when something goes wrong. It absorbs the operational parts of the old `DEPLOYMENT.md` (VPS setup, emergency commands, security checklist). Only commands that work with the code as built are given as steps. Where the intended action is not supported by the code, the runbook says so and gives the manual alternative.
 
@@ -13,9 +13,9 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) §5 (safety), §6 (infra
 
 **Read this first: what the deployed bot actually does today.**
 
-- The container and systemd entry point `python -m silver_bot` runs `main()`: it loads configuration, initialises SQLite, writes `bot_started` then `bot_stopped` to `logs/audit.jsonl` and exits with code 0. It connects to no exchange, starts no stream, sends no Telegram message and runs no paper engine (`main.py:27-50`, D-1, G-3).
-- The compose `bot` service has `restart: unless-stopped` and the systemd unit has `Restart=always`, so that exit is followed by an endless restart loop (`docker-compose.yaml:32`, `deploy/systemd/silver-bot.service:13`, H-4). Whether this is intended is an open owner question (BRD OI-11).
-- Paper trading, backtesting and demo runs exist as library code driven by tests, not by the container (QAD-T73, QAD-T83).
+- The container and systemd entry point `python -m silver_bot` runs `main()`: it loads configuration, initialises SQLite, writes `bot_started`, runs the configured mode and writes `bot_stopped` with the exit code to `logs/audit.jsonl` (`main.py:51-77`). In paper and demo mode it logs `<mode> mode not available yet: needs market data (G-13)`, audits `mode_unavailable` and exits 78 (`main.py:86-88`). It connects to no exchange, starts no stream, sends no Telegram message and runs no paper engine (G-3 partial).
+- Exit 78 stops the supervisors (H-4 fixed, `f6bc017`): the systemd unit runs `docker compose ... up bot --exit-code-from bot` with `Restart=always` and `RestartPreventExitStatus=78`, and the compose `bot` service has `restart: "no"` (`deploy/systemd/silver-bot.service:11,13,15`, `docker-compose.yaml:32`). The unit ends in a failed state with status 78 and is not restarted (§4.8). Any other non-78 exit, such as 2 for a rejected configuration, is still restarted every 10 s.
+- Backtest mode runs from the CLI and in the compose `backtest` and `research` services on Binance kline CSV files in `./data/candles` (§5.5, [runbook-backtest.md](runbook-backtest.md)). Paper trading and demo runs exist as library code driven by tests, not by the container (QAD-T73, QAD-T83).
 - Live trading is `Planned, blocked`: the configuration loader rejects `LIVE_TRADING=true` and the adapter cannot place orders (SDD §5.1).
 
 Everything below that mentions alerts, streams, positions or reports describes the library behaviour for when a runtime drives it, and marks what is not wired.
@@ -24,16 +24,16 @@ Everything below that mentions alerts, streams, positions or reports describes t
 
 | Mode | How it is started (compose) | What runs today | Watched by | Stop with |
 |---|---|---|---|---|
-| Backtest | `docker compose --profile backtest run --rm backtest` | Startup stub only (config, SQLite, two audit lines, exit 0) | Command output; `logs/audit.jsonl` | The container exits by itself |
-| Research | `docker compose --profile research run --rm research` (backtest mode, ML forced off) | Startup stub only | Same | Exits by itself |
-| Paper (one-off) | `docker compose --profile paper run --rm paper` (`restart: "no"`) | Startup stub only | Same | Exits by itself |
-| Paper (service) | `docker compose up bot` (container `silver-bot-paper`), or systemd `silver-bot` | Startup stub in a restart loop (H-4) | `docker compose logs`, `journalctl`, audit file | `sudo systemctl stop silver-bot` (see §4.1) |
-| Demo (testnet) | `docker compose --profile demo run --rm demo` | Startup stub; demo readiness check available: `docker compose --profile demo run --rm demo python -m silver_bot.demo_readiness` | Same | Exits by itself |
+| Backtest | `docker compose --profile backtest run --rm backtest` (§5.5) | A backtest on `/app/data/candles` (host `./data/candles`); six reports in `./reports`; exit 0, or 2 on bad data or configuration | Command output; `logs/audit.jsonl`; `reports/` | The container exits by itself |
+| Research | `docker compose --profile research run --rm research` (backtest mode, ML forced off) | Same as Backtest with ML off | Same | Exits by itself |
+| Paper (one-off) | `docker compose --profile paper run --rm paper` (`restart: "no"`) | Exit 78, `mode_unavailable` | Same | Exits by itself |
+| Paper (service) | `docker compose up bot` (container `silver-bot-paper`), or systemd `silver-bot` | Exit 78; not restarted (H-4 fixed); the unit shows `failed` with status 78 (§4.8) | `docker compose logs`, `journalctl`, audit file | Stops by itself; `sudo systemctl stop silver-bot` for a restarting unit (see §4.1) |
+| Demo (testnet) | `docker compose --profile demo run --rm demo` | Exit 78; demo readiness check available: `docker compose --profile demo run --rm demo python -m silver_bot.demo_readiness` | Same | Exits by itself |
 | Live | None. `Planned, blocked` | Cannot start: the configuration is refused | n/a | n/a |
 
 Safe defaults hold in every mode: `LIVE_TRADING=false` is forced by the Dockerfile and by compose (`Dockerfile:6`, `docker-compose.yaml:4`), the image runs as the non-root `silverbot` user, the ML filter and Telegram default to off, and the compose file defines no live service. Prepare the host first with `sh deploy/scripts/prepare-host.sh` from the repository directory (creates `data logs models reports`, copies `.env.example` to `.env` with mode 600 if absent, sets the directories to mode 700; `deploy/scripts/prepare-host.sh:2-13`). Copying `.env.example` unchanged does not load (D-2, H-14, G-4): review the file and set the values for the mode you intend.
 
-When a real runtime exists (`Planned`), posture changes as follows: paper runs unattended only if the owner accepts the kill-switch and restart limits in §4; demo runs under daily owner review; live is not operated until RFC-004 gates exist and the owner approves.
+When a paper or demo runtime exists (`Planned`), posture changes as follows: paper runs unattended only if the owner accepts the kill-switch and restart limits in §4; demo runs under daily owner review; live is not operated until RFC-004 gates exist and the owner approves.
 
 ## 1. SLOs & SLIs
 
@@ -42,11 +42,11 @@ Targets are the owner's to set (BRD OI-5, monitoring hours per day). The code me
 | SLI | Definition | Measured by the code today? | Source | Target |
 |---|---|---|---|---|
 | Container health | `python -m silver_bot.health` returns 0 (configuration loads and `live_trading` is false) every 60 s | Yes, configuration only: exit 2 if the config is rejected, exit 3 if live is true, else 0. It does not test the stream, the exchange or the loop (G-27) | `health.py:8-17`; `Dockerfile:28-29` | Open |
-| Process uptime | Time the bot runs without exit | No. The process exits right after start; there is nothing to measure (H-4) | `main.py:27-50` | Open |
+| Process uptime | Time the bot runs without exit | No. Paper and demo exit 78 right after start, and a backtest exits when it finishes; there is nothing to measure (G-3) | `main.py:51-77` | Open |
 | Market stream uptime | Share of time the candle stream delivers closed candles | No. The stream has a reconnect wrapper in the library but no metric, and the container does not start it (G-13, H-12) | `data/stream.py` | Open |
 | Alert delivery | Time from an alert-worthy event to a message reaching the owner | No. Telegram has no network transport, so delivery is never achieved (D-3, G-15, QAD-T69) | `monitoring/telegram.py:96-103` | Open |
-| Kill-switch reaction | Time from the kill file appearing to the next entry being rejected | In library code only: checked on every `evaluate`, so reaction is at most one candle interval; the first rejection is recorded as a `KILL_SWITCH_ACTIVE` event. Inert unless the engine is built with a path, which only `build_risk_engine` does and nothing calls yet (D-12, G-6) | `risk/engine.py:48-49`; `execution/paper_trading.py:74-84` | Open |
-| Audit completeness | Every decision has an `audit.jsonl` line | Partially: engines write when given a logger; `main()` writes only start and stop. A failed write raises into the caller (QAD-T67) | `monitoring/audit.py:72-75` | Open |
+| Kill-switch reaction | Time from the kill file appearing to the next entry being rejected | In library code only: checked on every `evaluate`, so reaction is at most one candle interval; the first rejection is recorded as a `KILL_SWITCH_ACTIVE` event. Inert unless the engine is built with a path, which only `build_risk_config` and `build_risk_engine` do and no paper runtime calls yet; CLI backtests run a simulated per-run switch that never reads `KILL_SWITCH_PATH` (D-12, G-6) | `risk/engine.py:48-49`; `execution/paper_trading.py:74-84` | Open |
+| Audit completeness | Every decision has an `audit.jsonl` line | Partially: engines write when given a logger; `main()` writes `bot_started`, `mode_unavailable` in paper and demo, and `bot_stopped` with `exit_code`. A failed write raises into the caller (QAD-T67) | `monitoring/audit.py:72-75` | Open |
 | Report freshness | Daily and weekly reports produced on time | No. The builders have no caller and no schedule (S-31, G-16, QAD-T70) | `monitoring/reports.py:18,52,92` | Open |
 
 A starting point the owner may adopt once a runtime exists: no unobserved period longer than the owner's monitoring gap, every kill-switch event acknowledged within that gap, and one report per day. These are suggestions, not commitments, until OI-5 is answered.
@@ -55,8 +55,8 @@ A starting point the owner may adopt once a runtime exists: no unobserved period
 
 ### 2.1 Logs
 
-- **Application log.** `get_logger` configures plain text, not JSON: `%(asctime)s %(levelname)s %(name)s %(message)s` at INFO (`utils/logging.py:11-15`). The `extra` fields passed in `main()` are not printed by this format. Read it with `docker compose logs`, `journalctl -u silver-bot` or the container's stdout.
-- **Audit log.** `logs/audit.jsonl` is the machine-readable log: one JSON object per line, appended, with keys sorted. Fields are exactly `created_at` (ISO-8601, UTC), `level` (default `INFO`), `event_type`, `message` and `context` (`monitoring/audit.py:34-43,72-75`). The path is hard-coded in `main()` and cannot be changed (`main.py:29`).
+- **Application log.** `get_logger` configures plain text, not JSON: `%(asctime)s %(levelname)s %(name)s %(message)s` at INFO (`utils/logging.py:11-15`). `main()` writes its outcome here: the report paths and `backtest complete: N candles, G gaps` for a backtest, `<mode> mode not available yet: needs market data (G-13)` for paper and demo, and the rejection reason for bad arguments, configuration or candle data (`main.py:58,84,86,93,98,106-108`). Read it with `docker compose logs`, `journalctl -u silver-bot` or the container's stdout.
+- **Audit log.** `logs/audit.jsonl` is the machine-readable log: one JSON object per line, appended, with keys sorted. Fields are exactly `created_at` (ISO-8601, UTC), `level` (default `INFO`), `event_type`, `message` and `context` (`monitoring/audit.py:34-43,72-75`). The path is hard-coded in `main()` and cannot be changed (`main.py:63`).
 - **Redaction.** A context value is replaced by `[REDACTED]` when its lower-cased key contains `api_key`, `apikey`, `secret`, `token`, `password`, `passphrase`, `private_key` or `chat_id`. Keys are matched, values are never scanned (`monitoring/audit.py:12-21,79-103`). Do not put a secret in a free-text `message`.
 - **Write errors** are not handled: an I/O error in the audit logger propagates to the caller (`audit.py:72-75`).
 
@@ -66,15 +66,17 @@ Useful reads (all work with a standard shell on the host):
 tail -n 50 logs/audit.jsonl
 grep '"event_type": "kill_switch_active"' logs/audit.jsonl
 grep -c '"event_type": "bot_started"' logs/audit.jsonl
+grep '"event_type": "mode_unavailable"' logs/audit.jsonl
 ```
 
-The last command counts restarts; a large number confirms the restart loop (H-4). The existing file holds only `bot_started` and `bot_stopped` events, consistent with startup-only runs.
+The third command counts starts. Before `f6bc017` a large number meant the restart loop (H-4); now each start should match one manual or boot start. The fourth lists paper and demo starts that exited 78.
 
 ### 2.2 `audit.jsonl` event types
 
 | `event_type` | Emitted by | When |
 |---|---|---|
-| `bot_started`, `bot_stopped` | `main()`; backtest engine; paper engine | Start and stop. From `main()` the context has mode, `paper_trading`, database path, `ml_filter_enabled`, `telegram_enabled` (`main.py:30-50`) |
+| `bot_started`, `bot_stopped` | `main()`; backtest engine; paper engine | Start and stop. From `main()` the start context has mode, `paper_trading`, database path, `ml_filter_enabled`, `telegram_enabled`, and the stop context has mode and `exit_code` (`main.py:64-77`) |
+| `mode_unavailable` | `main()`, level `WARNING` | Paper or demo mode: message `mode not available yet: needs market data (G-13)`, context mode; followed by `bot_stopped` with `exit_code` 78 (`main.py:87`) |
 | `strategy_decision` | Backtest and paper engines | Every evaluation, with symbol, direction, reason, entry, stop, target, reward-to-risk, session, quality score (`execution/paper_trading.py:290-305`) |
 | `signal_rejected` | Backtest and paper engines | Strategy `NO_TRADE`, or ML reject (adds `ml_probability`, `ml_decision`) |
 | `ml_decision` | Backtest and paper engines | Each ML filter result (decision, probability, thresholds, multiplier, model id, reason) |
@@ -88,7 +90,8 @@ The last command counts restarts; a large number confirms the restart loop (H-4)
 - **Trade journal** (CSV) per trade: ids, symbol, timeframe, session, direction, entry and exit times and prices, stop, target, size, risk amount, realized pnl and R, fees, slippage, exit reason, quality score, ML probability and decision, notes (`monitoring/reports.py:244-272`). The exporter has no caller.
 - **Daily report** keys: date, trades taken, rejected setups, pnl, drawdown, win rate, average R, best and worst trade, rule failures, ML decisions (`reports.py:77-89`). **Weekly report** keys: week start and end, total trades, net pnl, win rate, profit factor, average R, max drawdown, best and worst session, repeated rejection reasons (`reports.py:119-131`). The window starts at the first trade, not at a calendar week. Neither is produced automatically.
 - **Dashboard JSON** has four keys: `daily`, `weekly`, `recent_trades`, `recent_rejections`. It is a JSON export only: no web page, server or redaction (`monitoring/dashboard.py:19-33`).
-- **Readiness reports**: `python -m silver_bot.demo_readiness` and `python -m silver_bot.readiness` write JSON under `reports/`. They are advisory; nothing reads them (D-10). The three report checks fail an empty, non-JSON or non-object file (`readiness.py:150-177`, H-2 fixed), so the committed 0-byte reports fail live readiness.
+- **Readiness reports**: `python -m silver_bot.demo_readiness` and `python -m silver_bot.readiness` write JSON under `reports/`. They are advisory; nothing reads them (D-10). The three report checks fail an empty, non-JSON or non-object file (`readiness.py:150-177`, H-2 fixed), so empty local reports fail live readiness.
+- **Backtest reports**: a CLI backtest writes `backtest_report.json`, `trades.csv`, `equity_curve.csv`, `rejected_signals.csv`, `out_of_sample_validation_report.json` and `backtest_run.json` into `--output-dir` (default `reports/`, git-ignored). `backtest_run.json` records the inputs, costs and the simulated kill switch (`kill_switch.mode` is `simulated_per_run`); see [runbook-backtest.md](runbook-backtest.md). Never commit them and never quote their numbers as a performance claim.
 - **Container health**: `docker inspect --format '{{.State.Health.Status}}' silver-bot-paper` shows the Dockerfile health check state (`starting`, `healthy`, `unhealthy`) for the `bot` service. Compose defines no check of its own (D-82).
 
 ## 3. Alerting
@@ -130,7 +133,9 @@ flowchart TD
     J -- "yes" --> K["4.6 Roll back"]
     J -- "no" --> M{"Every entry rejected by persisted risk state after a restart?"}
     M -- "yes" --> N["4.7 Reset risk_state"]
-    M -- "no" --> L["Collect logs, stop the service, review"]
+    M -- "no" --> O{"Service stopped with exit code 78?"}
+    O -- "yes" --> P["4.8 Exit 78: expected while paper has no runtime"]
+    O -- "no" --> L["Collect logs, stop the service, review"]
 ```
 
 Common first moves, in order of safety:
@@ -143,7 +148,7 @@ Common first moves, in order of safety:
 
 **Trigger.** Anything that says trading must stop now: a loss limit reached, an unexplained trade, a bad signal stream, a suspected compromise, a deploy gone wrong.
 
-**What the kill switch is, as built.** A file at `KILL_SWITCH_PATH` that blocks new entries. It fails closed: a file with any content, a directory, a path that cannot be checked (`OSError`), or a path whose nearest existing parent is a file all count as active (`risk/kill_switch.py:22-51`). The risk engine writes it itself when it rejects on the daily-loss or consecutive-loss limit, as JSON `{"reason": ..., "tripped_at": ...}`, and keeps the first reason if it trips again (`risk/kill_switch.py:53-60`, `risk/engine.py:83,86,129`). It does not close positions or stop the process (G-6, G-21). It is armed only when the engine is built by `build_risk_engine` with `KILL_SWITCH_ENABLED=true` (`risk/factory.py:26`); `load_config` rejects `KILL_SWITCH_ENABLED=true` without a path in every mode (`config/settings.py:174-175`). Nothing calls `build_risk_engine` yet: the entrypoint is a stub and the paper loop builds its engine without a path (`execution/paper_trading.py:49`, G-3). The compose `demo` service sets `KILL_SWITCH_PATH=/app/data/KILL_SWITCH`, but no running engine receives it. The kill switch is therefore **not a reliable emergency stop** in the deployed system. The reliable stop is stopping the process.
+**What the kill switch is, as built.** A file at `KILL_SWITCH_PATH` that blocks new entries. It fails closed: a file with any content, a directory, a path that cannot be checked (`OSError`), or a path whose nearest existing parent is a file all count as active (`risk/kill_switch.py:22-51`). The risk engine writes it itself when it rejects on the daily-loss or consecutive-loss limit, as JSON `{"reason": ..., "tripped_at": ...}`, and keeps the first reason if it trips again (`risk/kill_switch.py:53-60`, `risk/engine.py:83,86,129`). It does not close positions or stop the process (G-6, G-21). It is armed only when the engine is built from `build_risk_config` (directly or through `build_risk_engine`) with `KILL_SWITCH_ENABLED=true` (`risk/factory.py:22`); `load_config` rejects `KILL_SWITCH_ENABLED=true` without a path in every mode (`config/settings.py:174-175`). No paper or demo runtime builds an engine yet: those modes exit 78, and the paper loop builds its engine without a path (`execution/paper_trading.py:49`, G-3). A CLI backtest never reads or writes this file; it uses its own simulated switch per run (ED-5, `backtest/runner.py:129-143`). The compose `demo` service sets `KILL_SWITCH_PATH=/app/data/KILL_SWITCH`, but no running engine receives it. The kill switch is therefore **not a reliable emergency stop** in the deployed system. The reliable stop is stopping the process.
 
 **Immediate steps.**
 
@@ -167,7 +172,7 @@ Common first moves, in order of safety:
    - `Max daily loss limit reached`: the daily PnL resets only when the trading day changes. Clear it on a later day, not the same day.
    - `Max consecutive losses limit reached`: the streak resets only on a winning trade, and a store-backed engine reloads it from `risk_state` after a restart (gate 11 then trips the switch again). Reset `risk_state` first (§4.7).
 4. Delete the file: `rm data/KILL_SWITCH` (or `rmdir` for a directory). Expected: `ls data/KILL_SWITCH` reports no such file.
-5. Start the service: `sudo systemctl start silver-bot`. Expected: `systemctl status` shows `active`.
+5. Start the service: `sudo systemctl start silver-bot`. Expected today: the bot exits 78 and `systemctl status` shows `failed` with `status=78` (§4.8); once a paper runtime exists, `active`.
 
 **Follow-up.** Record a postmortem (§6) with the JSON reason and `tripped_at`. Position close on trip and a reset command are `Planned` (RFC-002, G-6, G-21).
 
@@ -211,7 +216,7 @@ Common first moves, in order of safety:
 
 **Trigger.** A risk rejection with reason `Max daily loss limit reached` (2% of current equity by default) or `Max consecutive losses limit reached` (3 by default); a `risk_rejected` audit event (`risk/engine.py:81-84`).
 
-**What exists.** Either rejection also trips the kill switch when the engine has a path: it writes `data/KILL_SWITCH` with the reason, so the halt outlasts the day roll and a restart (`risk/engine.py:81-87`, `08c81ad`). It does not close positions or alert (G-6, G-21). An engine built with SQLite storage persists the counters in `risk_state`, so a restart does not clear them; an engine without a store keeps them in memory and a restart clears them (H-11, G-7). Settings limits reach the engine only through `build_risk_engine`, which nothing calls yet; the paper and backtest engines use `RiskConfig` defaults (G-5).
+**What exists.** Either rejection also trips the kill switch when the engine has a path: it writes `data/KILL_SWITCH` with the reason, so the halt outlasts the day roll and a restart (`risk/engine.py:81-87`, `08c81ad`). It does not close positions or alert (G-6, G-21). An engine built with SQLite storage persists the counters in `risk_state`, so a restart does not clear them; an engine without a store keeps them in memory and a restart clears them (H-11, G-7). Settings limits reach an engine only through `build_risk_config`: CLI backtests use it, with a simulated kill switch per run whose trips are reported in `backtest_run.json`; the paper engine still uses `RiskConfig` defaults and nothing calls `build_risk_engine` (G-5).
 
 **Immediate steps.**
 
@@ -245,12 +250,12 @@ Common first moves, in order of safety:
 **Immediate steps.**
 
 1. Stop the service: `sudo systemctl stop silver-bot`.
-2. Read the cause: `docker compose logs --tail 100 bot` (a rejected configuration logs `configuration rejected: ...` and exits with code 2, `main.py:21-25`).
+2. Read the cause: `docker compose logs --tail 100 bot` (a rejected configuration logs `configuration rejected: ...` and exits with code 2, `main.py:55-59`; systemd retries exit 2 every 10 s, so stop the unit first).
 3. Roll back the code: in `/opt/silver-bot`, `git log --oneline` to find the previous commit, then `git checkout <previous-commit>`; rebuild with `docker compose build`.
 4. Roll back configuration: restore the previous `.env` from your own backup (§5.3). If the ML model changed, deactivate it by setting `ML_FILTER_ENABLED=false` (note that the setting does not reach the filter today, so the filter is off regardless; D-4) or by `set_active` on the previous registry entry (`ml/registry.py:104-116`).
 5. Start again: `sudo systemctl start silver-bot`.
 
-**Verification.** `docker compose ps` shows the `bot` container up; `docker inspect --format '{{.State.Health.Status}}' silver-bot-paper` becomes `healthy`; the last audit lines are `bot_started`/`bot_stopped` at the new time; `python -m pytest` passes on the rolled-back commit before it goes back to the host.
+**Verification.** The last audit lines are `bot_started`, `mode_unavailable` and `bot_stopped` with `exit_code` 78 at the new time, and `systemctl status` shows `failed` with `status=78` (§4.8), not a restart; a 2 in `bot_stopped` means the configuration is still rejected. `python -m pytest` passes on the rolled-back commit before it goes back to the host. Once a paper runtime exists, `docker compose ps` shows the `bot` container up and `docker inspect --format '{{.State.Health.Status}}' silver-bot-paper` becomes `healthy`.
 
 **Follow-up.** Add the failure to the QAD gap register if a test would have caught it; update BUILD notes.
 
@@ -258,7 +263,7 @@ Common first moves, in order of safety:
 
 **Trigger.** A store-backed engine is blocked by persisted state that no longer matches reality. Two cases need it: `open_positions` is 1 or more after a crash or restart with an open paper trade (paper positions are not persisted, so nothing will release it; every entry is rejected with `Max open positions limit reached`), or the row is unreadable and every request is rejected with `Risk state could not be loaded; trading halted` (`risk/engine.py:41-42`, `storage/sqlite.py:283-319`). A consecutive-loss streak the owner has reviewed and accepted (§4.1, clear step 3) is the third case. Do not reset to escape a daily-loss limit on the same day.
 
-**What the reset does.** Deleting row 1 makes the next engine start from a fresh `RiskState`: daily PnL 0, streak 0, trades today 0, open positions 0 (`storage/sqlite.py:297-298`, `risk/engine.py:36`). It removes today's daily-loss record too. A running engine keeps its in-memory state and writes it back on its next save, so the bot must be stopped first. Today no runtime uses a store (G-3), so this applies to library runs that call `build_risk_engine(config, storage)`.
+**What the reset does.** Deleting row 1 makes the next engine start from a fresh `RiskState`: daily PnL 0, streak 0, trades today 0, open positions 0 (`storage/sqlite.py:297-298`, `risk/engine.py:36`). It removes today's daily-loss record too. A running engine keeps its in-memory state and writes it back on its next save, so the bot must be stopped first. Today no runtime uses a store (CLI backtests keep risk state in memory per run; paper and demo exit 78; G-3), so this applies to library runs that call `build_risk_engine(config, storage)`.
 
 **Steps.**
 
@@ -267,17 +272,34 @@ Common first moves, in order of safety:
 3. Inspect the row: `sqlite3 data/silver_bot.sqlite3 "SELECT * FROM risk_state;"`. Expected: one row `1|<day>|<pnl>|<losses>|<trades>|<open>|<updated_at>`, or nothing. Without the `sqlite3` CLI: `python -c "import sqlite3; print(sqlite3.connect('data/silver_bot.sqlite3').execute('SELECT * FROM risk_state').fetchall())"`.
 4. Delete it: `sqlite3 data/silver_bot.sqlite3 "DELETE FROM risk_state WHERE id = 1;"`. Without the CLI: `python -c "import sqlite3; c=sqlite3.connect('data/silver_bot.sqlite3'); c.execute('DELETE FROM risk_state WHERE id = 1'); c.commit()"`. Expected: step 3 now prints nothing.
 5. If `data/KILL_SWITCH` exists, clear it as in §4.1 only once its cause is resolved.
-6. Start the service: `sudo systemctl start silver-bot`. Expected: `systemctl status` shows `active`.
+6. Start the service: `sudo systemctl start silver-bot`. Expected today: exit 78 and `failed` with `status=78` (§4.8); once a paper runtime exists, `active`.
 
 Use the path in `DATABASE_PATH` if it is not the default `data/silver_bot.sqlite3`.
 
 **Follow-up.** Record the old row values and the reason in a postmortem (§6).
 
+### 4.8 Bot service exits 78
+
+**Trigger.** `sudo systemctl status silver-bot` shows `failed` with `code=exited, status=78`, or `docker compose up bot` ends with exit code 78.
+
+**What it means.** Exit 78 (`EXIT_MODE_UNAVAILABLE`, `main.py:25`; the number is `EX_CONFIG` in BSD `sysexits.h`) means the configured mode has no runtime yet. Paper and demo exit 78 until real market data exists (G-13); nothing was traded and no state changed. The supervisors stop on purpose: `--exit-code-from bot` hands the bot's code to systemd (without it `docker compose up` exits 0 and systemd would restart it), `RestartPreventExitStatus=78` blocks the restart, and compose `bot` has `restart: "no"` (`deploy/systemd/silver-bot.service:11,15`, `docker-compose.yaml:32`). This is expected today, not an incident.
+
+**Immediate steps.**
+
+1. Confirm the cause: `sudo journalctl -u silver-bot -n 50` shows `paper mode not available yet: needs market data (G-13)` (or `demo`); `grep '"event_type": "mode_unavailable"' logs/audit.jsonl` shows the event and the next `bot_stopped` line has `"exit_code": 78`. Expected: both present.
+2. Do not work around it. Do not set `TRADING_MODE=live` or `LIVE_TRADING=true` (rejected at load, exit 2), and do not remove `RestartPreventExitStatus=78` (that brings back the restart loop, H-4). Setting the `bot` service to backtest mode is not a paper bot either; run backtests with the `backtest` profile (§5.5).
+3. Optional, until a paper runtime exists: `sudo systemctl disable silver-bot` so boot does not start a unit that only exits 78, and `sudo systemctl reset-failed silver-bot` to clear the failed state. Expected: `systemctl is-enabled silver-bot` prints `disabled`.
+4. If the status is not 78: 2 means rejected arguments, configuration or candle data (go to §4.6, and note that systemd retries 2 every 10 s until stopped); 0 is not expected from the `bot` service.
+
+**Verification.** `systemctl status silver-bot` shows no new start after the failure; `grep -c '"event_type": "bot_started"' logs/audit.jsonl` does not grow.
+
+**Follow-up.** None while G-13 is open. When a paper runtime lands, re-check this section and §0.
+
 ## 5. Routine Operations
 
 ### 5.1 Daily and weekly
 
-Daily (owner, a few minutes): confirm the service is in the expected state (`sudo systemctl status silver-bot`, `docker compose ps`); read the tail of `logs/audit.jsonl`; check the restart count (`grep -c '"event_type": "bot_started"' logs/audit.jsonl`); note disk use of `logs/` and `data/`.
+Daily (owner, a few minutes): confirm the service is in the expected state (`sudo systemctl status silver-bot`, `docker compose ps`); read the tail of `logs/audit.jsonl`; check the start count (`grep -c '"event_type": "bot_started"' logs/audit.jsonl`; it should not grow by itself) and expect a `failed` unit with status 78 while paper has no runtime (§4.8); note disk use of `logs/` and `data/`.
 
 Weekly: review `risk_rejected` and `signal_rejected` reasons; confirm `.env` mode 600 and no tracked secrets; run the readiness checkers for the mode in use (`python -m silver_bot.demo_readiness` for demo); review dependency and base-image updates.
 
@@ -313,7 +335,7 @@ Nothing automates backups. Back up by hand, or with the owner's own schedule:
 First setup (from the old VPS checklist, kept where it matches the files):
 
 1. Create the VPS, add an SSH key, update packages, install Docker and Docker Compose.
-2. Create the service user the unit expects: `User=silverbot Group=docker` (`silver-bot.service:15-16`). No file in the repository creates it (G-26); create it by hand and give it ownership of the install directory.
+2. Create the service user the unit expects: `User=silverbot Group=docker` (`silver-bot.service:16-17`). No file in the repository creates it (G-26); create it by hand and give it ownership of the install directory.
 3. Clone the private repository to `/opt/silver-bot` (the unit and logrotate file hard-code this path).
 4. Create `.env`, confirm it is not committed, run `sh deploy/scripts/prepare-host.sh`, keep `LIVE_TRADING=false`. Bind mounts are owned by the host user and the container user's UID is not pinned, so permission errors on `./data` are possible (G-26).
 5. Build with `docker compose build` and run the tests (`python -m pytest`) before deploying.
@@ -326,11 +348,23 @@ First setup (from the old VPS checklist, kept where it matches the files):
    sudo systemctl start silver-bot
    ```
 
+   Expected today: the bot exits 78 and the unit shows `failed` with `status=78` (§4.8); it is not restarted.
 7. Install log rotation (§5.2) and watch the logs: `sudo journalctl -u silver-bot -f`.
 
 Security checklist (carried from the old deployment document): the API key has withdrawals disabled, IP restriction where possible and minimum permissions; the repository contains no keys, tokens, private keys, account screenshots or `.env`; the image contains no `.env`, no `config.yaml` with secrets and no runtime SQLite files (`.dockerignore:1-21`). The unit has no sandboxing and the compose file has no `read_only`, `cap_drop` or resource limits (S-33); treat the host as the trust boundary.
 
 Updates: stop the service, back up (§5.3), `git pull`, `docker compose build`, run the tests, start the service, verify as in §4.6. Keep the previous commit id so rollback is a checkout.
+
+### 5.5 Run a backtest in the container
+
+The `backtest` and `research` services run `python -m silver_bot --candles /app/data/candles` with `TRADING_MODE=backtest`, `PAPER_TRADING=false` and `LIVE_TRADING=false` (`docker-compose.yaml:65-85`); `research` also forces the ML filter off. Download and unzip the candle files first ([runbook-backtest.md](runbook-backtest.md) steps 1 to 4).
+
+1. Put the CSV files on the host in `./data/candles/` (bind-mounted to `/app/data/candles`). Expected: `ls data/candles/*.csv` lists them.
+2. Check `.env`: `MODE` must be blank or `backtest`. The shipped `.env.example` sets `MODE=paper`, and a non-blank `MODE` overrides `TRADING_MODE` from every source (D-42), so the run would load as paper with `PAPER_TRADING=false` and exit 2 with `PAPER_TRADING must be true when TRADING_MODE=paper`. Set `SYMBOL` and `TIMEFRAME` in `.env` to match the files (defaults `BTCUSDT`, `1m`).
+3. Build and run: `docker compose build`, then `docker compose --profile backtest run --rm backtest; echo $?`. Expected: log lines `wrote <name>: reports/<file>` for six files, `backtest complete: N candles, G gaps`, and `0`.
+4. Read the reports on the host in `./reports/` ([runbook-backtest.md](runbook-backtest.md) step 7). Expected: six files.
+
+If the container cannot write `./reports` or `./data`, the bind-mount owner does not match the container user (UID not pinned; U-9, G-26). The `bot` service is not affected by these runs. No profile runs paper or demo.
 
 Command source check (old emergency commands kept only where they match): `sudo systemctl stop|restart silver-bot` matches the unit name `silver-bot.service`; `sudo journalctl -u silver-bot -f` matches it; `docker compose down` matches `docker-compose.yaml` (project name `silver-bot`); the old image name `ict-silver-bullet-bot` does not match (compose builds `silver-bot:local`) and is dropped.
 
@@ -350,14 +384,15 @@ Corrective actions: owner, due date, linked G-# or Change Record
 Tests or docs added (QAD-T# or section)
 ```
 
-Incidents to date: none yet. The repository has no live or paper runtime incident history. Known standing hazards that would have been incidents are tracked as gaps: kill switch not armed at runtime (G-6), restart loop (G-3), no alert transport (G-15). NaN approval (G-8) was fixed in `8e66054`.
+Incidents to date: none yet. The repository has no live or paper runtime incident history. Known standing hazards that would have been incidents are tracked as gaps: kill switch not armed at runtime (G-6), no alert transport (G-15). NaN approval (G-8) was fixed in `8e66054`; the restart loop (H-4) in `f6bc017`.
 
 ## 7. Self-Check
 
 - [x] Every runbook step uses a command that matches a file in the repository (compose service names `bot`, `paper`, `demo`, `backtest`, `research`; container `silver-bot-paper`; unit `silver-bot.service`; `deploy/` paths).
 - [x] The kill switch is described as a fail-closed file check that is inert without a configured path, trips itself on the daily-loss and consecutive-loss limits, and has no emergency shutdown; clearing it and resetting `risk_state` are numbered steps (§4.1, §4.7).
 - [x] Telegram is described as having no transport and not wired; no SLO claims alert delivery.
-- [x] The restart loop, the in-memory versus persisted risk state and the `open_positions` reset case are called out where they change the procedure.
+- [x] Exit 78 and the supervisor behaviour (no restart), the in-memory versus persisted risk state and the `open_positions` reset case are called out where they change the procedure (§0, §4.8).
+- [x] The container backtest steps were checked against `docker-compose.yaml`; the `MODE` override was reproduced locally with `.env.example`, but `docker compose` was not run on this host.
 - [x] SLIs the code does not measure are marked `Open`; no number was invented.
 - [x] The incident flowchart is a Mermaid block; no other diagram was added.
 - [ ] The runbook has been exercised on a VPS; it has not (no runtime exists), so the steps are verified against files only.

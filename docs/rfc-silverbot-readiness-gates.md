@@ -7,7 +7,7 @@
 **Author:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 1, 3.2, 3.4, 3.6 and 4 to 8 re-checked 2026-10-09 against `70ccaec` (G-2 fix `88220e6`, G-10 fix `0a76564`, G-4 fix `c6d909d`, G-5 and G-6 load rules `5e4acc5`, `08c81ad`)
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 1, 3.2, 3.4, 3.6 and 4 to 8 re-checked 2026-10-09 against `70ccaec` (G-2 fix `88220e6`, G-10 fix `0a76564`, G-4 fix `c6d909d`, G-5 and G-6 load rules `5e4acc5`, `08c81ad`); the G-1 and G-3 rows in section 7.2 re-checked 2026-10-09 against `099085b`
 **PRD Reference:** [prd-silverbot.md](prd-silverbot.md) PRD-F8 (readiness gates), PRD-F5 (demo/testnet mode), PRD-F12 (live trading, `Planned, blocked`)
 **SDD Reference:** [sdd-silverbot.md](sdd-silverbot.md) §3.4 (configuration reference), §4.2 and §4.3 (exchange adapter), §5.1 (live-trading block), §5.2 (secrets handling)
 
@@ -261,9 +261,9 @@ Until all ten hold, PRD-F12 stays `Planned, blocked`.
 
 | Ref | Item | Status |
 |-----|------|--------|
-| G-1 | Evidence reports are 0 bytes; no performance statement is possible (D-86, H-2). | Open |
+| G-1 | Evidence reports are 0 bytes; no performance statement is possible (D-86, H-2). The backtest CLI writes the backtest and out-of-sample reports since `099085b`; none exists from real data. | Open |
 | G-2 | Readiness accepted 0-byte reports (H-2). Fixed. Not fixed by this gap: no code consults readiness (D-10, waits on G-3) and the live-ready state is unreachable (H-3, kept by design while live is blocked). | Closed (`88220e6`) |
-| G-3 | No running runtime; the entrypoint is a startup-only stub (D-1, H-4). | Open |
+| G-3 | Backtest runtime and mode dispatch built; paper and demo exit 78 and have no runtime (D-1, D-46). H-4 fixed (`f6bc017`). | Partial (`099085b`) |
 | G-4 | `.env.example` fails `load_config` as shipped (D-2, H-14). | Open |
 | G-10 | Testnet URL guard was a substring match (D-13). Fixed: exact `https` host match. | Closed (`0a76564`) |
 | G-15 | Telegram has no real transport, so the "alerts tested" check proves nothing (D-3). | Open |

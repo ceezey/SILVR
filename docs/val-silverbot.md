@@ -41,12 +41,12 @@ Feature ids are from PRD §3 of [prd-silverbot.md](prd-silverbot.md); statuses a
 | PRD-F3 Risk engine and kill switch | 14 gates implemented | Per-trade cap, settings factory, fail-closed auto-tripping kill switch and SQLite state are built but used by no running bot (G-5, G-6, G-7 partial) |
 | PRD-F4 Paper trading | Paper executor and engine | Market stream, reconnect and REST fallback are skeletons (G-13); no runtime (G-3) |
 | PRD-F5 Demo/testnet | Config rules and readiness checks | All network I/O is a stub (G-13, G-17) |
-| PRD-F6 ML filter | Components and tests; disabled | Not wired (G-9); no model shipped; leakage unchecked (G-22) |
+| PRD-F6 ML filter | Components and tests; disabled | Wired to settings in CLI backtests only (G-9); no model shipped; leakage unchecked (G-22) |
 | PRD-F7 Monitoring | Builders for logs, reports, dashboard JSON | No Telegram transport (G-15); unwired (G-16) |
 | PRD-F8 Readiness | Checkers and report export | Report checks reject empty or non-JSON-object files since `88220e6`; never consulted (D-10) |
 | PRD-F9 Safe config | Typed loader, fail-closed validation | Shipped `.env.example` loads as paper since `c6d909d` (G-4 closed) |
 | PRD-F10 Data and storage | SQLite storage | Historical fetch raises NotImplementedError (G-13, G-14) |
-| PRD-F11 Deployment | Dockerfile, compose, systemd files | Container runs a stub that exits (G-3, G-26) |
+| PRD-F11 Deployment | Dockerfile, compose, systemd files | The paper container exits 78 and is not restarted; no paper runtime (G-3, G-26) |
 | PRD-F12 Live trading | Blocked at config load | `Planned, blocked` |
 
 Feasibility verdict: the foundations are real; running anything end to end is not yet possible. The next evidence step is a cost-inclusive backtest on owner-supplied history (G-1, G-12).
@@ -65,7 +65,7 @@ Source: the old BACKTESTING.md §Pass/Fail Criteria (lines 487-504) and §Red Fl
 | K6 | Trade count is too small to be meaningful | Owner input required (OI-9) | BACKTESTING.md:497 and :516 (no number given) |
 | K7 | Result depends on one lucky trade or one month | Open (no definition in old docs; to be set in QAD) | BACKTESTING.md:498-499, :513-514 |
 | K8 | Walk-forward or Monte Carlo results collapse | Open; neither exists in code (D-6, G-12) | BACKTESTING.md:517-518 |
-| K9 | Out-of-sample results are not acceptable | Open; the split helper is unwired (G-12) | BACKTESTING.md:501 |
+| K9 | Out-of-sample results are not acceptable | Open; the backtest CLI writes a chronological split report, but no pass or fail criteria exist (G-12) | BACKTESTING.md:501 |
 | K10 | Paper trading does not match backtest behaviour | Open (no tolerance defined) | BACKTESTING.md:519 |
 | K11 | Any evidence report is empty or missing | Any of the three report files is 0 bytes | G-1, D-86; the live readiness report checks fail on an empty file since `88220e6` |
 | K12 | Any safety rule is broken in a test or run | Any order without a stop loss, any bypass of the risk engine or kill switch | AGENTS.md safety rules; risk engine rejection at `src/silver_bot/risk/engine.py:54-55` |

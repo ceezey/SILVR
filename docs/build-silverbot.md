@@ -5,7 +5,7 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`; the D-4 and D-11 rows of the deprecations register re-checked 2026-10-09 against `099085b`
 
 This guide tells a coding agent or a human how to build Silver Bot from the canonical docs. It is materialized to the root `AGENTS.md`, which every future session reads first. Safety rules in section 5 are carried over from the previous `AGENTS.md` and must not be weakened.
 
@@ -80,8 +80,8 @@ No version in this table is invented. If `pyproject.toml` or the `Dockerfile` ch
 
 | ID | Old convention (in old docs) | Current code | Use instead |
 |----|------------------------------|--------------|-------------|
-| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Keys parse but have no runtime effect | Treat ML as not wired; see [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) |
-| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_engine` maps all three keys and the kill-switch path into `RiskConfig`. No runtime calls it yet (G-3), and the daily-loss and leverage bounds are checked in demo mode only | Build a runtime engine with `build_risk_engine(config, storage)` (`src/silver_bot/risk/factory.py:15-28`); never hand-build a `RiskConfig` for a running bot; see [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) |
+| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Partly resolved (`f84557e`): the keys reach the filter in CLI backtests only (`src/silver_bot/backtest/runner.py:50-55`); the paper loop ignores them | Treat ML as not wired outside backtests; see [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) |
+| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into `RiskConfig` (`4726cb5`) and CLI backtests use it with a simulated per-run kill switch; nothing calls `build_risk_engine` at runtime yet (G-3), and the daily-loss and leverage bounds are checked in demo mode only | Build a runtime engine with `build_risk_engine(config, storage)` (`src/silver_bot/risk/factory.py:26-33`); a backtest takes `build_risk_config` through `build_backtest_config` (`src/silver_bot/backtest/runner.py:35-57`) and never the real kill-switch path; never hand-build a `RiskConfig` for a running bot; see [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) |
 | D-10 | Live trading is gated by `LIVE_TRADING` plus readiness | `LIVE_TRADING=true` is rejected at load; readiness is never consulted by the entrypoint | Live is `Planned, blocked`; see [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
 
 The full list is in [audit-docs-drift.md](audit-docs-drift.md).
