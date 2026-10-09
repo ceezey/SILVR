@@ -3,12 +3,12 @@
 **Project:** Silver Bot (ICT Silver Bullet trading bot)
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
-**Status:** Draft (design system specified, UI not built)
+**Status:** Draft (design system specified; mode A built per silverbot-cr-001)
 **Last updated:** 2026-10-09
 **Last reconciled:** N/A (not a code-describing doc)
-**Design file:** [Figma](https://www.figma.com/design/g1n3J4j2L1iPrbdjiOS30e/Untitled?node-id=0-1&p=f). It is the working canvas for the section 9 proposal; nothing in it is built or approved.
+**Design file:** [Figma](https://www.figma.com/design/g1n3J4j2L1iPrbdjiOS30e/Untitled?node-id=0-1&p=f). It is the working canvas for the section 9 proposal; it is not a requirement, and mode B in it is not built.
 
-> The bot has no user interface today. Sections 0 to 7 specify the brand and design system that any operator surface must follow (materialized to `BRAND.md` and `DESIGN.md`, section 8). Section 9 is a proposal, not built, and adds no requirement: no PRD feature, user story or acceptance criterion depends on it. Building any UI still needs the Change Record in §9.6. The operator surface that exists is listed in [prd-silverbot.md](prd-silverbot.md) section 5.1 (command-line entrypoints and files only).
+> Mode A, the read-only localhost dashboard, is built (PRD-F13, [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md)); modes B and D are not. Sections 0 to 7 specify the brand and design system that any operator surface must follow (materialized to `BRAND.md` and `DESIGN.md`, section 8). Section 9 is the approved scope of mode A (PRD-F13) and a proposal for mode B, which adds no requirement. Building mode B or any other surface still needs its own Change Record (§9.6). The operator surface that exists is listed in [prd-silverbot.md](prd-silverbot.md) section 5.1 (command-line entrypoints, the dashboard entrypoint and files).
 
 ## 0. Brand Stance
 
@@ -34,7 +34,7 @@ The name is written `silver-bot` on every surface (the package and console-scrip
 
 | Mode | Surface | Status | Character |
 |------|---------|--------|-----------|
-| A | Localhost read-only status dashboard (primary; §9) | Planned, gated by §9.6 | Server-rendered HTML from the standard library (`http.server`, `string.Template`), inline CSS, monospace, bound to `127.0.0.1`. Same grid, tokens and glyphs as mode B. |
+| A | Localhost read-only status dashboard (primary; §9) | Built (PRD-F13) | Server-rendered HTML from the standard library (`http.server`, `string.Template`), inline CSS, monospace, bound to `127.0.0.1`. Same grid, tokens and glyphs as mode B. |
 | B | Terminal status view (secondary) | Planned, gated by §9.6 | Black canvas, box-drawing grids, dense tables, ANSI colour always paired with a status glyph. 80 x 24 minimum. |
 | C | JSON-lines audit log | Built (`monitoring/audit.py`) | One flat JSON object per line, keys sorted, secrets redacted (§4.3). |
 | D | Telegram alerts | Planned (G-15); message text built, no transport | Compact MarkdownV2 messages with monospace dividers (§4.2). |
@@ -79,7 +79,7 @@ Direction arrows `▲` (long) and `▼` (short) may accompany a direction word; 
 
 ### 2.3 Type
 
-Monospace only. Mode A uses the font stack `ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace` and loads no web font. One size for data, bold for panel titles, no italics in data rows. Numbers are right-aligned, use `.` as the decimal mark and carry no thousands separator.
+Monospace only. Mode A uses the font stack `ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace` and loads no web font. One size for data, bold for panel titles, no italics in data rows. Numbers are right-aligned, use `.` as the decimal mark and carry no thousands separator. Mode A waives the right-alignment: each row is label, state, detail, so numbers sit inside left-aligned detail text; they are shown exactly as stored and never rounded ([cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md) V-6).
 
 ## 3. Layout & Spatial System
 
@@ -190,7 +190,7 @@ A UI or alert change passes only if:
 
 Sections 0 and 1 of this document are materialized to `BRAND.md` and sections 2 to 7 to `DESIGN.md` at the repository root by `python tools/materialize_docs.py` (`--check` verifies). Edit this document, never the generated files. The UI builder agent `psl-purist` (SAD-B1 in [sad-silverbot.md](sad-silverbot.md)) builds against sections 2 to 7 and §9.
 
-## 9. Recommended UI (Proposal, not built)
+## 9. Recommended UI (mode A approved and built; mode B proposal)
 
 ### 9.1 Why
 
@@ -229,16 +229,16 @@ The reference layout is in §3.2; it uses these six panels in this order, with t
 
 ### 9.6 Next step
 
-If the owner wants this dashboard, open a Change Record that adds a PRD feature for it, with acceptance criteria and a decision on persisting risk state. Only then do sections 0 to 8 begin. Until that record is approved, this section stays a proposal.
+If the owner wants this dashboard, open a Change Record that adds a PRD feature for it, with acceptance criteria and a decision on persisting risk state. Only then do sections 0 to 8 begin. Until that record is approved, this section stays a proposal. Mode A was approved by [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md) on 2026-10-09.
 
 ## Self-Check
 
-- [x] Status line reads `Draft (design system specified, UI not built)` and the banner states there is no UI today and that the §9.6 gate still applies.
+- [x] Status line reads `Draft (design system specified; mode A built per silverbot-cr-001)` and the banner states that mode A is built and that mode B or any other surface still needs its own Change Record (§9.6).
 - [x] Sections 0 to 7 hold the brand and design system; section 8 names the materialized `BRAND.md` (sections 0 and 1) and `DESIGN.md` (sections 2 to 7).
 - [x] The §3.2 layout shows only real values (report sizes, readiness flags) or an explicit empty state; no invented metric, position or PnL.
 - [x] The §4.2 Telegram example is valid MarkdownV2, uses an event and a rejection reason that exist in the code, and is under 400 characters.
 - [x] The §4.3 audit line matches the keys written by `monitoring/audit.py` and is copied from `logs/audit.jsonl`.
-- [x] Section 9 is labelled a proposal, not built, and states it adds no requirement.
+- [x] Section 9 is labelled as the approved scope of mode A and a proposal for mode B, and states that the proposal adds no requirement.
 - [x] Every panel in §9.3 names a concrete file or SQLite table and says where that source is empty or unproduced.
 - [x] The evidence-reports panel shows byte size and timestamp so 0-byte reports are visible.
 - [x] No order entry, config editing or remote exposure appears in the proposal (§9.5).

@@ -5,7 +5,7 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 4.1, 4.4 and 4.7 and the kill-switch and risk-state statements re-checked 2026-10-09 against `70ccaec`; the opening notes, sections 0 to 2, 4.1, 4.4, 4.6 to 4.8, 5.1, 5.4, 5.5 and 6 re-checked 2026-10-09 against `099085b` (exit 78, supervisors, backtest in the container); the opening notes, sections 2.2, 4.6, 4.8 and 5.5 re-checked 2026-10-09 against `5c781fc` (exit 2 not restarted, `bot_stopped` on a crash, `.env.example` `MODE`)
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; section 5.6 added 2026-10-09 at the `feat/operator-dashboard` head (silverbot-cr-001); sections 4.1, 4.4 and 4.7 and the kill-switch and risk-state statements re-checked 2026-10-09 against `70ccaec`; the opening notes, sections 0 to 2, 4.1, 4.4, 4.6 to 4.8, 5.1, 5.4, 5.5 and 6 re-checked 2026-10-09 against `099085b` (exit 78, supervisors, backtest in the container); the opening notes, sections 2.2, 4.6, 4.8 and 5.5 re-checked 2026-10-09 against `5c781fc` (exit 2 not restarted, `bot_stopped` on a crash, `.env.example` `MODE`)
 
 This runbook says how to run, watch and stop Silver Bot, and what to do when something goes wrong. It absorbs the operational parts of the old `DEPLOYMENT.md` (VPS setup, emergency commands, security checklist). Only commands that work with the code as built are given as steps. Where the intended action is not supported by the code, the runbook says so and gives the manual alternative.
 
@@ -89,7 +89,7 @@ The third command counts starts. Before `f6bc017` a large number meant the resta
 - **SQLite** `data/silver_bot.sqlite3` (WAL mode): `paper_trades`, `paper_events`, `ml_predictions`, plus `candles`, `signals`, `trades`, `logs` which nothing fills today (G-14). Query with the Python standard library; the container has no `sqlite3` command.
 - **Trade journal** (CSV) per trade: ids, symbol, timeframe, session, direction, entry and exit times and prices, stop, target, size, risk amount, realized pnl and R, fees, slippage, exit reason, quality score, ML probability and decision, notes (`monitoring/reports.py:244-272`). The exporter has no caller.
 - **Daily report** keys: date, trades taken, rejected setups, pnl, drawdown, win rate, average R, best and worst trade, rule failures, ML decisions (`reports.py:77-89`). **Weekly report** keys: week start and end, total trades, net pnl, win rate, profit factor, average R, max drawdown, best and worst session, repeated rejection reasons (`reports.py:119-131`). The window starts at the first trade, not at a calendar week. Neither is produced automatically.
-- **Dashboard JSON** has four keys: `daily`, `weekly`, `recent_trades`, `recent_rejections`. It is a JSON export only: no web page, server or redaction (`monitoring/dashboard.py:19-33`).
+- **Dashboard JSON** has four keys: `daily`, `weekly`, `recent_trades`, `recent_rejections`. It is a JSON export only: no web page, server or redaction (`monitoring/dashboard.py:19-33`); the status page in §5.6 does not use it.
 - **Readiness reports**: `python -m silver_bot.demo_readiness` and `python -m silver_bot.readiness` write JSON under `reports/`. They are advisory; nothing reads them (D-10). The three report checks fail an empty, non-JSON or non-object file (`readiness.py:150-177`, H-2 fixed), so empty local reports fail live readiness.
 - **Backtest reports**: a CLI backtest writes `backtest_report.json`, `trades.csv`, `equity_curve.csv`, `rejected_signals.csv`, `out_of_sample_validation_report.json` and `backtest_run.json` into `--output-dir` (default `reports/`, git-ignored). `backtest_run.json` records the inputs, costs and the simulated kill switch (`kill_switch.mode` is `simulated_per_run`); see [runbook-backtest.md](runbook-backtest.md). Never commit them and never quote their numbers as a performance claim.
 - **Container health**: `docker inspect --format '{{.State.Health.Status}}' silver-bot-paper` shows the Dockerfile health check state (`starting`, `healthy`, `unhealthy`) for the `bot` service. Compose defines no check of its own (D-82).
@@ -303,7 +303,7 @@ Daily (owner, a few minutes): confirm the service is in the expected state (`sud
 
 Weekly: review `risk_rejected` and `signal_rejected` reasons; confirm `.env` mode 600 and no tracked secrets; run the readiness checkers for the mode in use (`python -m silver_bot.demo_readiness` for demo); review dependency and base-image updates.
 
-Reports: the daily and weekly report builders, journal exporter and dashboard export exist but nothing schedules or calls them (G-16). Until they are wired, produce a report only by calling the functions from a Python session. Do not treat a missing report as a failure of the bot.
+Reports: the read-only status page (§5.6) shows the current state of the same files. The daily and weekly report builders, journal exporter and dashboard export exist but nothing schedules or calls them (G-16). Until they are wired, produce a report only by calling the functions from a Python session. Do not treat a missing report as a failure of the bot.
 
 ### 5.2 Log rotation
 
@@ -368,6 +368,27 @@ If the container cannot write `./reports` or `./data`, the bind-mount owner does
 
 Command source check (old emergency commands kept only where they match): `sudo systemctl stop|restart silver-bot` matches the unit name `silver-bot.service`; `sudo journalctl -u silver-bot -f` matches it; `docker compose down` matches `docker-compose.yaml` (project name `silver-bot`); the old image name `ict-silver-bullet-bot` does not match (compose builds `silver-bot:local`) and is dropped.
 
+### 5.6 Operator dashboard
+
+A read-only status page for the checks in §5.1 (PRD-F13, [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md)). It shows six panels: the mode and kill-switch banner, readiness, risk budget, positions and trades, recent audit events, and evidence-report health.
+
+1. From the repository root on the host, run `python -m silver_bot.monitoring.dashboard_server` (add `--port N` to change the default 8765). Expected: one line, `silver-bot status: http://127.0.0.1:8765/ (read-only; reading <directory>; Ctrl+C to stop)`. The directory is the one it reads `reports/`, `logs/`, the kill-switch path and the database from, so start it where the bot's files are.
+2. Open `http://127.0.0.1:8765/` in a browser on the same machine. The page is built afresh on each load and never refreshes itself; reload it to see new state.
+3. Stop it with Ctrl+C. Exit 2 means the port is busy or out of range (0 to 65535); pick another with `--port`.
+
+The server listens on `127.0.0.1` only, answers GET only, and has no button or control. The kill switch is still a file the owner creates or deletes (§4.1); the page only shows whether it is active. It writes nothing and shows no secret. When it reads the SQLite database, SQLite may create the `-wal` and `-shm` files beside it (the same files the bot's own connections create); the database file itself is not changed.
+
+Row states:
+
+| Tag | Meaning |
+|---|---|
+| `[ OK ]` | The value is present and fine (a flag that is on, a READY report, a readable evidence file, an event written) |
+| `[ WRN ]` | Look at it: a kill switch enabled with no path (G-6), a stale readiness report or risk-state day, a rejection event, unreadable audit lines |
+| `[ ERR ]` | Unsafe or broken: the kill switch is ACTIVE, a report is missing, 0 bytes or not valid JSON, NOT READY, an `error` event, a rejected configuration, a source that could not be read |
+| `[ OFF ]` | Off or not available: LIVE false, a disabled kill switch, or a source with nothing yet (no database, no audit log, no paper run) |
+
+Panels 3 and 4 stay empty (`[ OFF ]`) until a paper session writes rows to SQLite, which no entrypoint does yet (G-3). An empty panel is not a fault.
+
 ## 6. Postmortems
 
 Template, one file per incident under `docs/`, named `postmortem-silverbot-<date>-<slug>.md`:
@@ -395,4 +416,5 @@ Incidents to date: none yet. The repository has no live or paper runtime inciden
 - [x] The container backtest steps were checked against `docker-compose.yaml`; the `MODE` override was reproduced locally with `.env.example`, but `docker compose` was not run on this host.
 - [x] SLIs the code does not measure are marked `Open`; no number was invented.
 - [x] The incident flowchart is a Mermaid block; no other diagram was added.
+- [x] The operator dashboard section (§5.6) states the start command, URL, read-only behaviour, the four state tags and the SQLite sidecar files, as built in `monitoring/dashboard_server.py` and `monitoring/status.py`.
 - [ ] The runbook has been exercised on a VPS; it has not (no runtime exists), so the steps are verified against files only.

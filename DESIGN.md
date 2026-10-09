@@ -33,7 +33,7 @@ Direction arrows `▲` (long) and `▼` (short) may accompany a direction word; 
 
 ### 2.3 Type
 
-Monospace only. Mode A uses the font stack `ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace` and loads no web font. One size for data, bold for panel titles, no italics in data rows. Numbers are right-aligned, use `.` as the decimal mark and carry no thousands separator.
+Monospace only. Mode A uses the font stack `ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace` and loads no web font. One size for data, bold for panel titles, no italics in data rows. Numbers are right-aligned, use `.` as the decimal mark and carry no thousands separator. Mode A waives the right-alignment: each row is label, state, detail, so numbers sit inside left-aligned detail text; they are shown exactly as stored and never rounded ([cr-silverbot-operator-dashboard.md](docs/cr-silverbot-operator-dashboard.md) V-6).
 
 ## 3. Layout & Spatial System
 

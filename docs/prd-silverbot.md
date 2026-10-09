@@ -5,9 +5,9 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; statements about G-2, G-4 to G-8, G-10 and G-11 re-checked 2026-10-09 against `70ccaec`; section 3 (PRD-F2 to PRD-F6, PRD-F10, PRD-F11), US-05, US-21, US-22, sections 5.1 to 5.5 and section 9 re-checked 2026-10-09 against `099085b` (G-3 entrypoint batch 2); section 3 (PRD-F2, PRD-F9, PRD-F11), US-18, US-21, US-22 and sections 5.1 and 5.5 re-checked 2026-10-09 against `5c781fc` (G-3 review fixes)
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; statements about G-2, G-4 to G-8, G-10 and G-11 re-checked 2026-10-09 against `70ccaec`; section 3 (PRD-F2 to PRD-F6, PRD-F10, PRD-F11), US-05, US-21, US-22, sections 5.1 to 5.5 and section 9 re-checked 2026-10-09 against `099085b` (G-3 entrypoint batch 2); section 3 (PRD-F2, PRD-F9, PRD-F11), US-18, US-21, US-22 and sections 5.1 and 5.5 re-checked 2026-10-09 against `5c781fc` (G-3 review fixes); PRD-F13, US-23 and the dashboard entrypoint added 2026-10-09 at the `feat/operator-dashboard` head (silverbot-cr-001)
 
-This document is the source of truth for what Silver Bot must do, what is built, and in which phases the rest is delivered. It defines the ids `PRD-F1` to `PRD-F12` (features) and `US-01` onward (user stories), and it replaces the old `TODO.md` and `PROGRESS.md` as the feature and phase record. Business context is in [brd-silverbot.md](brd-silverbot.md); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design is in [sdd-silverbot.md](sdd-silverbot.md), the design records are the four RFCs linked in section 3, and the test matrix is in [qad-silverbot.md](qad-silverbot.md); AIA, CLR and OPS are [aia-silverbot.md](aia-silverbot.md), [clr-silverbot.md](clr-silverbot.md) and [ops-silverbot.md](ops-silverbot.md). Status values: Built; Built (caveats); Partial; Stub; Planned; Planned, blocked. No row states a strategy performance result; none exists because the evidence reports stay empty until the owner runs a backtest on real data (G-1, D-86).
+This document is the source of truth for what Silver Bot must do, what is built, and in which phases the rest is delivered. It defines the ids `PRD-F1` to `PRD-F13` (features) and `US-01` onward (user stories), and it replaces the old `TODO.md` and `PROGRESS.md` as the feature and phase record. Business context is in [brd-silverbot.md](brd-silverbot.md); gaps (`G-#`) are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings (`D-#`) and hazards (`H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). The design is in [sdd-silverbot.md](sdd-silverbot.md), the design records are the four RFCs linked in section 3, and the test matrix is in [qad-silverbot.md](qad-silverbot.md); AIA, CLR and OPS are [aia-silverbot.md](aia-silverbot.md), [clr-silverbot.md](clr-silverbot.md) and [ops-silverbot.md](ops-silverbot.md). Status values: Built; Built (caveats); Partial; Stub; Planned; Planned, blocked. No row states a strategy performance result; none exists because the evidence reports stay empty until the owner runs a backtest on real data (G-1, D-86).
 
 ## 1. Purpose & Value Proposition
 
@@ -29,7 +29,7 @@ Honest current state: the building blocks are real and tested (220 collected tes
 | Who | Cian Jake Francisco, the sole developer, operator, funder and decision maker. No customers and no outside funds ([brd-silverbot.md](brd-silverbot.md) §3, §9). |
 | Goals | (1) Find out cheaply whether the method has an edge after costs. (2) Run it consistently with an enforced risk layer. (3) Keep a complete decision log. (4) Never lose more than the risk limits allow while the edge is unproven. |
 | Constraints | Capital, drawdown tolerance, return goal, monitoring hours, jurisdiction and data source are Owner input required (OI-1 to OI-12 in BRD §8). Python 3.11 or newer. Personal machine for development, optional VPS with Docker for unattended runs. |
-| Skills assumed | Comfortable with a terminal, Python virtual environments, `.env` files, Docker Compose basics and reading JSON/CSV reports. No web UI is provided. |
+| Skills assumed | Comfortable with a terminal, Python virtual environments, `.env` files, Docker Compose basics and reading JSON/CSV reports. The only UI is a read-only status page on localhost (PRD-F13); it has no controls. |
 | Non-goals for the persona | No multi-user access, no sharing of the bot, no go-to-market ([brd-silverbot.md](brd-silverbot.md) §6). |
 
 ## 3. Core Features & Priorities
@@ -50,6 +50,7 @@ Priority is MoSCoW for this release. Status comes from the code-verified fact sh
 | PRD-F10 | Market data and storage: historical fetcher, SQLite | Must | Partial | SQLite with eight tables (including `risk_state`) and six writers built and tested; an offline loader for Binance public kline CSV files validates, de-duplicates and sorts candles and counts gaps (`data/csv_loader.py:44-84`, `e5baec7`, 11 tests); the fetcher is a wrapper over a stub that raises `NotImplementedError` (D-8, G-13); `signals` and `trades` tables unused, no candle read API, no migrations (D-9, D-34, D-35, G-14) | N/A |
 | PRD-F11 | Deployment: Docker, compose, systemd, logrotate, host prep, health | Should | Partial | Dockerfile, compose (5 services), systemd unit, logrotate, `prepare-host.sh` and health command exist; 7 file-content tests. Since `f6bc017` the unit runs `up bot --exit-code-from bot` with `RestartPreventExitStatus=2 78` (2 added in `5c781fc`, so exit 2 is not restarted either) and compose `bot` has `restart: "no"`, so the paper container exits 78 once and is not restarted (H-4 fixed); `backtest` and `research` read `/app/data/candles` (`docker-compose.yaml:73,84`). No paper runtime to supervise (G-3 partial); `silverbot` user never created (D-50); no hardening (G-26); health checks config only (D-82, G-27) | N/A |
 | PRD-F12 | Live trading | Won't (this release) | Planned, blocked | Rejected unconditionally at config load (`config/settings.py:105-108`); order methods raise `OrderPlacementDisabled` (`exchange/base.py:44-52`); no live executor (G-17) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
+| PRD-F13 | Operator dashboard: read-only status page on localhost | Should | Built (caveats) | Six panels from files and SQLite, served on 127.0.0.1 (`monitoring/status.py`, `monitoring/dashboard_server.py`); panels 3 and 4 stay empty until a paper session runs (G-3) | [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md) |
 
 ## 4. User Stories & Acceptance Criteria
 
@@ -273,11 +274,23 @@ Each acceptance criterion (AC) is Given/When/Then. A test reference `tests/<file
 - AC-22.4 Given a bad flag, `--candles` outside backtest mode, backtest mode without `--candles`, or a malformed CSV, when it starts, then it exits 2. Tests: `tests/test_main.py::test_unknown_flag_exits_2`, `tests/test_main.py::test_candles_flag_outside_backtest_is_usage_error`, `tests/test_main.py::test_backtest_without_candles_is_usage_error`, `tests/test_main.py::test_backtest_with_bad_csv_returns_2`.
 - AC-22.3 Given a rejected configuration, when `python -m silver_bot.health` runs, then it exits 2. Not covered (G-28, G-27).
 
-Story counts: 22 stories. Each of PRD-F1 to PRD-F11 has at least one story. PRD-F12 has none because it is out of scope (§6).
+### PRD-F13 Operator dashboard
+
+**US-23** As the owner, I want one local read-only page that shows mode, kill switch, readiness, risk state, paper activity, recent audit events and evidence-file health, so that I can check the bot's safety state without opening files by hand.
+
+- AC-23.1 Given the server is running, when the owner requests `GET /` from the same machine, then the page shows six panels in the [dsd-silverbot.md](dsd-silverbot.md) §3.2 order with the safety banner first. Test: `tests/test_dashboard_server.py::test_page_shows_six_panels_in_layout_order_with_banner_first`.
+- AC-23.2 Given any request, when the server handles it, then a method other than GET gets 405, and no file under `data/`, `reports/`, `logs/` or the kill-switch path is created or changed, except the `-wal` and `-shm` sidecar files that SQLite itself creates for any reader of a WAL-mode database (the database file's bytes are unchanged). Tests: `tests/test_dashboard_server.py::test_serving_changes_no_source_file`, `tests/test_dashboard_server.py::test_other_methods_get_405`.
+- AC-23.3 Given an evidence report that is missing, 0 bytes or not valid JSON, when the page renders, then that row shows `[ ERR ]` and no metric from it. Test: `tests/test_dashboard_status.py::test_evidence_rows_flag_missing_empty_and_invalid`.
+- AC-23.4 Given API keys and a Telegram token in the configuration, when the page renders, then neither value appears anywhere in the response. Test: `tests/test_dashboard_server.py::test_secrets_never_reach_the_page`.
+- AC-23.5 Given an empty `risk_state`, `paper_trades` or `paper_events` table, when the page renders, then the panel shows its stated empty state and no invented value. Test: `tests/test_dashboard_status.py::test_sqlite_panels_empty_when_database_missing`.
+- AC-23.6 Given the server is started, when it binds, then it listens on `127.0.0.1` only, and a request whose `Host` header is not `127.0.0.1` or `localhost` (with the server port) gets 400. Tests: `tests/test_dashboard_server.py::test_server_binds_loopback_only`, `tests/test_dashboard_server.py::test_foreign_host_header_gets_400`.
+- AC-23.7 Given one source that raises on read, when the page renders, then only that panel shows `[ ERR ] unreadable` with the exception type, and the other panels render. Test: `tests/test_dashboard_status.py::test_one_unreadable_source_only_breaks_its_panel`.
+
+Story counts: 23 stories. Each of PRD-F1 to PRD-F11 and PRD-F13 has at least one story. PRD-F12 has none because it is out of scope (§6).
 
 ## 5. Operator Flow & UX Intent
 
-The product has no web UI. The operator works through a terminal, environment files, JSON/CSV reports and (planned) Telegram messages.
+The only UI is a read-only status page on `127.0.0.1` (PRD-F13); it has no controls. The operator otherwise works through a terminal, environment files, JSON/CSV reports and (planned) Telegram messages.
 
 ### 5.1 Operator Surface Inventory
 
@@ -289,7 +302,8 @@ The product has no web UI. The operator works through a terminal, environment fi
 | `python -m silver_bot.readiness` | `--output` (default `reports/live_readiness_report.json`) | Runs 15 live-readiness checks from process environment only; writes the report. Report-only; never enables live trading (`readiness.py:126-147`). | 0 ready; 2 not ready |
 | `python -m silver_bot.demo_readiness` | `--output` (default `reports/demo_readiness_report.json`) | Runs 18 demo-readiness checks from `.env` overlaid by process environment; writes the report (`demo_readiness.py:99-111`). | 0 ready; 2 not ready |
 | `python -m silver_bot.health` | none | Loads config; no output, no connectivity or database check (`health.py:8-21`). Used by the Dockerfile `HEALTHCHECK`. | 0 ok; 2 `ConfigError`; 3 live flag (unreachable) |
-| `pytest` | standard pytest arguments | Runs the 220 collected tests in `tests/` (`pyproject.toml`: `pythonpath=["src"]`, `testpaths=["tests"]`). | pytest codes |
+| `python -m silver_bot.monitoring.dashboard_server` | `--port N` (default 8765; 0 to 65535) | Read-only status page: serves six panels on `127.0.0.1` only, built afresh on each `GET /`; reads config, reports, the audit log and SQLite (read-only) and writes nothing (`monitoring/dashboard_server.py`, `monitoring/status.py`). Reads the current directory; prints the URL and that directory. | 0 stopped by the owner; 2 busy or out-of-range port |
+| `pytest` | standard pytest arguments | Runs the 271 collected tests in `tests/` (`pyproject.toml`: `pythonpath=["src"]`, `testpaths=["tests"]`). | pytest codes |
 
 Not present: any paper runner, demo runner, report scheduler, model training entry point, or kill-switch command (G-3, G-16, G-22, G-6). Paper and ML pipelines are libraries called from tests only. There is no network data download; the owner fetches Binance kline files by hand ([runbook-backtest.md](runbook-backtest.md)).
 
@@ -420,7 +434,7 @@ The application logger (`utils/logging.py`) writes plain text (`asctime level na
   5. An explicit owner decision recorded as a change record; this is a separate decision from this release (BRD §6).
 - Selling or licensing the bot, multi-user operation, custody of other people's funds and any go-to-market activity.
 - Strategies other than ICT Silver Bullet; instruments other than the configured symbol for the first evidence run.
-- A web dashboard or UI (only a JSON export exists, D-49).
+- Any UI other than the read-only localhost dashboard (PRD-F13): a terminal status view and any control surface are out of scope.
 - Funding-rate modelling, trailing stops and session-end exits (G-20, G-21).
 
 ## 7. ML Feature Specification
@@ -558,7 +572,7 @@ Phases are carried from the old `TODO.md` and re-validated against the code at t
 - [~] Add Telegram error alerts (method exists, never called; D-47, G-15)
 - [~] Add daily report (builder, no caller; D-48, G-16)
 - [~] Add weekly report (builder, no caller; D-48, G-16)
-- [~] Add dashboard (JSON export only, no UI; D-49, G-16)
+- [~] Add dashboard (JSON export has no caller, D-49, G-16; the read-only localhost page is built as PRD-F13)
 
 ### Phase 8: Deployment (PRD-F11)
 
@@ -620,8 +634,8 @@ Corrected from the old "Next Recommended" list and ordered by the SCRUTINY verdi
 
 ## Self-Check
 
-- [x] PRD-F1 to PRD-F12 appear in §3 with the status taken from the code-verified fact sheets, and the §3 status values are all from the allowed set.
-- [x] Each of PRD-F1 to PRD-F11 has at least one user story, and every acceptance criterion is Given/When/Then.
+- [x] PRD-F1 to PRD-F13 appear in §3 with the status taken from the code-verified fact sheets, and the §3 status values are all from the allowed set.
+- [x] Each of PRD-F1 to PRD-F11 and PRD-F13 has at least one user story, and every acceptance criterion is Given/When/Then.
 - [x] Every cited test name was checked by grep for `def <name>` under `tests/`; untested criteria say "Not covered (G-#)" with an existing gap id.
 - [x] The operator surface lists only entrypoints, flags and files that exist, and the mode model reflects fail-closed rejection of live trading.
 - [x] Every `TODO.md` checkbox is carried into §9; items that the code shows as stub or partial are marked `[~]` with a `D-#`, and Phase 9 evidence items stay `[ ]`.

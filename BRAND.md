@@ -28,7 +28,7 @@ The name is written `silver-bot` on every surface (the package and console-scrip
 
 | Mode | Surface | Status | Character |
 |------|---------|--------|-----------|
-| A | Localhost read-only status dashboard (primary; §9) | Planned, gated by §9.6 | Server-rendered HTML from the standard library (`http.server`, `string.Template`), inline CSS, monospace, bound to `127.0.0.1`. Same grid, tokens and glyphs as mode B. |
+| A | Localhost read-only status dashboard (primary; §9) | Built (PRD-F13) | Server-rendered HTML from the standard library (`http.server`, `string.Template`), inline CSS, monospace, bound to `127.0.0.1`. Same grid, tokens and glyphs as mode B. |
 | B | Terminal status view (secondary) | Planned, gated by §9.6 | Black canvas, box-drawing grids, dense tables, ANSI colour always paired with a status glyph. 80 x 24 minimum. |
 | C | JSON-lines audit log | Built (`monitoring/audit.py`) | One flat JSON object per line, keys sorted, secrets redacted (§4.3). |
 | D | Telegram alerts | Planned (G-15); message text built, no transport | Compact MarkdownV2 messages with monospace dividers (§4.2). |

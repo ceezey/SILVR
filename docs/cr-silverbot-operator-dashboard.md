@@ -4,7 +4,7 @@
 **Project:** Silver Bot (ICT Silver Bullet trading bot)
 **Version:** 0.1
 **Author:** Cian Jake Francisco
-**Status:** Proposed (awaiting owner approval)
+**Status:** Approved and built (2026-10-09)
 **Last updated:** 2026-10-09
 **Base commit:** `f8a51b4` on `dev`
 **PRD Reference:** [prd-silverbot.md](prd-silverbot.md) PRD-F7 (monitoring), new PRD-F13 (this record)
@@ -28,6 +28,7 @@ The page has no control surface. Any button that places an order, flips a flag o
 | V-3 | DSD §9.3 panels 3 and 4: "cannot be built truthfully before the unwired pieces exist" | Both panels are built now as read-only views with explicit empty states; they fill when a paper run writes rows | Persisted risk state exists (`risk_state`, commit `2d7f713`); the remaining gap is a running bot (G-3), handled by record 3 |
 | V-4 | SAD-B1 card: "Gate first ... write nothing" for all UI work | The gate sentence is dropped for the PRD-F13 scope and kept for mode B and any other surface | [sad-silverbot.md](sad-silverbot.md) §6 re-reconcile rule for SAD-B1 |
 | V-5 | `monitoring/dashboard.py` builds a dashboard JSON payload | Not reused; it stays as is | Its inputs (daily and weekly reports) have no producer (G-16), so reusing it would show nothing; the new page reads the sources directly |
+| V-6 | DSD §2.3: numbers are right-aligned | Waived for mode A: each row is label, state, detail, so numbers appear inside left-aligned detail text; they are shown exactly as stored and never rounded | The row layout has no numeric column; exact stored values matter more than alignment |
 
 ## 3. Changes
 
@@ -53,14 +54,14 @@ Three units, each testable alone. All code is standard library only (`pyproject.
 
 | Unit | File | Responsibility |
 |---|---|---|
-| Collect | `src/silver_bot/monitoring/status.py` | `collect_status(config, root) -> dict`: one collector per panel, each returning a state (`ok`, `warn`, `err`, `off`, `empty`) and the values to show. Each collector runs in its own `try`/`except` (AC-23.7). |
+| Collect | `src/silver_bot/monitoring/status.py` | `collect_status(root, *, load=load_config, now=None) -> dict`: one collector per panel, each returning rows whose state is one of `ok`, `warn`, `err`, `off`, `plain` and the values to show. Each collector runs in its own `try`/`except` (AC-23.7). |
 | Render | `src/silver_bot/monitoring/dashboard_server.py` | `render_page(status) -> str`: `string.Template` with `html.escape` on every value, inline CSS from the DSD §2 tokens, glyph plus word for every state ([dsd-silverbot.md](dsd-silverbot.md) §4.1, §6). No I/O. |
 | Serve | `src/silver_bot/monitoring/dashboard_server.py` | `main()`: `ThreadingHTTPServer` on `127.0.0.1`, started with `python -m silver_bot.monitoring.dashboard_server [--port N]` (default 8765). Each `GET /` collects and renders afresh. |
 
 Read-only rules:
 
 - SQLite is opened read-only (a `file:` URI built from `database_path` with `mode=ro`), so the dashboard cannot write. A missing database file is the empty state, not a new file. The database uses WAL journaling (`storage/sqlite.py`), and SQLite creates the `-wal` and `-shm` sidecar files for any reader, read-only or not; the bot's own connections create the same files, and the database file itself is not modified.
-- Settings come from the existing `load_config`. Only an allow-list is copied into the status dict: `mode`, `live_trading`, `paper_trading`, `demo_trading`, `kill_switch_enabled`, `kill_switch_path`, `database_path`, `symbol`, `timeframe`, `max_daily_loss`, `max_risk_per_trade`. `api_key`, `api_secret`, `telegram_bot_token` and `telegram_chat_id` never enter it (AC-23.4).
+- Settings come from the existing `load_config`. Only an allow-list is copied into the status dict: the banner reads `mode`, `live_trading`, `paper_trading`, `demo_trading`, `kill_switch_enabled` and `kill_switch_path`; the SQLite panels read `database_path`, `max_daily_loss` and `max_risk_per_trade`. `api_key`, `api_secret`, `telegram_bot_token` and `telegram_chat_id` never enter it (AC-23.4).
 - The kill switch is read with `KillSwitch(path).is_active()`, which never writes; the file's `reason` and `tripped_at` are read if it holds JSON.
 - Audit lines pass through `redact_secrets` from `monitoring/audit.py` before rendering, and the page shows only their `created_at`, `event_type` and `message`. A rejected configuration shows the `ConfigError` message as is: every such message in `config/settings.py` names the setting, never its value.
 - The page refreshes only when the owner reloads it ([dsd-silverbot.md](dsd-silverbot.md) §5). No script, polling or animation.

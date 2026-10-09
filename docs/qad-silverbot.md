@@ -5,9 +5,9 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-09 against code at commit `5c781fc` (G-3 review fixes added 2 test functions, rows QAD-T206 and QAD-T207, renamed the QAD-T187 test and rewrote its scenario, and updated QAD-T200; G-3 entrypoint batch 2 at `099085b` added 33 test functions, rows QAD-T174 to QAD-T204, and closed QAD-T78, QAD-T84 and QAD-T85; QAD-T205 maps the DSD materialization test added in `b7f0546`; section 3.3 and PRD-F7 counts corrected for QAD-T172 and QAD-T173; HIGH safety fixes batch 1 added 36 at `70ccaec`; other rows are unchanged since `62037d1`)
+**Last reconciled:** 2026-10-09 against code at commit `5c781fc` (the PRD-F13 operator dashboard added 44 test functions in `tests/test_dashboard_status.py` and `tests/test_dashboard_server.py`, rows QAD-T208 to QAD-T251, verified at the `feat/operator-dashboard` head on `b24faf5`; G-3 review fixes added 2 test functions, rows QAD-T206 and QAD-T207, renamed the QAD-T187 test and rewrote its scenario, and updated QAD-T200; G-3 entrypoint batch 2 at `099085b` added 33 test functions, rows QAD-T174 to QAD-T204, and closed QAD-T78, QAD-T84 and QAD-T85; QAD-T205 maps the DSD materialization test added in `b7f0546`; section 3.3 and PRD-F7 counts corrected for QAD-T172 and QAD-T173; HIGH safety fixes batch 1 added 36 at `70ccaec`; other rows are unchanged since `62037d1`)
 
-This document is the test plan for Silver Bot. It maps all 181 existing test functions (220 collected tests) to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. Related documents: [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [build-silverbot.md](build-silverbot.md) and the [index](index.md).
+This document is the test plan for Silver Bot. It maps all 225 existing test functions (271 collected tests) to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. Related documents: [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [build-silverbot.md](build-silverbot.md) and the [index](index.md).
 
 Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`), [sdd-silverbot.md](sdd-silverbot.md), [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) and [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (RFC-004, the mode-gate conditions).
 
@@ -15,7 +15,7 @@ Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`
 
 **Strategy.** Tests are pytest unit and component tests that run offline. Exchange access is never needed because the adapter does no network I/O (G-13, G-17); order placement and cancellation are blocked and raise `OrderPlacementDisabled`. No test needs a real API key; tests that exercise credentials use dummy strings and assert they never appear in logs or reports. Telegram is exercised through an in-memory client, not a network call. Tests build their own data (synthetic candles, temporary files), so none depends on a prior run.
 
-**In scope.** Every module under `src/silver_bot/` that the 23 test files import: strategy, backtest (engine and runner), risk, paper execution, config, readiness, demo readiness, exchange adapter, storage, the kline CSV loader, the entrypoint `main()`, ML (dataset, training, registry, calibration, promotion, filter) and monitoring. The Docker, compose, systemd and `.dockerignore` files are checked as text.
+**In scope.** Every module under `src/silver_bot/` that the 25 test files import: strategy, backtest (engine and runner), risk, paper execution, config, readiness, demo readiness, exchange adapter, storage, the kline CSV loader, the entrypoint `main()`, ML (dataset, training, registry, calibration, promotion, filter) and monitoring, including the operator dashboard (`tests/test_dashboard_status.py` for the collectors, `tests/test_dashboard_server.py` for the render and the server). The Docker, compose, systemd and `.dockerignore` files are checked as text.
 
 **Out of scope today.** `health.py`, `prepare-host.sh` and the logrotate file have no tests (G-28); `main()` is tested since `099085b`. Network behaviour, real fills, a long-running paper process and performance cannot be tested because they do not exist yet (G-3, G-13, G-17); supervisor restart behaviour is checked only as unit and compose file text (QAD-T200, QAD-T201). These are recorded as Not covered rows in section 3.8, not hidden.
 
@@ -39,27 +39,27 @@ Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`
 
 **Data.** All tests use synthetic candles and in-code fixtures, including small Binance-format CSV files written to `tmp_path`. No historical dataset ships with the repository, and the owner has not yet chosen a data source (OI-8 in the BRD). Real-data runs are therefore not part of this suite (section 3.7).
 
-**Baseline result (verbatim).** Run on 2026-10-09 with `python -m pytest -q` from the repository root (Python 3.14.3) on `dev` at `5c781fc` plus this docs change:
+**Baseline result (verbatim).** Run on 2026-10-09 with `python -m pytest -q` from the repository root (Python 3.14.3) on the `feat/operator-dashboard` head (`dev` at `b24faf5` plus the PRD-F13 code, tests and this docs change):
 
 ```text
 ........................................................................ [ 32%]
 ........................................................................ [ 65%]
 ........................................................................ [ 98%]
 ....                                                                     [100%]
-220 passed in 4.83s
+271 passed in 12.45s
 ```
 
-Earlier baselines: `218 passed` at `099085b`, `169 passed` at `70ccaec`, `170 passed` at `f8a51b4`. The 2026-10-08 baseline at `62037d1` was `108 passed in 1.57s`, run with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` in the original checkout path.
+Earlier baselines: `220 passed` at `5c781fc`, `218 passed` at `099085b`, `169 passed` at `70ccaec`, `170 passed` at `f8a51b4`. The 2026-10-08 baseline at `62037d1` was `108 passed in 1.57s`, run with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` in the original checkout path.
 
-The count is 181 test functions in 23 files (`^def test_` over `tests/`); parametrized cases make 220 collected tests. At `099085b` it was 179 functions (218 collected); at `f8a51b4` it was 146 functions in 20 files; at `62037d1` 108 functions in 19 files. The elapsed time is a single observation, not a benchmark.
+The count is 225 test functions in 25 files (`^def test_` over `tests/`); parametrized cases make 271 collected tests. At `5c781fc` it was 181 functions in 23 files (220 collected). At `099085b` it was 179 functions (218 collected); at `f8a51b4` it was 146 functions in 20 files; at `62037d1` 108 functions in 19 files. The elapsed time is a single observation, not a benchmark.
 
 Rows below cite tests as `tests/<file>.py::<name>`; every cited name was checked to exist (section 8).
 
 ## 3. Test Matrix
 
-Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered (G-#)`. A Not covered row is a scenario the PRD or an RFC says should hold but that no test pins; every one has a gap id and is listed again in section 3.8. A test may prove more than one scenario; where two rows cite the same test it is because the test asserts both. Scenario counts: 207 rows, of which 173 are automated and 34 are Not covered.
+Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered (G-#)`. A Not covered row is a scenario the PRD or an RFC says should hold but that no test pins; every one has a gap id and is listed again in section 3.8. A test may prove more than one scenario; where two rows cite the same test it is because the test asserts both. Scenario counts: 251 rows, of which 217 are automated and 34 are Not covered.
 
-### 3.1 Happy path (66 scenarios)
+### 3.1 Happy path (85 scenarios)
 
 | QAD-T# | Scenario | PRD-F# | Automated by (`tests/<file>.py::<name>`) or Not covered |
 |---|---|---|---|
@@ -129,8 +129,27 @@ Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered 
 | QAD-T184 | End to end: backtest mode with `--candles` on a Binance-format CSV folder exits 0, writes six reports into `reports/`, passes the two readiness report checks, records the input file and audits `bot_stopped` with `exit_code` 0 | PRD-F2, PRD-F8, PRD-F11 | `tests/test_main.py::test_backtest_end_to_end_writes_readiness_evidence` |
 | QAD-T185 | `--output-dir` redirects the reports | PRD-F2, PRD-F11 | `tests/test_main.py::test_output_dir_flag` |
 | QAD-T186 | Compose `backtest` and `research` both run `python -m silver_bot --candles /app/data/candles` | PRD-F2, PRD-F11 | `tests/test_deployment_files.py::test_compose_backtest_services_read_candles_directory` |
+| QAD-T208 | The page lists the six panels in the DSD layout order, the safety banner first, with no script and the generation time in UTC | PRD-F13 | `tests/test_dashboard_server.py::test_page_shows_six_panels_in_layout_order_with_banner_first` |
+| QAD-T209 | The collector returns six panels titled in layout order and stamps the generation time | PRD-F13 | `tests/test_dashboard_status.py::test_six_panels_in_layout_order` |
+| QAD-T210 | The banner shows mode PAPER, LIVE `[ OFF ]`, PAPER `[ OK ]`, DEMO `[ OFF ]` and the kill switch disabled | PRD-F13 | `tests/test_dashboard_status.py::test_banner_shows_mode_and_flags` |
+| QAD-T211 | Kill switch states: enabled without a path is `[ WRN ] path not set`, an absent file is `[ OK ]`, a file holding JSON is `[ ERR ] ACTIVE` with its reason, and the file is not modified | PRD-F13 | `tests/test_dashboard_status.py::test_kill_switch_states` |
+| QAD-T212 | Readiness shows READY or NOT READY per report, `generated_at`, and the name and reason of each failing check | PRD-F13 | `tests/test_dashboard_status.py::test_readiness_ready_not_ready_and_failing_checks` |
+| QAD-T213 | Risk budget shows the stored `risk_state` row (day, realized PnL, trades, consecutive losses, open positions) beside the configured limits | PRD-F13 | `tests/test_dashboard_status.py::test_risk_budget_shows_row_and_limits` |
+| QAD-T214 | Positions panel lists simulated closed trades and lifecycle events, each labelled `SIM`, with the open-position count | PRD-F13 | `tests/test_dashboard_status.py::test_positions_lists_simulated_trades_and_events` |
+| QAD-T215 | Positions panel shows stored entry and exit prices exactly (64123.45 and 120345.67), not rounded to six significant digits | PRD-F13 | `tests/test_dashboard_status.py::test_positions_show_stored_prices_exactly` |
+| QAD-T216 | Risk limits are shown exactly as configured (`0.0123456789 of equity`), not rounded | PRD-F13 | `tests/test_dashboard_status.py::test_risk_limits_show_stored_values_exactly` |
+| QAD-T217 | A database path containing spaces opens read-only and its row is read | PRD-F13 | `tests/test_dashboard_status.py::test_database_path_with_spaces_opens_read_only` |
+| QAD-T218 | Alerts panel tags known events (`risk_rejected` and `mode_unavailable` as `[ WRN ]`, `error` as `[ ERR ]`, others `[ OK ]`) and counts unreadable lines | PRD-F13 | `tests/test_dashboard_status.py::test_alerts_tag_known_events_and_count_unreadable_lines` |
+| QAD-T219 | Alerts panel reads only the last 64 KiB of a large log, shows the newest 20 events and drops the cut first line and a non-UTF-8 line | PRD-F13 | `tests/test_dashboard_status.py::test_alerts_tail_of_large_log_drops_cut_line` |
+| QAD-T220 | The report reader returns the parsed object, a problem code and the stat of the same open file (size 8, or 0 for an empty file) | PRD-F13 | `tests/test_dashboard_status.py::test_read_json_object_returns_stat_from_the_same_open_file` |
+| QAD-T221 | Each state renders as glyph, word and CSS class (`[ OFF ]`, `[ OK ]`, `[ ERR ]`) | PRD-F13 | `tests/test_dashboard_server.py::test_state_tags_carry_glyph_word_and_class` |
+| QAD-T222 | `GET /` returns 200 with HTML, the four security headers and the MODE & SAFETY panel | PRD-F13 | `tests/test_dashboard_server.py::test_get_root_returns_page_with_security_headers` |
+| QAD-T223 | A `Host: localhost:<port>` request is accepted | PRD-F13 | `tests/test_dashboard_server.py::test_localhost_host_header_is_accepted` |
+| QAD-T224 | A 200 response carries each security header exactly once | PRD-F13 | `tests/test_dashboard_server.py::test_ok_response_carries_each_security_header_once` |
+| QAD-T225 | The footer shows the escaped directory being read (`a&amp;b dir`) | PRD-F13 | `tests/test_dashboard_server.py::test_page_footer_shows_the_escaped_root` |
+| QAD-T226 | The startup line names the directory being read and `main` returns 0 after Ctrl+C | PRD-F13 | `tests/test_dashboard_server.py::test_main_startup_line_names_the_directory` |
 
-### 3.2 Sad path: expected rejections and negative outcomes (51 scenarios)
+### 3.2 Sad path: expected rejections and negative outcomes (67 scenarios)
 
 | QAD-T# | Scenario | PRD-F# | Automated by (`tests/<file>.py::<name>`) or Not covered |
 |---|---|---|---|
@@ -185,8 +204,24 @@ Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered 
 | QAD-T193 | Demo mode with a loadable demo configuration exits 78 | PRD-F5, PRD-F11 | `tests/test_main.py::test_demo_mode_exits_78` |
 | QAD-T194 | Backtest mode with a malformed CSV exits 2 | PRD-F2, PRD-F11 | `tests/test_main.py::test_backtest_with_bad_csv_returns_2` |
 | QAD-T206 | A backtest whose engine raises still audits `bot_stopped` with `exit_code` 1 before the error propagates | PRD-F7, PRD-F11 | `tests/test_main.py::test_crash_during_backtest_still_audits_bot_stopped` |
+| QAD-T227 | Evidence rows flag a 0-byte, non-JSON, non-object and missing report as `[ ERR ]` with the reason and no metric | PRD-F13 | `tests/test_dashboard_status.py::test_evidence_rows_flag_missing_empty_and_invalid` |
+| QAD-T228 | Readiness is `[ WRN ] stale` when a strategy evidence report is newer than `generated_at` | PRD-F13 | `tests/test_dashboard_status.py::test_readiness_is_stale_when_strategy_evidence_is_newer` |
+| QAD-T229 | Readiness with a malformed `checks` field or a 0-byte report still renders (`generated_at unreadable`, `empty`) | PRD-F13 | `tests/test_dashboard_status.py::test_readiness_tolerates_malformed_fields` |
+| QAD-T230 | A missing audit log shows `not available: no audit log yet` | PRD-F13 | `tests/test_dashboard_status.py::test_alerts_missing_log_is_not_available` |
+| QAD-T231 | A missing database file shows the stated empty states for panels 3 and 4 and is not created | PRD-F13 | `tests/test_dashboard_status.py::test_sqlite_panels_empty_when_database_missing` |
+| QAD-T232 | A database without the expected tables shows the same empty states | PRD-F13 | `tests/test_dashboard_status.py::test_sqlite_panels_empty_when_tables_missing` |
+| QAD-T233 | A `risk_state` row for a day other than today is `[ WRN ] stale` | PRD-F13 | `tests/test_dashboard_status.py::test_risk_budget_day_is_stale_when_not_today` |
+| QAD-T234 | With trades but no `risk_state` row, the open-position count is `not available: no risk_state row` | PRD-F13 | `tests/test_dashboard_status.py::test_positions_without_risk_state_row_is_not_available` |
+| QAD-T235 | A single audit line longer than the 64 KiB tail shows `no complete line in the last 64 KiB`, not an empty log | PRD-F13 | `tests/test_dashboard_status.py::test_alerts_single_line_longer_than_tail_is_not_empty_log` |
+| QAD-T236 | A 0-byte audit log shows `not available: audit log is empty` | PRD-F13 | `tests/test_dashboard_status.py::test_alerts_zero_byte_log_is_empty` |
+| QAD-T237 | POST, PUT, PATCH, DELETE and OPTIONS get 405 with `Allow: GET` and the security headers | PRD-F13 | `tests/test_dashboard_server.py::test_other_methods_get_405` |
+| QAD-T238 | Paths other than `/` (`/x`, `/?a=1`, `/favicon.ico`) get 404 | PRD-F13 | `tests/test_dashboard_server.py::test_unknown_paths_get_404` |
+| QAD-T239 | A request whose `Host` header names another host gets 400 | PRD-F13 | `tests/test_dashboard_server.py::test_foreign_host_header_gets_400` |
+| QAD-T240 | `main` exits 2 and names the address when the port is already taken | PRD-F13 | `tests/test_dashboard_server.py::test_main_exits_2_when_port_is_taken` |
+| QAD-T241 | `main` exits 2 on ports 70000 and -1 with `invalid port` | PRD-F13 | `tests/test_dashboard_server.py::test_main_exits_2_on_out_of_range_port` |
+| QAD-T242 | A malformed request line gets 400 with each security header once | PRD-F13 | `tests/test_dashboard_server.py::test_malformed_request_gets_400_with_security_headers_once` |
 
-### 3.3 Unsafe and abuse cases (59 scenarios)
+### 3.3 Unsafe and abuse cases (67 scenarios)
 
 Unsafe configuration, live-trading attempts, missing stop loss, kill switch active, secret leakage, lookahead and deployment files that could enable live. This is the priority section: any failure here is severity S1 (section 5).
 
@@ -251,8 +286,16 @@ Unsafe configuration, live-trading attempts, missing stop loss, kill switch acti
 | QAD-T199 | An unknown flag such as `--live` makes the entrypoint exit 2 | PRD-F11, PRD-F12 | `tests/test_main.py::test_unknown_flag_exits_2` |
 | QAD-T200 | The systemd unit propagates the bot's exit code (`--exit-code-from bot`) and does not restart on 2 or 78 (`RestartPreventExitStatus=2 78`) | PRD-F11 | `tests/test_deployment_files.py::test_systemd_propagates_exit_code_and_stops_on_mode_unavailable` |
 | QAD-T201 | Compose `bot` has `restart: "no"` and no service uses `unless-stopped` | PRD-F11 | `tests/test_deployment_files.py::test_compose_bot_does_not_self_restart` |
+| QAD-T243 | An audit file that is a directory breaks only the Alerts panel (`[ ERR ] unreadable`); the other five panels render | PRD-F13 | `tests/test_dashboard_status.py::test_one_unreadable_source_only_breaks_its_panel` |
+| QAD-T244 | Collecting twice leaves the SQLite file's bytes and mtime unchanged and creates only `-wal` and `-shm` sidecars | PRD-F13 | `tests/test_dashboard_status.py::test_collecting_leaves_database_bytes_unchanged` |
+| QAD-T245 | A half-written audit line the bot is still writing is ignored, not counted or shown | PRD-F13 | `tests/test_dashboard_status.py::test_alerts_drop_line_the_bot_is_still_writing` |
+| QAD-T246 | The risk panel reads a committed row while a writer holds the WAL open, without changing the main database file | PRD-F13 | `tests/test_dashboard_status.py::test_risk_panel_reads_committed_row_while_writer_is_open_without_touching_main_file` |
+| QAD-T247 | Markup in an audit message (`<script>`) renders escaped | PRD-F13 | `tests/test_dashboard_server.py::test_markup_in_sources_is_escaped` |
+| QAD-T248 | API key, secret, Telegram token and chat id (config and audit context) never appear in the page | PRD-F13 | `tests/test_dashboard_server.py::test_secrets_never_reach_the_page` |
+| QAD-T249 | The server binds `127.0.0.1` only | PRD-F13 | `tests/test_dashboard_server.py::test_server_binds_loopback_only` |
+| QAD-T250 | GET, POST and DELETE leave the database, a report and the audit log unchanged and create no file except `-wal` and `-shm` | PRD-F13 | `tests/test_dashboard_server.py::test_serving_changes_no_source_file` |
 
-### 3.4 Invalid configuration (17 scenarios)
+### 3.4 Invalid configuration (18 scenarios)
 
 | QAD-T# | Scenario | PRD-F# | Automated by (`tests/<file>.py::<name>`) or Not covered |
 |---|---|---|---|
@@ -273,6 +316,7 @@ Unsafe configuration, live-trading attempts, missing stop loss, kill switch acti
 | QAD-T203 | `--candles` outside backtest mode exits 2 | PRD-F11 | `tests/test_main.py::test_candles_flag_outside_backtest_is_usage_error` |
 | QAD-T204 | Backtest mode without `--candles` exits 2 | PRD-F2, PRD-F11 | `tests/test_main.py::test_backtest_without_candles_is_usage_error` |
 | QAD-T207 | The shipped `.env.example` leaves `MODE` blank, so `TRADING_MODE=backtest` with `PAPER_TRADING=false` in the process environment loads as backtest | PRD-F2, PRD-F9 | `tests/test_config.py::test_shipped_env_example_lets_trading_mode_select_backtest` |
+| QAD-T251 | A rejected configuration shows `[ ERR ] config invalid` with the `ConfigError` message and turns the risk and positions panels off | PRD-F13 | `tests/test_dashboard_status.py::test_rejected_config_shows_message_and_blocks_config_panels` |
 
 ### 3.5 ML adversarial: leakage, out-of-range probabilities, missing model (14 scenarios)
 
@@ -295,7 +339,7 @@ The ML filter may only approve, reject or reduce risk (PRD-F6, RFC-003). These r
 | QAD-T153 | ML_FILTER_ENABLED and thresholds in settings reach the filter at startup | PRD-F6, PRD-F9 | Not covered (G-9) |
 | QAD-T171 | Probabilities exactly 0.0 and 1.0 keep the threshold logic (0.0 rejects below threshold, 1.0 approves) | PRD-F6 | `tests/test_ml_probability_filter.py::test_ml_filter_boundary_probabilities_keep_threshold_logic` |
 
-### 3.6 Traceability: PRD-F1 to PRD-F12
+### 3.6 Traceability: PRD-F1 to PRD-F13
 
 A scenario that lists several features appears under each. "Automated" rows have at least one named test; "Not covered" rows are in section 3.8.
 
@@ -313,6 +357,7 @@ A scenario that lists several features appears under each. "Automated" rows have
 | PRD-F10 | Market data and storage | QAD-T17, QAD-T28, QAD-T43, QAD-T136, QAD-T166, QAD-T170, QAD-T174, QAD-T175, QAD-T176, QAD-T177, QAD-T178, QAD-T179, QAD-T187, QAD-T188, QAD-T189, QAD-T190, QAD-T202 | QAD-T74, QAD-T75, QAD-T76, QAD-T77 |
 | PRD-F11 | Deployment and entrypoint | QAD-T84, QAD-T85, QAD-T124, QAD-T125, QAD-T126, QAD-T127, QAD-T184, QAD-T185, QAD-T186, QAD-T192, QAD-T193, QAD-T194, QAD-T199, QAD-T200, QAD-T201, QAD-T203, QAD-T204, QAD-T206 | QAD-T83, QAD-T86, QAD-T87 |
 | PRD-F12 | Live trading (Planned, blocked) | QAD-T88, QAD-T89, QAD-T91, QAD-T93, QAD-T94, QAD-T116, QAD-T117, QAD-T118, QAD-T124, QAD-T126, QAD-T127, QAD-T199 | QAD-T121 |
+| PRD-F13 | Operator dashboard | QAD-T208, QAD-T209, QAD-T210, QAD-T211, QAD-T212, QAD-T213, QAD-T214, QAD-T215, QAD-T216, QAD-T217, QAD-T218, QAD-T219, QAD-T220, QAD-T221, QAD-T222, QAD-T223, QAD-T224, QAD-T225, QAD-T226, QAD-T227, QAD-T228, QAD-T229, QAD-T230, QAD-T231, QAD-T232, QAD-T233, QAD-T234, QAD-T235, QAD-T236, QAD-T237, QAD-T238, QAD-T239, QAD-T240, QAD-T241, QAD-T242, QAD-T243, QAD-T244, QAD-T245, QAD-T246, QAD-T247, QAD-T248, QAD-T249, QAD-T250, QAD-T251 | none |
 
 **PRD-F12 (live trading, Planned, blocked).** There is no live code to test. What the suite proves is that live is blocked: QAD-T88, QAD-T89, QAD-T91, QAD-T93, QAD-T94, QAD-T116, QAD-T117, QAD-T118, QAD-T124, QAD-T126, QAD-T127, QAD-T199. These cover the config-load rejection of `LIVE_TRADING=true` and `TRADING_MODE=live` (also through the entrypoint, QAD-T84), the disabled order methods, the safe Docker, compose and systemd defaults, the readiness checkers failing unsafe live inputs, and the entrypoint rejecting an unknown flag such as `--live`. The readiness checkers are advisory only (no code consults them), so they are not a live gate (G-2). Not covered for PRD-F12: QAD-T121.
 
@@ -384,7 +429,7 @@ By gap: G-1: QAD-T80; G-2: QAD-T121; G-3: QAD-T73, QAD-T83; G-5: QAD-T163; G-6: 
 
 ## 4. Automation vs Manual
 
-**Automated (pytest, runs offline).** All 171 automated scenarios in section 3, covering strategy, backtest engine and runner, the kline CSV loader, the entrypoint, risk, paper run, config, readiness, exchange guards, storage, ML, monitoring and deployment-file text. Run it with `.venv/Scripts/python -m pytest -q` from the repo root.
+**Automated (pytest, runs offline).** All 217 automated scenarios in section 3, covering strategy, backtest engine and runner, the kline CSV loader, the entrypoint, risk, paper run, config, readiness, exchange guards, storage, ML, monitoring and deployment-file text. Run it with `.venv/Scripts/python -m pytest -q` from the repo root.
 
 **Manual checks.** None of these can be performed today; each names what blocks it. They become release-gate items in section 6 once their blockers close.
 
@@ -455,7 +500,7 @@ Entering paper requires a runtime that runs the paper engine through the entrypo
 - [ ] Risk limits come from one source capped at 0.005 per trade (built, QAD-T109, QAD-T139, QAD-T154), 0.02 daily loss and 3x leverage (demo only today, QAD-T163), and risk state survives a restart in the running bot (built for a store-backed engine, QAD-T110; RFC-004 condition 5, G-5, G-7).
 - [ ] No order was placed without a stop loss and none bypassed the risk engine (BRD-M10, zero); checked in the audit log.
 - [ ] Daily and weekly reports are produced without manual calls (G-16).
-- [ ] The full suite passes (baseline: 220 passed on `dev` at `5c781fc`, 2026-10-09) and no S1 or S2 bug is open (section 5).
+- [ ] The full suite passes (baseline: 271 passed on `feat/operator-dashboard`, 2026-10-09) and no S1 or S2 bug is open (section 5).
 
 ### 6.3 Gate 3: demo (Binance Futures testnet; entering and leaving)
 
@@ -501,11 +546,11 @@ ML is optional and may only approve, reject or reduce risk (PRD-F6, [RFC-003](rf
 
 ## 8. Self-Check
 
-- [x] Every one of the 181 test functions in `tests/*.py` appears in at least one QAD-T# row (verified by script on 2026-10-09: 181 of 181).
+- [x] Every one of the 225 test functions in `tests/*.py` appears in at least one QAD-T# row (verified by script on 2026-10-09: 225 of 225).
 - [x] Every `tests/<file>.py::<name>` reference names a test that exists (verified by grep for `def <name>`).
 - [x] Every Not covered row cites an existing `G-#` and is listed in section 3.8 (34 rows).
 - [x] Section 3.7 records zero measured performance numbers; every metric is Not yet measured with a `G-#`.
-- [x] PRD-F1 to PRD-F12 each appear in the traceability table, and PRD-F12 is labelled Planned, blocked.
+- [x] PRD-F1 to PRD-F13 each appear in the traceability table, and PRD-F12 is labelled Planned, blocked.
 - [x] Release criteria for the four mode gates cite RFC-004 and the old backtesting guide, and nothing is checked that is not true today.
 - [x] No placeholder tokens, no em dashes, and links point only to existing files.
 - [ ] Every Not covered row in section 3.8 has been closed by a test (open; tracked by the G-# column).
