@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from silver_bot.config import AppConfig
-from silver_bot.monitoring.dashboard_server import BIND_HOST, DashboardServer, main, render_page
+from silver_bot.monitoring.dashboard_server import BIND_HOST, SECURITY_HEADERS, DashboardServer, main, render_page
 from silver_bot.monitoring.status import PANEL_TITLES, collect_status
 from silver_bot.storage.sqlite import SQLiteStorage
 
@@ -132,6 +132,7 @@ def test_other_methods_get_405(server, method):
 
     assert response.status == 405
     assert response.getheader("Allow") == "GET"
+    assert response.getheader("Content-Security-Policy") == "default-src 'none'; style-src 'unsafe-inline'"
 
 
 @pytest.mark.parametrize("path", ["/x", "/?a=1", "/favicon.ico"])
@@ -187,3 +188,31 @@ def test_main_exits_2_when_port_is_taken(capsys):
         assert main(["--port", str(port)]) == 2
 
     assert f"cannot listen on 127.0.0.1:{port}" in capsys.readouterr().err
+
+
+def test_ok_response_carries_each_security_header_once(server):
+    response, _ = call(server)
+
+    for name in SECURITY_HEADERS:
+        assert len(response.msg.get_all(name)) == 1
+
+
+def test_malformed_request_gets_400_with_security_headers_once(server):
+    with socket.create_connection((BIND_HOST, server.server_address[1]), timeout=5) as sock:
+        sock.sendall(b"GARBAGE\r\n\r\n")
+        data = b""
+        while chunk := sock.recv(4096):
+            data += chunk
+    head = data.split(b"\r\n\r\n", 1)[0].decode("latin-1")
+    status_line, *header_lines = head.split("\r\n")
+
+    assert "400" in status_line
+    names = [line.split(":", 1)[0].lower() for line in header_lines]
+    for name in SECURITY_HEADERS:
+        assert names.count(name.lower()) == 1
+
+
+@pytest.mark.parametrize("port", ["70000", "-1"])
+def test_main_exits_2_on_out_of_range_port(port, capsys):
+    assert main(["--port", port]) == 2
+    assert f"invalid port: {port}" in capsys.readouterr().err

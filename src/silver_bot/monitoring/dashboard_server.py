@@ -114,6 +114,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
     server_version = "silver-bot-dashboard"
     sys_version = ""
+    # Not HTTP/0.9: that mode drops the status line and headers from error replies.
+    default_request_version = "HTTP/1.0"
 
     def parse_request(self) -> bool:
         if not super().parse_request():
@@ -132,6 +134,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         status = collect_status(self.server.root, load=self.server.load)
         self._send(200, render_page(status), content_type="text/html; charset=utf-8")
+
+    def end_headers(self) -> None:
+        # Every response, including send_error ones, carries the security headers.
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
+        super().end_headers()
 
     def _host_allowed(self) -> bool:
         port = self.server.server_address[1]
@@ -152,7 +160,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         for name, value in {
             "Content-Type": content_type,
             "Content-Length": str(len(payload)),
-            **SECURITY_HEADERS,
             **(headers or {}),
         }.items():
             self.send_header(name, value)
@@ -169,6 +176,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"port on 127.0.0.1 (default {DEFAULT_PORT})")
     args = parser.parse_args(argv)
+    if not 0 <= args.port <= 65535:
+        print(f"invalid port: {args.port}", file=sys.stderr)
+        return 2
     try:
         server = DashboardServer(args.port, root=Path.cwd())
     except OSError as exc:
