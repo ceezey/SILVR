@@ -61,7 +61,7 @@ PAGE = string.Template(
 <main>
 <h1>silver-bot status &middot; read-only &middot; 127.0.0.1</h1>
 $panels
-<footer>generated $generated_at &middot; read-only; reload to refresh</footer>
+<footer>generated $generated_at &middot; read-only; reading $root &middot; reload to refresh</footer>
 </main>
 </body>
 </html>
@@ -78,7 +78,12 @@ def render_page(status: dict[str, Any]) -> str:
         css_class = "row banner" if group == LAYOUT[0] else "row"
         sections = "".join(_render_panel(panels[index]) for index in group)
         groups.append(f'<div class="{css_class}">{sections}</div>')
-    return PAGE.substitute(css=CSS, panels="\n".join(groups), generated_at=html.escape(status["generated_at"]))
+    return PAGE.substitute(
+        css=CSS,
+        panels="\n".join(groups),
+        generated_at=html.escape(status["generated_at"]),
+        root=html.escape(status["root"]),
+    )
 
 
 def _render_panel(panel: dict[str, Any]) -> str:
@@ -184,7 +189,10 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as exc:
         print(f"cannot listen on {BIND_HOST}:{args.port}: {exc.strerror or exc}", file=sys.stderr)
         return 2
-    print(f"silver-bot status: http://{BIND_HOST}:{server.server_address[1]}/ (read-only; Ctrl+C to stop)")
+    print(
+        f"silver-bot status: http://{BIND_HOST}:{server.server_address[1]}/ "
+        f"(read-only; reading {server.root}; Ctrl+C to stop)"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

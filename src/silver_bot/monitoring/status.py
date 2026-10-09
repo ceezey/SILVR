@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -88,7 +89,7 @@ def collect_status(
         except Exception as exc:  # one unreadable source must not blank the page (AC-23.7)
             rows = [row("err", "unreadable", type(exc).__name__)]
         panels.append({"title": title, "rows": rows})
-    return {"generated_at": _format_time(now), "panels": panels}
+    return {"generated_at": _format_time(now), "root": str(root), "panels": panels}
 
 
 def _banner(config: AppConfig | None, config_error: str, root: Path) -> list[Row]:
@@ -137,7 +138,7 @@ def _readiness(root: Path) -> list[Row]:
     )
     rows: list[Row] = []
     for name, stem in READINESS_REPORTS:
-        data, problem = _read_json_object(reports / f"{stem}.json")
+        data, problem, _ = _read_json_object(reports / f"{stem}.json")
         if data is None:
             rows.append(row("err", name, problem))
             continue
@@ -166,11 +167,10 @@ def _evidence(root: Path) -> list[Row]:
     rows: list[Row] = []
     for stem in EVIDENCE_REPORTS:
         path = root / "reports" / f"{stem}.json"
-        _, problem = _read_json_object(path)
-        if problem == "missing":
+        _, problem, stat = _read_json_object(path)
+        if stat is None:
             rows.append(row("err", stem, "missing"))
             continue
-        stat = path.stat()
         detail = f"{stat.st_size} B, modified {_format_time(datetime.fromtimestamp(stat.st_mtime, UTC))}"
         rows.append(row("err", stem, f"{detail}; {problem}") if problem else row("ok", stem, detail))
     return rows
@@ -196,8 +196,8 @@ def _risk_budget(config: AppConfig | None, root: Path, now: datetime) -> list[Ro
         row("plain", "consecutive losses", str(losses)),
         row("plain", "open positions", str(open_positions)),
         row("plain", "updated", _display_time(updated_at)),
-        row("plain", "max daily loss", f"{config.max_daily_loss:g} of equity"),
-        row("plain", "max risk per trade", f"{config.max_risk_per_trade:g} of equity"),
+        row("plain", "max daily loss", f"{_number(config.max_daily_loss)} of equity"),
+        row("plain", "max risk per trade", f"{_number(config.max_risk_per_trade)} of equity"),
     ]
 
 
@@ -217,9 +217,13 @@ def _positions(config: AppConfig | None, root: Path) -> list[Row]:
     ) or []
     if not state and not trades and not events:
         return [row("off", "", NO_PAPER_RUN)]
-    rows = [row("plain", "open positions", str(state[0][0]) if state else "unknown: no risk_state row")]
+    rows = [
+        row("plain", "open positions", str(state[0][0]))
+        if state
+        else row("off", "open positions", "not available: no risk_state row")
+    ]
     rows += [
-        row("plain", f"SIM {_display_time(exit_time)}", f"{symbol} {direction} {entry:g} to {exit_price:g}, pnl {pnl:.2f}, {reason}")
+        row("plain", f"SIM {_display_time(exit_time)}", f"{symbol} {direction} {_number(entry)} to {_number(exit_price)}, pnl {pnl:.2f}, {reason}")
         for exit_time, symbol, direction, entry, exit_price, pnl, reason in trades
     ]
     rows += [
@@ -238,6 +242,7 @@ def _alerts(root: Path) -> list[Row]:
         size = handle.tell()
         handle.seek(max(0, size - AUDIT_TAIL_BYTES))
         lines = handle.read().split(b"\n")
+    lines.pop()  # empty after a final newline, else the line the bot is still writing
     if size > AUDIT_TAIL_BYTES:
         lines = lines[1:]  # the seek may have cut the first line
     events: list[dict[str, Any]] = []
@@ -264,25 +269,42 @@ def _alerts(root: Path) -> list[Row]:
     ]
     if unreadable:
         rows.append(row("warn", "", f"unreadable lines: {unreadable}"))
-    return rows or [row("off", "", "not available: audit log is empty")]
+    if rows:
+        return rows
+    if size:
+        return [row("off", "", "not available: no complete line in the last 64 KiB")]
+    return [row("off", "", "not available: audit log is empty")]
 
 
-def _read_json_object(path: Path) -> tuple[dict[str, Any] | None, str]:
-    """Return (object, "") or (None, problem) for a JSON report file."""
+def _read_json_object(path: Path) -> tuple[dict[str, Any] | None, str, os.stat_result | None]:
+    """Return (object, "", stat) or (None, problem, stat) from one open of a JSON report.
+
+    The stat is None only when the file is missing.
+    """
 
     try:
-        raw = path.read_bytes()
+        with path.open("rb") as handle:
+            stat = os.fstat(handle.fileno())
+            raw = handle.read()
     except FileNotFoundError:
-        return None, "missing"
+        return None, "missing", None
     if not raw:
-        return None, "empty"
+        return None, "empty", stat
     try:
         data = json.loads(raw)
     except ValueError:
-        return None, "not valid JSON"
+        return None, "not valid JSON", stat
     if not isinstance(data, dict):
-        return None, "not a JSON object"
-    return data, ""
+        return None, "not a JSON object", stat
+    return data, "", stat
+
+
+def _number(value: float) -> str:
+    """Show a stored number exactly: whole values without ".0", others as repr."""
+
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return repr(value)
 
 
 def _query(database: Path, sql: str) -> list[tuple[Any, ...]] | None:

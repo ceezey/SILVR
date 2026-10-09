@@ -1,4 +1,5 @@
 import hashlib
+import html
 import http.client
 import json
 import socket
@@ -216,3 +217,28 @@ def test_malformed_request_gets_400_with_security_headers_once(server):
 def test_main_exits_2_on_out_of_range_port(port, capsys):
     assert main(["--port", port]) == 2
     assert f"invalid port: {port}" in capsys.readouterr().err
+
+
+def test_page_footer_shows_the_escaped_root(tmp_path):
+    root = tmp_path / "a&b dir"
+    root.mkdir()
+
+    page = page_for(root)
+
+    assert f"reading {html.escape(str(root))}" in page
+    assert "a&amp;b dir" in page
+
+
+def test_main_startup_line_names_the_directory(monkeypatch, capsys, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    started = []
+
+    def stop(self):
+        started.append(True)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(DashboardServer, "serve_forever", stop)
+
+    assert main(["--port", "0"]) == 0
+
+    assert f"reading {Path.cwd()};" in capsys.readouterr().out

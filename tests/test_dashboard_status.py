@@ -11,6 +11,7 @@ from silver_bot.monitoring.status import (
     AUDIT_TAIL_BYTES,
     EVIDENCE_REPORTS,
     PANEL_TITLES,
+    _read_json_object,
     collect_status,
 )
 from silver_bot.storage.sqlite import SQLiteStorage
@@ -369,3 +370,95 @@ def test_collecting_leaves_database_bytes_unchanged(tmp_path):
     assert digest(database) == before
     allowed = {database.name, database.name + "-wal", database.name + "-shm"}
     assert {path.name for path in database.parent.iterdir()} <= allowed
+
+
+def test_positions_show_stored_prices_exactly(tmp_path):
+    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
+    insert_risk_state(database, "2026-10-09")
+    insert_paper_trade(database)
+    execute(database, "UPDATE paper_trades SET entry_price = ?, exit_price = ?", (64123.45, 120345.67))
+
+    result = rows(collect(tmp_path), POSITIONS)
+
+    assert result[1]["text"] == "BTCUSDT long 64123.45 to 120345.67, pnl 3.00, take_profit"
+
+
+def test_risk_limits_show_stored_values_exactly(tmp_path):
+    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
+    insert_risk_state(database, "2026-10-09")
+    config = make_config(tmp_path, max_daily_loss=0.0123456789, max_risk_per_trade=0.005)
+
+    risk = by_label(collect(tmp_path, config), RISK)
+
+    assert risk["max daily loss"]["text"] == "0.0123456789 of equity"
+    assert risk["max risk per trade"]["text"] == "0.005 of equity"
+
+
+def test_positions_without_risk_state_row_is_not_available(tmp_path):
+    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
+    insert_paper_trade(database)
+
+    result = rows(collect(tmp_path), POSITIONS)
+
+    assert result[0] == {"state": "off", "label": "open positions", "text": "not available: no risk_state row"}
+
+
+def test_alerts_drop_line_the_bot_is_still_writing(tmp_path):
+    path = write_audit(tmp_path, [audit_line("bot_started")])
+    with path.open("ab") as handle:
+        handle.write(b'{"event_type": "error", "mess')
+
+    result = rows(collect(tmp_path), ALERTS)
+
+    assert [item["text"] for item in result] == ["bot_started: m"]
+
+
+def test_alerts_single_line_longer_than_tail_is_not_empty_log(tmp_path):
+    write_audit(tmp_path, [audit_line("bot_started", "x" * (AUDIT_TAIL_BYTES + 10))])
+
+    assert rows(collect(tmp_path), ALERTS) == [
+        {"state": "off", "label": "", "text": "not available: no complete line in the last 64 KiB"}
+    ]
+
+
+def test_alerts_zero_byte_log_is_empty(tmp_path):
+    path = tmp_path / "logs" / "audit.jsonl"
+    path.parent.mkdir()
+    path.write_bytes(b"")
+
+    assert rows(collect(tmp_path), ALERTS) == [
+        {"state": "off", "label": "", "text": "not available: audit log is empty"}
+    ]
+
+
+def test_read_json_object_returns_stat_from_the_same_open_file(tmp_path):
+    assert _read_json_object(tmp_path / "none.json") == (None, "missing", None)
+    path = write_report(tmp_path, "backtest_report", '{"a": 1}')
+
+    data, problem, stat = _read_json_object(path)
+
+    assert (data, problem) == ({"a": 1}, "")
+    assert stat.st_size == 8
+    _, problem, stat = _read_json_object(write_report(tmp_path, "empty", ""))
+    assert (problem, stat.st_size) == ("empty", 0)
+
+
+def test_risk_panel_reads_committed_row_while_writer_is_open_without_touching_main_file(tmp_path):
+    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
+    writer = sqlite3.connect(database)
+    try:
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        with writer:
+            writer.execute(
+                "INSERT OR REPLACE INTO risk_state VALUES (1, ?, ?, ?, ?, ?, ?)",
+                ("2026-10-09", -12.5, 2, 3, 1, "2026-10-09T11:59:00+00:00"),
+            )
+        before = digest(database)
+
+        risk = by_label(collect(tmp_path), RISK)
+
+        assert risk["trades today"]["text"] == "3"
+        assert risk["daily realized pnl"]["text"] == "-12.50"
+        assert digest(database) == before
+    finally:
+        writer.close()
