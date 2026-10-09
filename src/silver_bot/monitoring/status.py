@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -178,13 +179,54 @@ def _evidence(root: Path) -> list[Row]:
 def _risk_budget(config: AppConfig | None, root: Path, now: datetime) -> list[Row]:
     if config is None:
         return [row("off", "", CONFIG_INVALID)]
-    return [row("off", "", "not available: risk_state empty, no running bot (G-3)")]
+    found = _query(
+        _resolve(root, config.database_path),
+        "SELECT current_day, daily_realized_pnl, trades_today, consecutive_losses, open_positions, updated_at "
+        "FROM risk_state WHERE id = 1",
+    )
+    if not found:
+        return [row("off", "", "not available: risk_state empty, no running bot (G-3)")]
+    day, pnl, trades, losses, open_positions, updated_at = found[0]
+    today = now.astimezone(UTC).date().isoformat()
+    day_row = row("plain", "day", str(day)) if day == today else row("warn", "day", f"{day}; stale: not today ({today} UTC)")
+    return [
+        day_row,
+        row("plain", "daily realized pnl", f"{pnl:.2f}"),
+        row("plain", "trades today", str(trades)),
+        row("plain", "consecutive losses", str(losses)),
+        row("plain", "open positions", str(open_positions)),
+        row("plain", "updated", _display_time(updated_at)),
+        row("plain", "max daily loss", f"{config.max_daily_loss:g} of equity"),
+        row("plain", "max risk per trade", f"{config.max_risk_per_trade:g} of equity"),
+    ]
 
 
 def _positions(config: AppConfig | None, root: Path) -> list[Row]:
     if config is None:
         return [row("off", "", CONFIG_INVALID)]
-    return [row("off", "", NO_PAPER_RUN)]
+    database = _resolve(root, config.database_path)
+    state = _query(database, "SELECT open_positions FROM risk_state WHERE id = 1")
+    trades = _query(
+        database,
+        "SELECT exit_time, symbol, direction, entry_price, exit_price, realized_pnl, exit_reason "
+        f"FROM paper_trades ORDER BY exit_time DESC, id DESC LIMIT {RECENT_ROWS}",
+    ) or []
+    events = _query(
+        database,
+        f"SELECT timestamp, event_type, message FROM paper_events ORDER BY id DESC LIMIT {RECENT_ROWS}",
+    ) or []
+    if not state and not trades and not events:
+        return [row("off", "", NO_PAPER_RUN)]
+    rows = [row("plain", "open positions", str(state[0][0]) if state else "unknown: no risk_state row")]
+    rows += [
+        row("plain", f"SIM {_display_time(exit_time)}", f"{symbol} {direction} {entry:g} to {exit_price:g}, pnl {pnl:.2f}, {reason}")
+        for exit_time, symbol, direction, entry, exit_price, pnl, reason in trades
+    ]
+    rows += [
+        row("plain", f"SIM {_display_time(timestamp)}", f"{event_type}: {message}")
+        for timestamp, event_type, message in events
+    ]
+    return rows
 
 
 def _alerts(root: Path) -> list[Row]:
@@ -241,6 +283,22 @@ def _read_json_object(path: Path) -> tuple[dict[str, Any] | None, str]:
     if not isinstance(data, dict):
         return None, "not a JSON object"
     return data, ""
+
+
+def _query(database: Path, sql: str) -> list[tuple[Any, ...]] | None:
+    """Run one read-only query; None when the database file or table is absent."""
+
+    if not database.is_file():
+        return None
+    connection = sqlite3.connect(f"{database.resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        return connection.execute(sql).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return None
+        raise
+    finally:
+        connection.close()
 
 
 def _resolve(root: Path, path: str | Path) -> Path:
