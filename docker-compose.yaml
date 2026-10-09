@@ -29,7 +29,7 @@ services:
       TRADING_MODE: paper
       PAPER_TRADING: "true"
     command: ["python", "-m", "silver_bot"]
-    restart: unless-stopped
+    restart: "no"
 
   paper:
     <<: *bot-common
@@ -70,7 +70,7 @@ services:
       TRADING_MODE: backtest
       PAPER_TRADING: "false"
       ML_FILTER_ENABLED: "${ML_FILTER_ENABLED:-false}"
-    command: ["python", "-m", "silver_bot"]
+    command: ["python", "-m", "silver_bot", "--candles", "/app/data/candles"]
     restart: "no"
 
   research:
@@ -81,5 +81,5 @@ services:
       TRADING_MODE: backtest
       PAPER_TRADING: "false"
       ML_FILTER_ENABLED: "false"
-    command: ["python", "-m", "silver_bot"]
+    command: ["python", "-m", "silver_bot", "--candles", "/app/data/candles"]
     restart: "no"
