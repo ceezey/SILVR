@@ -5,7 +5,7 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; step 3, step 4 and the Tests and Example rows of Verify re-run 2026-10-09 against `70ccaec`; steps 4, 6 and 7 and the Tests, Entrypoint and Files written rows re-run 2026-10-09 against `099085b`
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; step 3, step 4 and the Tests and Example rows of Verify re-run 2026-10-09 against `70ccaec`; steps 4, 6 and 7 and the Tests, Entrypoint and Files written rows re-run 2026-10-09 against `099085b`; the step 3 block and `.env.example` history, step 4 and the Tests and Config loads rows re-run 2026-10-09 against `5c781fc`
 
 This runbook takes a fresh checkout to a working local environment: virtual environment, install, a safe paper-mode `.env`, the test suite, and the entrypoints that exist. It absorbs the old README "Basic Setup" and the example blocks of the old `CONFIGURATION.md`. Every command below was run against the code as built, except `pip install` (it needs the network; see step 2). Nothing here enables live trading or places an order; the adapter performs no network I/O.
 
@@ -44,7 +44,8 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
 3. **Create a private `.env` with a paper-mode block.** Since `c6d909d` the shipped `.env.example` loads as paper mode (see "`.env.example` history" below), so `cp .env.example .env` also works; it leaves the kill switch disabled. The block below additionally sets a kill-switch path. Create `.env` in the repository root with exactly this content:
 
    ```dotenv
-   MODE=paper
+   # Leave MODE blank: when set it overrides TRADING_MODE (and would block backtests).
+   MODE=
    TRADING_MODE=paper
    LIVE_TRADING=false
    PAPER_TRADING=true
@@ -74,7 +75,7 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
 
    | Variable | Value | Meaning |
    |----------|-------|---------|
-   | `MODE`, `TRADING_MODE` | `paper` | Simulated trading. `MODE` overrides `TRADING_MODE` when both are set. The allowed modes are `backtest`, `demo`, `paper`; `live` is rejected. |
+   | `MODE`, `TRADING_MODE` | blank, `paper` | Simulated trading. A non-blank `MODE` overrides `TRADING_MODE`, so `MODE` stays blank, as in the shipped `.env.example` since `5c781fc`, and `TRADING_MODE` alone picks the mode. The allowed modes are `backtest`, `demo`, `paper`; `live` is rejected. |
    | `LIVE_TRADING` | `false` | `true` makes `load_config` raise `ConfigError`; there is no override. |
    | `PAPER_TRADING` | `true` | Must be `true` in paper mode and `false` whenever `DEMO_TRADING=true`. |
    | `DEMO_TRADING` | `false` | `true` switches on every demo-mode requirement (testnet keys and more). Keep `false` for local work. |
@@ -88,7 +89,7 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
    | `KILL_SWITCH_ENABLED`, `KILL_SWITCH_PATH` | `true`, `data/KILL_SWITCH` | Kill-switch file location. `load_config` rejects `KILL_SWITCH_ENABLED=true` with a blank path in every mode. Only `build_risk_config` and `build_risk_engine` pass the path to the risk engine, and no paper runtime calls them yet; a backtest uses its own simulated switch and never this file. It is not an effective emergency stop today (G-6). |
    | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` | `0.005`, `0.02`, `3` | The documented caps (0.5%, 2%, 3x). `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode; the other two are range-checked only in demo mode and by the readiness checkers (G-5). |
 
-   **`.env.example` history.** Until `c6d909d` it set `MODE=paper` and `PAPER_TRADING=false` but also `DEMO_TRADING=true`. When `DEMO_TRADING` is true and the mode is `paper`, the loader promotes the mode to `demo`, and demo mode then requires API keys, so loading stopped with `ConfigError: BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode` (D-2, G-4). It now sets `PAPER_TRADING=true` and `DEMO_TRADING=false`, like the block above (`.env.example:5-6`; `tests/test_config.py::test_shipped_env_example_loads_as_paper`).
+   **`.env.example` history.** Until `c6d909d` it set `MODE=paper` and `PAPER_TRADING=false` but also `DEMO_TRADING=true`. When `DEMO_TRADING` is true and the mode is `paper`, the loader promotes the mode to `demo`, and demo mode then requires API keys, so loading stopped with `ConfigError: BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode` (D-2, G-4). It now sets `PAPER_TRADING=true` and `DEMO_TRADING=false`, like the block above (`.env.example:6-7`; `tests/test_config.py::test_shipped_env_example_loads_as_paper`). Until `5c781fc` it also set `MODE=paper`, which overrides `TRADING_MODE`, so a copied `.env` made every backtest exit 2; it now leaves `MODE` blank (`.env.example:2-3`; `tests/test_config.py::test_shipped_env_example_lets_trading_mode_select_backtest`).
 
 4. **Run the test suite** from the repository root:
 
@@ -96,7 +97,7 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
    python -m pytest -q
    ```
 
-   Expected: `218 passed`. The tests use mocks and in-memory clients; they need no API keys and no network.
+   Expected: `220 passed`. The tests use mocks and in-memory clients; they need no API keys and no network.
 
 5. **Check the configuration loads and live is off** (this is also what the container health check runs):
 
@@ -114,7 +115,7 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
    silver-bot
    ```
 
-   The last needs the editable install from step 2. The entrypoint loads the configuration, creates the SQLite file, appends `bot_started` to `logs/audit.jsonl`, runs the configured mode and appends `bot_stopped` with `exit_code` (`main.py:51-77`). With the step 3 `.env` (paper mode) it logs `paper mode not available yet: needs market data (G-13)`, appends `mode_unavailable` and exits 78; demo does the same. There is no paper or demo runtime yet (G-3, G-13). If the configuration is rejected it logs `configuration rejected: <reason>` and exits 2. Flags: `--candles PATH` and `--output-dir DIR`, for backtest mode only; `--candles` in paper or demo mode, or an unknown flag, exits 2.
+   The last needs the editable install from step 2. The entrypoint loads the configuration, creates the SQLite file, appends `bot_started` to `logs/audit.jsonl`, runs the configured mode and appends `bot_stopped` with `exit_code` (`main.py:51-80`). With the step 3 `.env` (paper mode) it logs `paper mode not available yet: needs market data (G-13)`, appends `mode_unavailable` and exits 78; demo does the same. There is no paper or demo runtime yet (G-3, G-13). If the configuration is rejected it logs `configuration rejected: <reason>` and exits 2. Flags: `--candles PATH` and `--output-dir DIR`, for backtest mode only; `--candles` in paper or demo mode, or an unknown flag, exits 2.
 
    To run a backtest instead, set `MODE=` (blank), `TRADING_MODE=backtest` and `PAPER_TRADING=false` and pass `--candles`; the full steps, including downloading candle files, are in [runbook-backtest.md](runbook-backtest.md). A non-blank `MODE` overrides `TRADING_MODE` (D-42).
 
@@ -132,7 +133,7 @@ Each check below was run against a temporary working folder containing only the 
 
 | Check | Command | Observed result |
 |-------|---------|-----------------|
-| Tests | `python -m pytest -q` (repository root) | `218 passed` (2026-10-09, `dev` at `099085b`) |
+| Tests | `python -m pytest -q` (repository root) | `220 passed` (2026-10-09, `dev` at `5c781fc`) |
 | Config loads | `python -c "from silver_bot.config import load_config; c=load_config(); print(c.mode, c.live_trading, c.paper_trading, c.demo_trading)"` | `TradingMode.PAPER False True False` |
 | Example loads | load `.env.example` with `load_config(env_path=".env.example", yaml_path="none.yaml", environ={})` | `TradingMode.PAPER False True False` (mode, live, paper, demo; 2026-10-09) |
 | Health | `python -m silver_bot.health; echo $?` | no output, `0` |

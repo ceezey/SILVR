@@ -49,7 +49,7 @@ Wiring facts:
 
 - The backtest builds the filter from `BacktestConfig.ml_filter`, whose default is `MLFilterConfig()`, which is **disabled** (`backtest/engine.py:42`, `backtest/models.py:41`).
 - The paper loop builds `MLProbabilityFilter()` with no config when none is injected, which is also disabled (`execution/paper_trading.py:53`).
-- The settings keys `ML_FILTER_ENABLED`, `ML_REGISTRY_PATH`, `ML_MIN_PROBABILITY` and `ML_REDUCE_RISK_THRESHOLD` are parsed and validated at config load (`config/settings.py:80-83,152-170`). Since `f84557e`, `build_backtest_config` converts them into `BacktestConfig.ml_filter` for CLI backtests (`backtest/runner.py:50-55`; `tests/test_backtest_runner.py:145`). The paper loop still builds `MLProbabilityFilter()` with defaults, so the keys have **no effect outside backtests** (`execution/paper_trading.py:53`; D-4, G-9 partial).
+- The settings keys `ML_FILTER_ENABLED`, `ML_REGISTRY_PATH`, `ML_MIN_PROBABILITY` and `ML_REDUCE_RISK_THRESHOLD` are parsed and validated at config load (`config/settings.py:80-83,152-170`). Since `f84557e`, `build_backtest_config` converts them into `BacktestConfig.ml_filter` for CLI backtests (`backtest/runner.py:50-55`; `tests/test_backtest_runner.py:144`). The paper loop still builds `MLProbabilityFilter()` with defaults, so the keys have **no effect outside backtests** (`execution/paper_trading.py:53`; D-4, G-9 partial).
 - No code outside `ml/` and the tests calls `train_baseline_models`, `build_calibration_report`, `evaluate_model_promotion`, `MLDatasetBuilder` or `ModelRegistry.register_model`; there is no command-line entry point for the offline pipeline (G-22).
 
 ## 3. Technical Details & Contracts

@@ -28,12 +28,12 @@ Full proposal conditions: [RFC-004 §7.1](docs/rfc-silverbot-readiness-gates.md)
 
 ## Current Status
 
-Honest summary at commit `099085b` on `dev` (see [docs/prd-silverbot.md](docs/prd-silverbot.md) section 3 for the per-feature table):
+Honest summary at commit `5c781fc` on `dev` (see [docs/prd-silverbot.md](docs/prd-silverbot.md) section 3 for the per-feature table):
 
-- Built and tested: signal engine, risk engine, config loading, readiness checkers, backtest from the command line (`python -m pytest -q`: 218 passed).
+- Built and tested: signal engine, risk engine, config loading, readiness checkers, backtest from the command line (`python -m pytest -q`: 220 passed).
 - HIGH safety fixes batch 1 (2026-10-09): a NaN or out-of-range ML probability now rejects; the testnet URL guard is an exact `https` host match; `.env.example` loads as paper mode; readiness rejects empty or non-JSON reports; backtests default to 5 bps slippage and 3 bps spread; risk per trade is capped at 0.5% everywhere; the kill switch fails closed and trips itself on the daily-loss and consecutive-loss limits; risk state can persist in SQLite. Backtests use the settings caps and a simulated per-run kill switch; no paper bot uses the real kill switch or the persisted state until a paper runtime builds its engine with `build_risk_engine` (G-3). Details: [docs/scrutiny-silverbot.md](docs/scrutiny-silverbot.md) section 3.
 - Partial: backtester, paper trading, demo/testnet mode, ML filter, monitoring, market data, deployment files.
-- Entrypoint (G-3 entrypoint batch 2, 2026-10-09): `python -m silver_bot` runs the mode from configuration. Backtest mode loads Binance kline CSV files given with `--candles` and writes six reports, including a chronological out-of-sample report and a run record (exit 0; 2 on bad input). Paper and demo exit 78 (`mode not available yet: needs market data (G-13)`), and the systemd unit and compose do not restart on 78. There is no paper or demo runtime yet (G-3, G-13, G-17).
+- Entrypoint (G-3 entrypoint batch 2, 2026-10-09): `python -m silver_bot` runs the mode from configuration. Backtest mode loads Binance kline CSV files given with `--candles` and writes six reports, including a chronological out-of-sample report and a run record (exit 0; 2 on bad input). Paper and demo exit 78 (`mode not available yet: needs market data (G-13)`), and the systemd unit and compose do not restart on 78 (systemd also stops on exit 2 since `5c781fc`). There is no paper or demo runtime yet (G-3, G-13, G-17).
 - No evidence: `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are empty until the owner runs a backtest on real data, and `reports/` is git-ignored. Nothing here supports any claim about strategy performance.
 - Known safety hazards are listed in [docs/audit-docs-drift.md](docs/audit-docs-drift.md) and [docs/scrutiny-silverbot.md](docs/scrutiny-silverbot.md).
 

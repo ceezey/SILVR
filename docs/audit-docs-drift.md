@@ -5,7 +5,7 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the batch 1 **Resolved:** lines are checked against `70ccaec`; the batch 2 **Resolved:** lines (D-1, D-4, D-33, D-46, H-4) are checked 2026-10-09 against `099085b`
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the batch 1 **Resolved:** lines are checked against `70ccaec`; the batch 2 **Resolved:** lines (D-1, D-4, D-33, D-46, H-4) are checked 2026-10-09 against `099085b`; the H-4 **Resolved:** line is re-checked 2026-10-09 against `5c781fc` (exit 2 no longer restarts)
 
 This audit records findings, not decisions. It compares the old root documents (README.md, AGENTS.md, ARCHITECTURE.md, BACKTESTING.md, CONFIGURATION.md, DEPLOYMENT.md, ML_MODEL.md, RISK_POLICY.md, STRATEGY_NOTES.md, PROGRESS.md, TODO.md) with the code at the reconciled commit. Code wins: where they disagree, the finding states what the code does. Each finding closes in the canonical doc named on its **Resolved in** line; until that doc is written the finding stays open. Finding ids `D-1` to `D-86` are frozen and cited by later documents. Severity: HIGH weakens or fakes a safety gate or makes a core claim false; MEDIUM misleads results or operations; LOW is cosmetic or contained. Counts: 14 HIGH, 37 MEDIUM, 35 LOW (86 total). Code paths are relative to `src/silver_bot/` unless they start with a root filename. Code hazards that contradict no old document are listed separately under "Code hazards (not doc drift)". Two registers follow the hazards: the stub register (S-1 to S-34) and the unknowns register (U-1 to U-21); the ids are cited by other suite documents. Findings and hazards fixed in code after the reconciled commit carry a **Resolved:** line naming the fix commit; the Old doc said and Code does lines stay as recorded at `62037d1`.
 
@@ -17,14 +17,14 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** README.md:332 `TRADING_MODE=backtest ... python main.py` runs a backtest; README.md:338 runs paper trading; README.md:351 starts demo mode; DEPLOYMENT.md:267 service starts the bot which "defaults to paper mode"; DEPLOYMENT.md:346-357 paper ready when "bot runs continuously", "daily report works"
 - **Code does:** `main.py:14-50` ignores mode, initialises SQLite, writes bot_started and bot_stopped to logs/audit.jsonl and returns 0; no exchange, stream, strategy, backtest or order code runs; the `bot` compose service therefore exits and restarts (docker-compose.yaml:31-32)
 - **Resolved in:** OPS (runbook, container and service behaviour) and SDD (entrypoint and runtime wiring); PRD-F11 status in PRD section 3
-- **Resolved:** Partial, `099085b` (G-3 entrypoint batch 2, with `e5baec7`, `f84557e` and `f6bc017`). `main()` now dispatches on the mode (`main.py:80-88`): backtest mode loads Binance kline CSV files from `--candles` and runs `run_backtest`, which writes six reports and returns 0 (`main.py:91-109`, `backtest/runner.py:60-126`); paper and demo log and audit `mode_unavailable` and return 78 (`main.py:25-26,86-88`); compose `backtest` and `research` pass `--candles /app/data/candles` (`docker-compose.yaml:73,84`) and the `bot` service is no longer restarted (H-4). Tests: `tests/test_main.py:42,51,85`. Remaining: no paper or demo runtime (G-13, G-17).
+- **Resolved:** Partial, `099085b` (G-3 entrypoint batch 2, with `e5baec7`, `f84557e` and `f6bc017`). `main()` now dispatches on the mode (`main.py:83-91`): backtest mode loads Binance kline CSV files from `--candles` and runs `run_backtest`, which writes six reports and returns 0 (`main.py:94-112`, `backtest/runner.py:60-124`); paper and demo log and audit `mode_unavailable` and return 78 (`main.py:25-26,89-91`); compose `backtest` and `research` pass `--candles /app/data/candles` (`docker-compose.yaml:73,84`) and the `bot` service is no longer restarted (H-4). Tests: `tests/test_main.py:42,51,85`. Remaining: no paper or demo runtime (G-13, G-17).
 
 ### D-2. `.env.example` fails load_config as written
 
 - **Old doc said:** README.md:23-25 and 268-270, CONFIGURATION.md:9-13, `.env.example:1` "Keep these values for normal paper deployment" with PAPER_TRADING=true, DEMO_TRADING=false
-- **Code does:** `.env.example:5-6` sets PAPER_TRADING=false and DEMO_TRADING=true; settings.py:96-97 promotes paper to demo; settings.py:140-141 then raises "BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode" (executed, confirmed)
+- **Code does:** `.env.example:6-7` sets PAPER_TRADING=false and DEMO_TRADING=true; settings.py:96-97 promotes paper to demo; settings.py:140-141 then raises "BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode" (executed, confirmed)
 - **Resolved in:** SDD (configuration section: keys, load order, validation) and OPS (environment setup)
-- **Resolved:** Fixed in `c6d909d` (G-4, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). `.env.example:5-6` now sets PAPER_TRADING=true and DEMO_TRADING=false; `tests/test_config.py:258` `test_shipped_env_example_loads_as_paper` loads the shipped file as paper mode.
+- **Resolved:** Fixed in `c6d909d` (G-4, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). `.env.example:6-7` now sets PAPER_TRADING=true and DEMO_TRADING=false; `tests/test_config.py:258` `test_shipped_env_example_loads_as_paper` loads the shipped file as paper mode.
 
 ### D-3. Telegram alerts cannot reach a network
 
@@ -37,7 +37,7 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** ML_MODEL.md:322-331 filter configurable via ML_FILTER_ENABLED etc.
 - **Code does:** settings parse the keys (settings.py:151-169) but nothing builds `MLFilterConfig` from them; `execution/paper_trading.py:53` uses `MLProbabilityFilter()` (disabled default); only `backtest/models.py:41` references MLFilterConfig
 - **Resolved in:** AIA (model lifecycle and filter wiring) and SDD (ML section); PRD-F6 status in PRD section 3
-- **Resolved:** Partial, `f84557e` (G-9). `build_backtest_config` builds `MLFilterConfig` from `ML_FILTER_ENABLED`, `ML_REGISTRY_PATH`, `ML_MIN_PROBABILITY` and `ML_REDUCE_RISK_THRESHOLD` for CLI backtests (`backtest/runner.py:50-55`; `tests/test_backtest_runner.py:145`). Remaining: the paper loop still uses `MLProbabilityFilter()` with defaults (`execution/paper_trading.py:53`).
+- **Resolved:** Partial, `f84557e` (G-9). `build_backtest_config` builds `MLFilterConfig` from `ML_FILTER_ENABLED`, `ML_REGISTRY_PATH`, `ML_MIN_PROBABILITY` and `ML_REDUCE_RISK_THRESHOLD` for CLI backtests (`backtest/runner.py:50-55`; `tests/test_backtest_runner.py:144`). Remaining: the paper loop still uses `MLProbabilityFilter()` with defaults (`execution/paper_trading.py:53`).
 
 ### D-5. Backtest cost defaults are 0 bps
 
@@ -297,7 +297,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ### D-45. Readiness env sources
 
-- **Old doc said:** CONFIGURATION.md:74, 69-82, 403-427; `.env.example:30-31`
+- **Old doc said:** CONFIGURATION.md:74, 69-82, 403-427; `.env.example:31-32`
 - **Code does:** `readiness.py:74,168-187` reads only process env, no boolean defaults; demo_readiness reads `.env` (demo_readiness.py:51-53)
 - **Resolved in:** SDD (configuration section: keys, load order, validation) and OPS (environment setup)
 
@@ -306,7 +306,7 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** CONFIGURATION.md:198-201; PROGRESS.md:286
 - **Code does:** adapter does no network I/O; app never builds an adapter (`exchange/binance_futures.py:71`, `main.py:14-50`)
 - **Resolved in:** SDD (exchange and readiness section) and CLR (live-trading controls); PRD-F5, PRD-F8 and PRD-F12 in PRD section 3
-- **Resolved:** Partial, `099085b` (G-3). Demo mode no longer exits 0 as if it had run: `main()` logs and audits `mode_unavailable` (`mode not available yet: needs market data (G-13)`) and returns 78 (`main.py:86-88`; `tests/test_main.py:51` `test_demo_mode_exits_78`). Remaining: the adapter still does no network I/O and nothing builds it at runtime (G-13, G-17).
+- **Resolved:** Partial, `099085b` (G-3). Demo mode no longer exits 0 as if it had run: `main()` logs and audits `mode_unavailable` (`mode not available yet: needs market data (G-13)`) and returns 78 (`main.py:89-91`; `tests/test_main.py:51` `test_demo_mode_exits_78`). Remaining: the adapter still does no network I/O and nothing builds it at runtime (G-13, G-17).
 
 ### D-47. Telegram items marked done in TODO.md
 
@@ -582,8 +582,8 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Severity:** MEDIUM
 - **Evidence:** `main.py:50` returns after the start and stop audit events; `docker-compose.yaml:32` (restart: unless-stopped) and `deploy/systemd/silver-bot.service:13` (Restart=always) loop it.
 - **Gap row:** G-3 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Fixed in `f6bc017` and `099085b`.
-- **Resolved:** Paper and demo mode return 78 (`main.py:25,86-88`). The unit runs `docker compose ... up bot --exit-code-from bot`, so systemd sees the bot's exit code instead of compose's 0, and `RestartPreventExitStatus=78` stops it restarting on 78 (`deploy/systemd/silver-bot.service:11,15`); compose `bot` has `restart: "no"`, so systemd is the only supervisor (`docker-compose.yaml:32`). Tests: `tests/test_deployment_files.py:61` `test_systemd_propagates_exit_code_and_stops_on_mode_unavailable`, `:68` `test_compose_bot_does_not_self_restart`, `tests/test_main.py:42` `test_paper_mode_exits_78_and_audits`. Note: `Restart=always` still restarts on any other exit code, so a rejected configuration (exit 2) is retried every 10 s (`deploy/systemd/silver-bot.service:13-14`).
+- **Status:** Fixed in `f6bc017` and `099085b`; exit 2 added to the no-restart list in `5c781fc`.
+- **Resolved:** Paper and demo mode return 78 (`main.py:25,89-91`). The unit runs `docker compose ... up bot --exit-code-from bot`, so systemd sees the bot's exit code instead of compose's 0, and `RestartPreventExitStatus=2 78` stops it restarting on 78 (`deploy/systemd/silver-bot.service:11,15`); compose `bot` has `restart: "no"`, so systemd is the only supervisor (`docker-compose.yaml:32`). Tests: `tests/test_deployment_files.py:61` `test_systemd_propagates_exit_code_and_stops_on_mode_unavailable`, `:68` `test_compose_bot_does_not_self_restart`, `tests/test_main.py:42` `test_paper_mode_exits_78_and_audits`. Since `5c781fc` exit 2 (rejected arguments, configuration or candle data) is not restarted either (`deploy/systemd/silver-bot.service:15`); `Restart=always` still restarts any other code, such as 1 for a crash, every 10 s (`:13-14`).
 
 
 ### H-5. Settings risk limits are not wired into RiskConfig; RiskConfig allows 5% per trade
@@ -666,10 +666,10 @@ These were found while reading code and contradict no old document. Recorded, no
 ### H-14. `.env.example` fails `load_config` as shipped
 
 - **Severity:** HIGH
-- **Evidence:** `.env.example:5-6` sets PAPER_TRADING=false and DEMO_TRADING=true, which `config/settings.py:96-97,140-141` turns into a demo configuration that demands API keys. Same root cause as D-2.
+- **Evidence:** `.env.example:6-7` sets PAPER_TRADING=false and DEMO_TRADING=true, which `config/settings.py:96-97,140-141` turns into a demo configuration that demands API keys. Same root cause as D-2.
 - **Gap row:** G-4 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
 - **Status:** Fixed in `c6d909d`.
-- **Resolved:** `.env.example:5-6` sets PAPER_TRADING=true and DEMO_TRADING=false; `tests/test_config.py:258` `test_shipped_env_example_loads_as_paper`.
+- **Resolved:** `.env.example:6-7` sets PAPER_TRADING=true and DEMO_TRADING=false; `tests/test_config.py:258` `test_shipped_env_example_loads_as_paper`.
 
 
 ## Stub register (S-#)

@@ -5,11 +5,11 @@
 **Owner:** Cian Jake Francisco
 **Status:** Draft
 **Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the URL, risk-limit and kill-switch statements in step 3 re-checked 2026-10-09 against `70ccaec`; steps 5 and 7 and the step 5 Verify rows re-run 2026-10-09 against `099085b`
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the URL, risk-limit and kill-switch statements in step 3 re-checked 2026-10-09 against `70ccaec`; steps 5 and 7 and the step 5 Verify rows re-run 2026-10-09 against `099085b`; the step 7 restart statement re-checked 2026-10-09 against `5c781fc`
 
 This runbook prepares and checks Binance Futures demo (testnet) mode: creating testnet keys, setting the demo environment, running the demo readiness checker, a dry startup, verification and stopping. It absorbs the demo steps of the old `DEPLOYMENT.md` and the demo example of the old `CONFIGURATION.md`.
 
-**What is not possible yet.** Demo mode today is configuration plus a readiness report. The Binance adapter performs no network I/O: no HTTP, no request signing, no endpoint paths; `fetch_ohlcv` raises `NotImplementedError`, and `place_order` and `cancel_order` always raise `OrderPlacementDisabled`. In demo mode the entrypoint logs `demo mode not available yet: needs market data (G-13)` and exits 78 (`main.py:86-88`, G-3). So you cannot connect to the testnet, fetch candles, place a testnet order or run a demo session. A "dry startup" here means: configuration loads, the readiness checker passes, the health check passes, and the startup stub exits 0. A ready report also does not prove the keys are valid: the checker only tests that both values are non-blank. Live trading remains blocked at configuration load (`Planned, blocked`).
+**What is not possible yet.** Demo mode today is configuration plus a readiness report. The Binance adapter performs no network I/O: no HTTP, no request signing, no endpoint paths; `fetch_ohlcv` raises `NotImplementedError`, and `place_order` and `cancel_order` always raise `OrderPlacementDisabled`. In demo mode the entrypoint logs `demo mode not available yet: needs market data (G-13)` and exits 78 (`main.py:89-91`, G-3). So you cannot connect to the testnet, fetch candles, place a testnet order or run a demo session. A "dry startup" here means: configuration loads, the readiness checker passes, the health check passes, and the startup stub exits 0. A ready report also does not prove the keys are valid: the checker only tests that both values are non-blank. Live trading remains blocked at configuration load (`Planned, blocked`).
 
 Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (the 18 demo checks and the 15 live checks), [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configuration, section 2.3 modes), [ops-silverbot.md](ops-silverbot.md) (compose `demo` profile, stopping), [prd-silverbot.md](prd-silverbot.md) (PRD-F5), [runbook-local-dev.md](runbook-local-dev.md) (setup), [scrutiny-silverbot.md](scrutiny-silverbot.md) (G-3, G-6, G-10).
 
@@ -83,7 +83,7 @@ Related documents: [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-ga
 
    The first run exits 2 with the switch present; after removing the file the checker passes again. This proves the gate, not an emergency stop: nothing in the running bot consults the file today.
 
-7. **Stop.** The entrypoint exits 78 by itself, and supervisors do not restart on 78 ([ops-silverbot.md](ops-silverbot.md) section 4.8). If a unit is still restarting (any exit code other than 78), stop it with `sudo systemctl stop silver-bot` ([ops-silverbot.md](ops-silverbot.md) section 4.1). Remove testnet keys from `.env` when you finish, or revoke them on the testnet site.
+7. **Stop.** The entrypoint exits 78 by itself, and supervisors do not restart on 78, nor on 2 since `5c781fc` ([ops-silverbot.md](ops-silverbot.md) section 4.8). If a unit is still restarting (any other exit code, such as 1 for a crash), stop it with `sudo systemctl stop silver-bot` ([ops-silverbot.md](ops-silverbot.md) section 4.1). Remove testnet keys from `.env` when you finish, or revoke them on the testnet site.
 
 ## Verify
 
