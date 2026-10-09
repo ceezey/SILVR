@@ -12,6 +12,17 @@ if TYPE_CHECKING:
     from silver_bot.storage import SQLiteStorage
 
 
+def build_risk_config(config: AppConfig) -> RiskConfig:
+    """Return risk limits and the kill-switch path from settings."""
+
+    return RiskConfig(
+        risk_per_trade=config.max_risk_per_trade,
+        max_daily_loss=config.max_daily_loss,
+        max_leverage=config.max_leverage,
+        kill_switch_path=config.kill_switch_path if config.kill_switch_enabled else None,
+    )
+
+
 def build_risk_engine(config: AppConfig, storage: SQLiteStorage | None = None) -> RiskManagementEngine:
     """Return a risk engine whose limits and kill switch come from settings.
 
@@ -19,10 +30,4 @@ def build_risk_engine(config: AppConfig, storage: SQLiteStorage | None = None) -
     trade count and open positions persist across restarts.
     """
 
-    risk_config = RiskConfig(
-        risk_per_trade=config.max_risk_per_trade,
-        max_daily_loss=config.max_daily_loss,
-        max_leverage=config.max_leverage,
-        kill_switch_path=config.kill_switch_path if config.kill_switch_enabled else None,
-    )
-    return RiskManagementEngine(risk_config, state_store=storage)
+    return RiskManagementEngine(build_risk_config(config), state_store=storage)
