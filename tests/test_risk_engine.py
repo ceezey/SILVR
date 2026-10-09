@@ -358,3 +358,25 @@ def test_risk_state_load_error_is_logged(tmp_path, caplog) -> None:
 
     assert "risk state could not be loaded" in caplog.text
     assert "trades_today" in caplog.text
+
+
+from silver_bot.config import AppConfig, TradingMode
+from silver_bot.risk import build_risk_config
+
+
+def test_build_risk_config_maps_settings(tmp_path) -> None:
+    config = AppConfig(
+        mode=TradingMode.BACKTEST,
+        paper_trading=False,
+        kill_switch_enabled=True,
+        kill_switch_path=tmp_path / "KILL_SWITCH",
+        max_risk_per_trade=0.004,
+        max_daily_loss=0.01,
+        max_leverage=2.0,
+    )
+
+    risk = build_risk_config(config)
+
+    assert risk.kill_switch_path == tmp_path / "KILL_SWITCH"
+    assert (risk.risk_per_trade, risk.max_daily_loss, risk.max_leverage) == (0.004, 0.01, 2.0)
+    assert build_risk_engine(config).config == risk

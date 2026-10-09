@@ -1,7 +1,7 @@
 """Risk management package."""
 
 from silver_bot.risk.engine import RiskManagementEngine
-from silver_bot.risk.factory import build_risk_engine
+from silver_bot.risk.factory import build_risk_config, build_risk_engine
 from silver_bot.risk.kill_switch import KillSwitch
 from silver_bot.risk.models import (
     RiskConfig,
@@ -21,5 +21,6 @@ __all__ = [
     "RiskState",
     "RiskStateError",
     "RiskStateStore",
+    "build_risk_config",
     "build_risk_engine",
 ]
