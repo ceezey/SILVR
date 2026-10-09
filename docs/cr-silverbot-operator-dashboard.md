@@ -122,7 +122,7 @@ Per [sad-silverbot.md](sad-silverbot.md) §4: `restraint-guardian` (SAD-A4) on t
 
 | Reviewer | Result | Notes |
 |---|---|---|
-| restraint-guardian (SAD-A4) | Open | Not yet run |
+| restraint-guardian (SAD-A4) | PASS | Run 2026-10-09 on `e88f5c6..84a2ab4` (four new files, no existing file touched, no dependency). Reuses `KillSwitch.is_active()` and `redact_secrets`; `_query` is new because `SQLiteStorage` has no read-only open; the per-panel `except Exception` is required by AC-23.7 and shows the exception type. No dead code or unused configuration. |
 
 ## 6. Deferred
 
