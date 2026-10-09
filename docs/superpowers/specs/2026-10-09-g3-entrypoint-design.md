@@ -58,7 +58,7 @@ Paths are relative to `src/silver_bot/` unless they start with a root filename.
 - `CandleLoadResult` (frozen dataclass): `candles: list[Candle]` (sorted by `open_time`), `files: list[Path]`, `gaps: int`.
 - `CandleDataError(ValueError)` for every failure, with file and 1-based line where one applies.
 - Input format: Binance public kline CSV (data.binance.vision), columns `open_time, open, high, low, close, volume, close_time, ...` (12 columns; only the first 7 are read). A first row whose first cell is `open_time` (case-insensitive) is a header and is skipped.
-- Timestamps: integer milliseconds; a value `>= 10**15` is microseconds. Converted to UTC. `close_time` is Binance's value plus 1 ms.
+- Timestamps: integer milliseconds; a value `>= 10**15` is microseconds. Converted to UTC. `close_time` is Binance's value plus one unit of its own scale (1 ms, or 1 µs for microsecond files), so it lands on the next interval boundary.
 - Rejects: missing path; a directory with no `.csv`; no rows at all; a row with fewer than 7 columns; a non-integer timestamp; a non-finite or non-positive price; negative or non-finite volume; OHLC that `Candle` rejects; the same `open_time` twice with different values (identical duplicates from overlapping files are dropped); consecutive spacing that is not a positive whole multiple of `timeframe`.
 - `gaps` counts consecutive pairs spaced more than one interval apart.
 - `timeframe` units: `m` minutes, `h` hours, `d` days, `w` weeks (the same set `load_config` accepts).
