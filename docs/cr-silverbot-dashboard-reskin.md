@@ -24,7 +24,7 @@ The ladder makes the evidence path visible (brand §0, "progress, not emptiness"
 
 | # | Current text | Change | Reason |
 |---|---|---|---|
-| V-1 | SAD-B1 card: "load nothing from a CDN or any other host, including web fonts. Send Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'." (`docs/sad-silverbot.md:296`) | "Load nothing from a CDN or any other host. Serve only the vendored IBM Plex Mono woff2 files from the dashboard's own server. Send Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; font-src 'self'." | Owner chose to serve the brand font locally (design spec DS-4); same-origin only |
+| V-1 | SAD-B1 card: "load nothing from a CDN or any other host, including web fonts. Send Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'." (`docs/sad-silverbot.md:296`) | "Load nothing from a CDN or any other host. Serve only the vendored IBM Plex Mono woff2 files from the dashboard's own server. Send Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; font-src 'self'." The card's standard-library toolbox (`docs/sad-silverbot.md:288`) gains `importlib.resources` for reading the packaged font files. | Owner chose to serve the brand font locally (design spec DS-4); same-origin only |
 | V-2 | SAD-B1 gate sentence: mode A may change "only within that record's scope" (`silverbot-cr-001`) | Mode A may change within the scope of `silverbot-cr-001` and this record | §9.6 gate for the reskin |
 | V-3 | `cr-001` §3.2: `GET /` is the only route | Two more GET routes, an exact allow-list: `/fonts/IBMPlexMono-Regular.woff2` and `/fonts/IBMPlexMono-Bold.woff2`; every other path stays 404 | Font delivery without another host |
 | V-4 | AC-23.1: six panels in the §3.2 order with the safety banner first | Banner first, then the evidence ladder and the Next strip, then the six-panel order of `cr-001` | DSD §3 page order |
@@ -32,6 +32,7 @@ The ladder makes the evidence path visible (brand §0, "progress, not emptiness"
 | V-6 | Design spec §5.5: branded 404 and 500 pages | 404 becomes a branded HTML page in the shell (header, message, link to `/`, no data). No 500 page is added | Collector failures are already isolated per panel (AC-23.7); a 500 page would handle only render bugs |
 | V-7 | Design spec §7: "the safety banner is the first content on every page" | "on every status page"; error pages carry no status data, so no banner | A banner on the 404 page would need a full collect for a wrong URL |
 | V-8 | Design spec §8: Telegram anchor and voice in this record | Deferred to the Telegram transport record (G-15) | `TelegramAlerter` builds plain `[title] message` text (`monitoring/telegram.py:103`) and has no MarkdownV2 sanitizer; restyling it is G-15 work |
+| V-10 | DSD §2.3 (as of `silverbot-cr-001`): mode A "loads no web font" | DSD §2.3 says mode A serves the two vendored fonts once this record is built; the "until then" clause is removed on merge | DS-4 |
 | V-9 | `pyproject.toml` has no package data | `[tool.setuptools.package-data]` ships `silver_bot.monitoring` `fonts/*.woff2` and `fonts/OFL.txt` | Without it the fonts would not install with the package |
 
 ## 3. Changes
@@ -54,11 +55,11 @@ The three units of `silverbot-cr-001` stay. Standard library only; `dependencies
 
 | Unit | File | Change |
 |---|---|---|
-| Collect | `src/silver_bot/monitoring/status.py` | New `_ladder` collector in its own `try`/`except` (AC-23.7 pattern) returning five step rows and the NEXT index; a fixed `NEXT_TEXT` mapping; the 24-hour rule added to the existing readiness stale check; a `degraded` count of unreadable panels in the status dict. Reads only the files `_evidence` and `_readiness` already read. |
-| Render | `src/silver_bot/monitoring/dashboard_server.py` | Sterling tokens as CSS custom properties; `@font-face` rules pointing at the two same-origin font paths; the Plex Mono stack; instrument-panel CSS (surface panels, 1 px hairlines, 4 px radius); header with the inline S mark and `Silverbot`; ladder and Next strip rendering; branded 404 page. Status cells keep their markup (`<td class="{state}">[ TAG ]</td>`), so the glyph, word and colour rule is unchanged. |
-| Serve | `src/silver_bot/monitoring/dashboard_server.py` | A `FONTS` allow-list mapping the two exact paths to files in `src/silver_bot/monitoring/fonts/`, read with `importlib.resources`; CSP with `font-src 'self'`. Host check, GET-only, 405, bind address and port handling unchanged. |
+| Collect | `src/silver_bot/monitoring/status.py` | New `_ladder` step in its own `try`/`except` (AC-23.7 pattern) that derives five step rows and the NEXT index from the rows `_evidence` and `_readiness` already produced (no second read or parse of any file); a fixed `NEXT_TEXT` constant; the 24-hour rule added to the existing stale check in `_generated_row`; a `degraded` count of unreadable panels in the status dict. |
+| Render | `src/silver_bot/monitoring/dashboard_server.py` | The Sterling tokens the page uses, as CSS custom properties (no CSS for deferred components); `@font-face` rules pointing at the two same-origin font paths; the Plex Mono stack; instrument-panel CSS (surface panels, 1 px hairlines, 4 px radius); header with the inline S mark and `Silverbot`; ladder and Next strip rendering; branded 404 page. Status cells keep their markup (`<td class="{state}">[ TAG ]</td>`), so the glyph, word and colour rule is unchanged. |
+| Serve | `src/silver_bot/monitoring/dashboard_server.py` | A `FONTS` dict mapping the two exact paths to file names, read with `importlib.resources.files("silver_bot.monitoring").joinpath("fonts", name)` (anchored on the package, because `fonts/` has no `__init__.py`); no generic static-file handler; CSP with `font-src 'self'`. Host check, GET-only, 405, bind address and port handling unchanged. |
 
-New files: `src/silver_bot/monitoring/fonts/IBMPlexMono-Regular.woff2`, `src/silver_bot/monitoring/fonts/IBMPlexMono-Bold.woff2`, `src/silver_bot/monitoring/fonts/OFL.txt`. The font files come from the official IBM Plex release at a pinned version; their SHA-256 values are recorded in this record before merge and asserted by a test, so a changed file fails the suite.
+New files: `src/silver_bot/monitoring/fonts/IBMPlexMono-Regular.woff2`, `src/silver_bot/monitoring/fonts/IBMPlexMono-Bold.woff2`, `src/silver_bot/monitoring/fonts/OFL.txt`. The font files come from the official IBM Plex release at a pinned version; a test holds their SHA-256 values as constants, so a changed file fails the suite. Tests read the source tree (`pythonpath = ["src"]`), so the package-data entry is checked by a non-editable install (`pip install .`, as the `Dockerfile` does) during verification.
 
 Unchanged: `main.py`, `src/silver_bot/main.py`, configuration, Docker and `deploy/**`; the read-only rules of `cr-001` §3.2 (SQLite `mode=ro`, config allow-list, redaction, no script, no polling).
 
@@ -74,14 +75,14 @@ As specified in [dsd-silverbot.md](dsd-silverbot.md) §4.5 (from the design spec
 | 4 Demo | `reports/demo_readiness_report.json` | READY and fresh `[ OK ]`; READY and stale `[ WRN ]`; NOT READY `[ ERR ]`; missing `[ OFF ]`; unreadable `[ ERR ]` |
 | 5 Live | none | always `[ OFF ] blocked (PRD-F12)` |
 
-Next strip text: steps 1 or 2, `Next: run a backtest  python -m silver_bot --candles data/candles`; step 3, `Next: paper trading (not available yet, G-3)`; step 4, `Next: run the demo readiness checker (runbook-demo-testnet.md step 4)`; none, `All evidence gates pass. Live trading stays blocked (PRD-F12).` No other text is possible.
+Next strip text: steps 1 or 2, `Next: run a backtest (runbook-backtest.md steps 5 and 6)` (the backtest command needs the step 5 environment, so the strip points at the runbook); step 3, `Next: paper trading (not available yet, G-3)`; step 4, `Next: refresh demo readiness  python -m silver_bot.demo_readiness (runbook-demo-testnet.md steps 3 and 4)` (its default output, `reports/demo_readiness_report.json`, is the file the step reads); none, `All evidence gates pass. Live trading stays blocked (PRD-F12).` No other text is possible.
 
 Today's files give: Backtest `[ ERR ] 0 B` (NEXT), Out-of-sample `[ ERR ] 0 B`, Paper `[ ERR ] 0 B`, Demo `[ WRN ] READY · stale` (generated 2026-06-15), Live `[ OFF ] blocked`.
 
 ### 3.4 Doc updates on merge
 
 - [prd-silverbot.md](prd-silverbot.md): AC-23.1 reworded; AC-23.8 to AC-23.13 added.
-- [dsd-silverbot.md](dsd-silverbot.md): banner and §9 say mode A is reskinned per this record; §3.2 layout marked built.
+- [dsd-silverbot.md](dsd-silverbot.md): banner and §9 say mode A is reskinned per this record; §3.2 layout marked built; §2.3 drops its "until then" clause (V-10).
 - [sad-silverbot.md](sad-silverbot.md): SAD-B1 card per V-1 and V-2, then `python tools/materialize_docs.py`.
 - [qad-silverbot.md](qad-silverbot.md): test rows for AC-23.8 to AC-23.13 and the changed AC-23.1 test.
 - [ops-silverbot.md](ops-silverbot.md) §5.6: ladder states, NEXT, the 24-hour stale rule.
@@ -95,22 +96,22 @@ Standard library and pytest only, `tmp_path`, no network.
 |---|---|---|
 | Order | Banner, ladder, Next strip, then the six panels (updates `test_page_shows_six_panels_in_layout_order_with_banner_first`) | AC-23.1 |
 | Ladder | Each step with missing, 0-byte, invalid and valid inputs; demo fresh, stale, NOT READY, missing; Live blocked with `live_readiness_report.json` `ready` true | AC-23.8 |
-| Next | NEXT on the first non-OK step; each of the four strip texts; the rendered strip text is always one of the four | AC-23.9 |
+| Next | NEXT on the first non-OK step; each of the four strip texts asserted exactly | AC-23.9 |
 | Stale | `generated_at` 25 hours old READY gives `[ WRN ] stale`; NOT READY keeps `[ ERR ]` with `stale`; 23 hours is fresh; the `cr-001` evidence-newer rule still holds | AC-23.10 |
-| Fonts | Both paths 200 with `font/woff2` and the headers; `/fonts/x.woff2`, `/fonts/../status.py`, `/fonts/%2e%2e/x` and `/fonts/` get 404; bytes equal the packaged files; SHA-256 equals the recorded values | AC-23.11 |
-| CSP | Exact header on 200, 404, 405 and 400 responses (updates the three tests that assert the old string); no `http` URL in the HTML | AC-23.12 |
-| Brand | `<title>` and header contain `Silverbot`; inline `<svg>` in the header; `:root` values equal DSD §2.1 dark tokens; a raising collector adds one `degraded` line | AC-23.13 |
+| Fonts | Both paths 200 with `font/woff2` and the headers; one parametrized test sends `/fonts/x.woff2`, `/fonts/../status.py`, `/fonts/%2e%2e/x` and `/fonts/` and gets 404; SHA-256 of each served body equals the constant in the test | AC-23.11 |
+| CSP | Exact header on 200, 404, 405 and 400 responses (updates the two tests that assert the literal string: `test_get_root_returns_page_with_security_headers` and `test_other_methods_get_405`); no `http` URL in the HTML | AC-23.12 |
+| Brand | `<title>` and header contain `Silverbot`; inline `<svg>` in the header; every `:root` value the page uses equals its DSD §2.1 dark token; a raising collector adds one `degraded` line | AC-23.13 |
 | Unchanged | All `silverbot-cr-001` tests still pass (secrets, read-only, Host check, bind, escaping, isolation) | AC-23.2 to AC-23.7 |
 
 Commands: `python -m pytest` (all pass) and `python tools/materialize_docs.py --check` (no changes).
 
 ## 5. Pre-merge gate runs
 
-Per [sad-silverbot.md](sad-silverbot.md) §4: `restraint-guardian` (SAD-A4) on the full diff. The diff touches `src/silver_bot/monitoring/**`, `tests/**`, `pyproject.toml` and docs only; none is a live-gate surface or risk, execution, exchange, config or readiness code, so SAD-A1 to SAD-A3 are not required. Results are recorded here before merge.
+Per [sad-silverbot.md](sad-silverbot.md) §4: `restraint-guardian` (SAD-A4) on the full diff. The diff touches `src/silver_bot/monitoring/**`, `tests/**`, `pyproject.toml` and docs only (including the regenerated `.claude/agents/psl-purist.md`); none is a live-gate surface or risk, execution, exchange, config or readiness code, so SAD-A1 to SAD-A3 are not required. Results are recorded here before merge.
 
 | Reviewer | Result | Notes |
 |---|---|---|
-| restraint-guardian (SAD-A4) | Not run | Runs on the build diff after approval |
+| restraint-guardian (SAD-A4) | Not run on code | Runs on the build diff after approval. A scope review of this record (2026-10-14) found no safety check or `cr-001` test cut and suggested trims, now applied (font hashes in the test only, ladder reuses collected rows, one parametrized 404 test, only used CSS tokens). It also suggested dropping the branded 404 page and the `degraded` line; both are kept because the owner approved them in the design review, and the owner may still cut them before approval. |
 
 ## 6. Deferred
 

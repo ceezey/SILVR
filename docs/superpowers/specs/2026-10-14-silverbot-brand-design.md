@@ -127,7 +127,7 @@ Third person or no person. Present tense, active verbs, one claim per line. Say 
 
 | Moment | Not this | Silverbot |
 |--------|----------|-----------|
-| Empty source | `not available` | `not available: no backtest yet. Next: python -m silver_bot --candles data/candles` |
+| Empty source | `not available` | `not available: no backtest yet. Next: run a backtest (runbook-backtest.md steps 5 and 6)` |
 | Risk rejection | `Trade failed: limit hit` | `Risk engine held. Setup declined: Max daily loss limit reached.` |
 | Step finished | `Done!` | `Backtest and out-of-sample reports written. Next gate: paper trading (not available yet, G-3).` |
 | Gate closed | `Error: not ready` | `Live gate closed: 3 evidence reports empty (G-1).` |

@@ -210,9 +210,9 @@ The app shell and breakpoints of section 4.1, as a Figma template and as DSD tex
 
 | First step not OK | Text |
 |-------------------|------|
-| 1 or 2 | `Next: run a backtest  python -m silver_bot --candles data/candles` (one backtest run writes both reports) |
+| 1 or 2 | `Next: run a backtest (runbook-backtest.md steps 5 and 6)` (one backtest run writes both reports; the command needs the backtest environment of step 5, so the strip points at the runbook) |
 | 3 | `Next: paper trading (not available yet, G-3)` |
-| 4 | `Next: run the demo readiness checker (runbook-demo-testnet.md step 4)` |
+| 4 | `Next: refresh demo readiness  python -m silver_bot.demo_readiness (runbook-demo-testnet.md steps 3 and 4)` (its default output is `reports/demo_readiness_report.json`, the file step 4 reads) |
 | none | `All evidence gates pass. Live trading stays blocked (PRD-F12).` |
 
 The strip never suggests editing configuration, enabling live trading or removing the kill switch.
