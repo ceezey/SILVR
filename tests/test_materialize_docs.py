@@ -28,3 +28,13 @@ def test_brand_and_design_are_split_from_the_dsd() -> None:
     assert "## 2. " not in brand
     assert "## 2. Brand Primitives" in design and "## 7. Quality Gate" in design
     assert "## 1. " not in design and "## 8. " not in design and "## 9. " not in design
+
+
+def test_root_titles_use_the_brand_name() -> None:
+    spec = importlib.util.spec_from_file_location("materialize_docs", ROOT / "tools" / "materialize_docs.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    out = module.targets(ROOT)
+
+    assert "\n# Brand: Silverbot\n" in out["BRAND.md"]
+    assert "\n# Design System: Silverbot\n" in out["DESIGN.md"]

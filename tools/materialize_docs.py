@@ -75,10 +75,10 @@ def targets(root: Path) -> dict[str, str]:
     dsd = read("docs/dsd-silverbot.md")
     note = "Section references (§) point to `docs/dsd-silverbot.md`.\n\n"
     out["BRAND.md"] = (BANNER.format(src="docs/dsd-silverbot.md §0-1")
-                       + "# Brand: silver-bot\n\n" + note
+                       + "# Brand: Silverbot\n\n" + note
                        + to_root_links(span(dsd, "## 0. Brand Stance", "## 2. ")))
     out["DESIGN.md"] = (BANNER.format(src="docs/dsd-silverbot.md §2-7")
-                        + "# Design System: silver-bot\n\n" + note
+                        + "# Design System: Silverbot\n\n" + note
                         + to_root_links(span(dsd, "## 2. ", "## 8. ")))
     sad = read("docs/sad-silverbot.md")
     for path, body in CARD_RE.findall(sad):
