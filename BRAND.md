@@ -36,7 +36,7 @@ Silverbot never motivates with profit or win celebrations, streaks or scores tie
 | Read by people: README, dashboard title, alert header, prose | **Silverbot** | `Silverbot status · read-only` |
 | Read by code: package, console script, module, paths | `silver-bot` / `silver_bot` | `python -m silver_bot` |
 
-Never write "SilverBot", "SILVR" or "the Bot" as a proper name. "Silver Bot" (two words) is the legacy form still used across the suite docs; a separate rename pass replaces it. The built dashboard and the built Telegram text still show `silver-bot` until [cr-silverbot-dashboard-reskin.md](docs/cr-silverbot-dashboard-reskin.md) (`silverbot-cr-002`, Proposed) changes the dashboard and the Telegram transport record (G-15) changes the alerts.
+Never write "SilverBot" or "the Bot" as a proper name, and never use "SILVR" as the brand name; SILVR is only the name of the Figma design file (section 8). "Silver Bot" (two words) is the legacy form still used across the suite docs; a separate rename pass replaces it. The built dashboard and the built Telegram text still show `silver-bot` until [cr-silverbot-dashboard-reskin.md](docs/cr-silverbot-dashboard-reskin.md) (`silverbot-cr-002`, Proposed) changes the dashboard and the Telegram transport record (G-15) changes the alerts.
 
 Descriptor: *A disciplined ICT Silver Bullet trading bot, built like production infrastructure.*
 

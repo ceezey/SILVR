@@ -303,7 +303,7 @@ The only UI is a read-only status page on `127.0.0.1` (PRD-F13); it has no contr
 | `python -m silver_bot.demo_readiness` | `--output` (default `reports/demo_readiness_report.json`) | Runs 18 demo-readiness checks from `.env` overlaid by process environment; writes the report (`demo_readiness.py:99-111`). | 0 ready; 2 not ready |
 | `python -m silver_bot.health` | none | Loads config; no output, no connectivity or database check (`health.py:8-21`). Used by the Dockerfile `HEALTHCHECK`. | 0 ok; 2 `ConfigError`; 3 live flag (unreachable) |
 | `python -m silver_bot.monitoring.dashboard_server` | `--port N` (default 8765; 0 to 65535) | Read-only status page: serves six panels on `127.0.0.1` only, built afresh on each `GET /`; reads config, reports, the audit log and SQLite (read-only) and writes nothing (`monitoring/dashboard_server.py`, `monitoring/status.py`). Reads the current directory; prints the URL and that directory. | 0 stopped by the owner; 2 busy or out-of-range port |
-| `pytest` | standard pytest arguments | Runs the 271 collected tests in `tests/` (`pyproject.toml`: `pythonpath=["src"]`, `testpaths=["tests"]`). | pytest codes |
+| `pytest` | standard pytest arguments | Runs the 272 collected tests in `tests/` (`pyproject.toml`: `pythonpath=["src"]`, `testpaths=["tests"]`). | pytest codes |
 
 Not present: any paper runner, demo runner, report scheduler, model training entry point, or kill-switch command (G-3, G-16, G-22, G-6). Paper and ML pipelines are libraries called from tests only. There is no network data download; the owner fetches Binance kline files by hand ([runbook-backtest.md](runbook-backtest.md)).
 
