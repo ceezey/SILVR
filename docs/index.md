@@ -19,9 +19,9 @@ All suite docs were reconciled against code at commit `62037d1`, except the four
 | House Style & Voice (VOICE) | [voice-silverbot.md](voice-silverbot.md) | 0.1 | Draft | 2026-10-08 | N/A |
 | Business Requirements (BRD) | [brd-silverbot.md](brd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
 | Unit Economics (UES) | [ues-silverbot.md](ues-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
-| Product Requirements (PRD) | [prd-silverbot.md](prd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
+| Product Requirements (PRD) | [prd-silverbot.md](prd-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
 | Design System (DSD) | [dsd-silverbot.md](dsd-silverbot.md) | 0.1 | Draft (Silverbot brand and design system specified; mode A built per silverbot-cr-001; reskin proposed in silverbot-cr-002) | 2026-10-14 | N/A |
-| System Design (SDD) | [sdd-silverbot.md](sdd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
+| System Design (SDD) | [sdd-silverbot.md](sdd-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
 | QA and Test Plan (QAD) | [qad-silverbot.md](qad-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`; `feat/operator-dashboard`, PRD-F13 items) |
 | Subagent Roster (SAD) | [sad-silverbot.md](sad-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
 | Project Build Guide (BUILD) | [build-silverbot.md](build-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |

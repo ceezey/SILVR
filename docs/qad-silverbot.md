@@ -39,7 +39,7 @@ Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`
 
 **Data.** All tests use synthetic candles and in-code fixtures, including small Binance-format CSV files written to `tmp_path`. No historical dataset ships with the repository, and the owner has not yet chosen a data source (OI-8 in the BRD). Real-data runs are therefore not part of this suite (section 3.7).
 
-**Baseline result (verbatim).** Run on 2026-10-09 with `python -m pytest -q` from the repository root (Python 3.14.3) on the `feat/operator-dashboard` head (`dev` at `b24faf5` plus the PRD-F13 code, tests and this docs change):
+**Baseline result (verbatim).** Run on 2026-10-14 with `python -m pytest -q` from the repository root (Python 3.14.3) on `dev` at `3495327`:
 
 ```text
 ........................................................................ [ 32%]
@@ -57,9 +57,9 @@ Rows below cite tests as `tests/<file>.py::<name>`; every cited name was checked
 
 ## 3. Test Matrix
 
-Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered (G-#)`. A Not covered row is a scenario the PRD or an RFC says should hold but that no test pins; every one has a gap id and is listed again in section 3.8. A test may prove more than one scenario; where two rows cite the same test it is because the test asserts both. Scenario counts: 251 rows, of which 217 are automated and 34 are Not covered.
+Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered (G-#)`. A Not covered row is a scenario the PRD or an RFC says should hold but that no test pins; every one has a gap id and is listed again in section 3.8. A test may prove more than one scenario; where two rows cite the same test it is because the test asserts both. Scenario counts: 252 rows, of which 218 are automated and 34 are Not covered.
 
-### 3.1 Happy path (85 scenarios)
+### 3.1 Happy path (86 scenarios)
 
 | QAD-T# | Scenario | PRD-F# | Automated by (`tests/<file>.py::<name>`) or Not covered |
 |---|---|---|---|

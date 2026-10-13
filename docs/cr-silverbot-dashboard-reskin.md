@@ -32,8 +32,9 @@ The ladder makes the evidence path visible (brand §0, "progress, not emptiness"
 | V-6 | Design spec §5.5: branded 404 and 500 pages | 404 becomes a branded HTML page in the shell (header, message, link to `/`, no data). No 500 page is added | Collector failures are already isolated per panel (AC-23.7); a 500 page would handle only render bugs |
 | V-7 | Design spec §7: "the safety banner is the first content on every page" | "on every status page"; error pages carry no status data, so no banner | A banner on the 404 page would need a full collect for a wrong URL |
 | V-8 | Design spec §8: Telegram anchor and voice in this record | Deferred to the Telegram transport record (G-15) | `TelegramAlerter` builds plain `[title] message` text (`monitoring/telegram.py:103`) and has no MarkdownV2 sanitizer; restyling it is G-15 work |
-| V-10 | DSD §2.3 (as of `silverbot-cr-001`): mode A "loads no web font" | DSD §2.3 says mode A serves the two vendored fonts once this record is built; the "until then" clause is removed on merge | DS-4 |
 | V-9 | `pyproject.toml` has no package data | `[tool.setuptools.package-data]` ships `silver_bot.monitoring` `fonts/*.woff2` and `fonts/OFL.txt` | Without it the fonts would not install with the package |
+| V-10 | DSD §2.3 (as of `silverbot-cr-001`): mode A "loads no web font" | DSD §2.3 says mode A serves the two vendored fonts once this record is built; the "until then" clause is removed on merge | DS-4 |
+| V-11 | SAD-B1 card layout line (`docs/sad-silverbot.md:297`): "Follow the reference layout in DSD section 3.2: the safety banner (mode, live, demo, kill switch) is the top row, then the panels." | "the safety banner is the top row, then the evidence ladder and the Next strip, then the panels" | DSD §3 page order |
 
 ## 3. Changes
 

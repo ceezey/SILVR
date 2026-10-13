@@ -44,6 +44,7 @@ IBM Plex Mono only (monospace). Font stack: `"IBM Plex Mono", ui-monospace, "Cas
 | `Label` | 10 / Bold, upper case | Panel titles, step labels |
 | `Detail` | 11 / Regular | Timestamps, report rows, secondary lines |
 | `Data` | 12 / Regular | Banner, status cells, Next strip, data rows |
+| `Data Bold` | 12 / Bold | Bold labels in data rows and controls (active tab, emphasised labels) |
 | `Wordmark` | 14 / Bold, `brand` | Dashboard header |
 | `Showcase 18`, `Showcase 22`, `Showcase 40` | Bold | Tagline, headings, hero wordmark (brand surfaces) |
 
@@ -75,7 +76,7 @@ Size tiers:
 | S | Under 32 px (dashboard header, avatars) | Zones and entry line only; blank badge band |
 | Text | Modes B, C and D | `[Ag]` |
 
-- Horizontal lockup: mark, then the `Silverbot` wordmark in Plex Mono Bold; wordmark cap height is 40% of the mark height; the gap is 25% of the mark width.
+- Horizontal lockup: an M-tier mark at 48 px, a 16 px gap, then the `Silverbot` wordmark in Showcase 22 (cap height about one third of the mark height).
 - Stacked lockup: the horizontal lockup with the tagline "Discipline over id." below the wordmark in `muted`.
 - Clear space: 25% of the mark width on every side.
 - Versions: full colour dark, full colour light, and one colour (zones as 1 px outlines, candles solid).
@@ -295,5 +296,5 @@ A UI or alert change passes only if:
 - [ ] `accent` marks only the next step and links; `brand` only the mark and wordmark.
 - [ ] Fonts are served only from the dashboard's own `127.0.0.1` server. The only CSP change is `font-src 'self'`.
 - [ ] No action or input component is wired to orders, configuration, the kill switch or a gate; any control needs a Change Record.
-- [ ] Interactive targets are at least 24 x 24 px; a readiness report older than 24 hours shows `[ WRN ] stale`.
+- [ ] Interactive targets are at least 24 x 24 px; a readiness report older than 24 hours shows `stale` (`[ WRN ]` when READY; `[ ERR ]` kept when NOT READY).
 - [ ] DSD token values match the Figma variables in SILVR.
