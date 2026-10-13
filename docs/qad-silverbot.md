@@ -4,10 +4,10 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-09 against code at commit `5c781fc` (the PRD-F13 operator dashboard added 44 test functions in `tests/test_dashboard_status.py` and `tests/test_dashboard_server.py`, rows QAD-T208 to QAD-T251, verified at the `feat/operator-dashboard` head on `b24faf5`; G-3 review fixes added 2 test functions, rows QAD-T206 and QAD-T207, renamed the QAD-T187 test and rewrote its scenario, and updated QAD-T200; G-3 entrypoint batch 2 at `099085b` added 33 test functions, rows QAD-T174 to QAD-T204, and closed QAD-T78, QAD-T84 and QAD-T85; QAD-T205 maps the DSD materialization test added in `b7f0546`; section 3.3 and PRD-F7 counts corrected for QAD-T172 and QAD-T173; HIGH safety fixes batch 1 added 36 at `70ccaec`; other rows are unchanged since `62037d1`)
+**Last updated:** 2026-10-14
+**Last reconciled:** 2026-10-09 against code at commit `5c781fc` (the PRD-F13 operator dashboard added 44 test functions in `tests/test_dashboard_status.py` and `tests/test_dashboard_server.py`, rows QAD-T208 to QAD-T251, verified at the `feat/operator-dashboard` head on `b24faf5`; G-3 review fixes added 2 test functions, rows QAD-T206 and QAD-T207, renamed the QAD-T187 test and rewrote its scenario, and updated QAD-T200; G-3 entrypoint batch 2 at `099085b` added 33 test functions, rows QAD-T174 to QAD-T204, and closed QAD-T78, QAD-T84 and QAD-T85; QAD-T205 maps the DSD materialization test added in `b7f0546`; QAD-T252 maps the brand-name title test added in `eb0da39` (2026-10-14); section 3.3 and PRD-F7 counts corrected for QAD-T172 and QAD-T173; HIGH safety fixes batch 1 added 36 at `70ccaec`; other rows are unchanged since `62037d1`)
 
-This document is the test plan for Silver Bot. It maps all 225 existing test functions (271 collected tests) to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. Related documents: [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [build-silverbot.md](build-silverbot.md) and the [index](index.md).
+This document is the test plan for Silver Bot. It maps all 226 existing test functions (272 collected tests) to scenarios (`QAD-T#`) and to the features in [prd-silverbot.md](prd-silverbot.md) (`PRD-F#`), lists the scenarios no test covers, and sets the release criteria for each mode gate (backtest, paper, demo, live). It absorbs the release-gate parts of the old `BACKTESTING.md`. Test counts and behaviours come from the fact inventory for this reconciliation and from the baseline run in section 2. Gaps are `G-#` rows in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md). Live trading is `Planned, blocked` (PRD-F12); nothing here enables it. Related documents: [aia-silverbot.md](aia-silverbot.md), [ops-silverbot.md](ops-silverbot.md), [clr-silverbot.md](clr-silverbot.md), [build-silverbot.md](build-silverbot.md) and the [index](index.md).
 
 Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`), [sdd-silverbot.md](sdd-silverbot.md), [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md), [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) and [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (RFC-004, the mode-gate conditions).
 
@@ -46,12 +46,12 @@ Source documents: [brd-silverbot.md](brd-silverbot.md) (success metrics `BRD-M#`
 ........................................................................ [ 65%]
 ........................................................................ [ 98%]
 ....                                                                     [100%]
-271 passed in 12.45s
+272 passed in 13.93s
 ```
 
-Earlier baselines: `220 passed` at `5c781fc`, `218 passed` at `099085b`, `169 passed` at `70ccaec`, `170 passed` at `f8a51b4`. The 2026-10-08 baseline at `62037d1` was `108 passed in 1.57s`, run with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` in the original checkout path.
+Earlier baselines: `271 passed` before QAD-T252, `220 passed` at `5c781fc`, `218 passed` at `099085b`, `169 passed` at `70ccaec`, `170 passed` at `f8a51b4`. The 2026-10-08 baseline at `62037d1` was `108 passed in 1.57s`, run with `/c/TRADING BOT/.venv/Scripts/python -m pytest -q` in the original checkout path.
 
-The count is 225 test functions in 25 files (`^def test_` over `tests/`); parametrized cases make 271 collected tests. At `5c781fc` it was 181 functions in 23 files (220 collected). At `099085b` it was 179 functions (218 collected); at `f8a51b4` it was 146 functions in 20 files; at `62037d1` 108 functions in 19 files. The elapsed time is a single observation, not a benchmark.
+The count is 226 test functions in 25 files (`^def test_` over `tests/`); parametrized cases make 272 collected tests. Before QAD-T252 it was 225 functions (271 collected). At `5c781fc` it was 181 functions in 23 files (220 collected). At `099085b` it was 179 functions (218 collected); at `f8a51b4` it was 146 functions in 20 files; at `62037d1` 108 functions in 19 files. The elapsed time is a single observation, not a benchmark.
 
 Rows below cite tests as `tests/<file>.py::<name>`; every cited name was checked to exist (section 8).
 
@@ -116,6 +116,7 @@ Each row is `QAD-T#` | scenario | feature | the automated test, or `Not covered 
 | QAD-T168 | An engine without a store writes no `risk_state` row | PRD-F3 | `tests/test_risk_engine.py::test_engine_without_store_does_not_persist` |
 | QAD-T169 | Materialized root files (`AGENTS.md`, `MODEL_CARD.md`, `.claude/agents/*.md`) match their canonical docs | None (docs tooling) | `tests/test_materialize_docs.py::test_materialized_files_are_up_to_date` |
 | QAD-T205 | `BRAND.md` gets DSD sections 0 and 1 only and `DESIGN.md` sections 2 to 7 only | None (docs tooling) | `tests/test_materialize_docs.py::test_brand_and_design_are_split_from_the_dsd` |
+| QAD-T252 | `BRAND.md` and `DESIGN.md` titles use the brand name Silverbot | None (docs tooling) | `tests/test_materialize_docs.py::test_root_titles_use_the_brand_name` |
 | QAD-T174 | A Binance kline CSV without a header loads into UTC candles with `SYMBOL` and `TIMEFRAME` stamped, `close_time` on the next interval boundary, and no gaps | PRD-F2, PRD-F10 | `tests/test_csv_loader.py::test_loads_rows_without_header` |
 | QAD-T175 | A first row whose first cell is `open_time` is skipped as a header, also behind a UTF-8 BOM | PRD-F2, PRD-F10 | `tests/test_csv_loader.py::test_skips_header_row_even_with_bom` |
 | QAD-T176 | Microsecond timestamps (from `10**15` up) convert to the same UTC open and close times as milliseconds | PRD-F2, PRD-F10 | `tests/test_csv_loader.py::test_microsecond_timestamps` |
@@ -500,7 +501,7 @@ Entering paper requires a runtime that runs the paper engine through the entrypo
 - [ ] Risk limits come from one source capped at 0.005 per trade (built, QAD-T109, QAD-T139, QAD-T154), 0.02 daily loss and 3x leverage (demo only today, QAD-T163), and risk state survives a restart in the running bot (built for a store-backed engine, QAD-T110; RFC-004 condition 5, G-5, G-7).
 - [ ] No order was placed without a stop loss and none bypassed the risk engine (BRD-M10, zero); checked in the audit log.
 - [ ] Daily and weekly reports are produced without manual calls (G-16).
-- [ ] The full suite passes (baseline: 271 passed on `feat/operator-dashboard`, 2026-10-09) and no S1 or S2 bug is open (section 5).
+- [ ] The full suite passes (baseline: 272 passed on `dev`, 2026-10-14) and no S1 or S2 bug is open (section 5).
 
 ### 6.3 Gate 3: demo (Binance Futures testnet; entering and leaving)
 
@@ -546,7 +547,7 @@ ML is optional and may only approve, reject or reduce risk (PRD-F6, [RFC-003](rf
 
 ## 8. Self-Check
 
-- [x] Every one of the 225 test functions in `tests/*.py` appears in at least one QAD-T# row (verified by script on 2026-10-09: 225 of 225).
+- [x] Every one of the 226 test functions in `tests/*.py` appears in at least one QAD-T# row (225 of 225 verified by script on 2026-10-09; QAD-T252 added on 2026-10-14 for the 226th).
 - [x] Every `tests/<file>.py::<name>` reference names a test that exists (verified by grep for `def <name>`).
 - [x] Every Not covered row cites an existing `G-#` and is listed in section 3.8 (34 rows).
 - [x] Section 3.7 records zero measured performance numbers; every metric is Not yet measured with a `G-#`.
