@@ -37,7 +37,7 @@ Out of scope (sub-project **2b**, its own Change Record `silverbot-cr-002`): eve
 | DS-6 | Evidence ladder | Yes, as its own row **under the safety banner**. |
 | DS-7 | Theme per surface | Dashboard and terminal are dark only; light is for README, slides, social and Figma. |
 | DS-8 | Interface foundations | Five groups (section 5), with an "allowed use" rule on every action and input component. |
-| DS-9 | Staleness | A readiness report older than **24 hours** is `[ WRN ] stale`. |
+| DS-9 | Staleness | A readiness report is `[ WRN ] stale` when it is older than **24 hours**, in addition to the existing `silverbot-cr-001` rule (an evidence report modified after its `generated_at`). Either condition makes it stale. |
 | DS-10 | Figma | Pages **Branding** and **Foundation Components** in SILVR; the DSD wins on any conflict. |
 | DS-11 | Execution | Parallel workflow: a docs track and a Figma track (section 9). |
 
@@ -68,7 +68,7 @@ All text tokens meet WCAG AA (at least 4.5:1) on both `canvas` and `surface` in 
 | `warning` | `#E3B341` (9.3) | `#8A5D00` (5.4) | 3 | `[ WRN ]` |
 | `danger` | `#F0616D` (5.7) | `#C23142` (5.1) | 1 | `[ ERR ]` |
 
-The §2.2 glyph table (`[ OK ]`, `[ WRN ]`, `[ ERR ]`, `[ OFF ]`) and its meanings stay. The `warning` meaning gains "readiness report older than 24 hours" (DS-9).
+The §2.2 glyph table (`[ OK ]`, `[ WRN ]`, `[ ERR ]`, `[ OFF ]`) and its meanings stay. The `warning` meaning gains "readiness report older than 24 hours", alongside the existing stale rule from `silverbot-cr-001` (DS-9).
 
 ### 2.2 Type
 
@@ -200,7 +200,7 @@ The app shell and breakpoints of section 4.1, as a Figma template and as DSD tex
 | 1 Backtest | `reports/backtest_report.json` | non-empty JSON `[ OK ]`; 0 B or not JSON `[ ERR ]`; missing `[ OFF ]` |
 | 2 Out-of-sample | `reports/out_of_sample_validation_report.json` | as step 1 |
 | 3 Paper | `reports/paper_trading_report.json` | as step 1 |
-| 4 Demo | `reports/demo_readiness_report.json` (`ready`, `generated_at`) | `ready` true and fresh `[ OK ] READY`; `ready` true and older than 24 h `[ WRN ] READY · stale`; `ready` false `[ ERR ] NOT READY`; missing `[ OFF ]`; unreadable `[ ERR ] unreadable` |
+| 4 Demo | `reports/demo_readiness_report.json` (`ready`, `generated_at`) | `ready` true and fresh `[ OK ] READY`; `ready` true and stale (older than 24 h, or an evidence report modified after `generated_at`) `[ WRN ] READY · stale`; `ready` false `[ ERR ] NOT READY`; missing `[ OFF ]`; unreadable `[ ERR ] unreadable` |
 | 5 Live | none | always `[ OFF ] blocked (PRD-F12)`, whatever the live readiness report says |
 
 - NEXT is the first of steps 1 to 4 whose state is not `[ OK ]`. Its card takes the `next` variant (accent outline and a `NEXT` label).
@@ -217,7 +217,7 @@ The app shell and breakpoints of section 4.1, as a Figma template and as DSD tex
 
 The strip never suggests editing configuration, enabling live trading or removing the kill switch.
 
-**Source states** (every panel row): `ok`; `empty` (0 B, `[ ERR ]`); `unavailable` (missing, `[ OFF ]`); `unreadable` (bad JSON or permission denied, `[ ERR ]`); `stale` (`[ WRN ]`, readiness only, older than 24 h; an `[ ERR ]` row keeps `[ ERR ]` and adds `stale` to its detail). Each shows the reason and, where one exists, the next step.
+**Source states** (every panel row): `ok`; `empty` (0 B, `[ ERR ]`); `unavailable` (missing, `[ OFF ]`); `unreadable` (bad JSON or permission denied, `[ ERR ]`); `stale` (`[ WRN ]`, readiness only, either stale condition of DS-9; an `[ ERR ]` row keeps `[ ERR ]` and adds `stale` to its detail). Each shows the reason and, where one exists, the next step.
 
 **Page states:** `nominal`; `degraded` (at least one source unreadable; one summary line under the banner); branded `404` and `500` pages in the same shell.
 
