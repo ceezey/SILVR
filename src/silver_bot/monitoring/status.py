@@ -148,7 +148,7 @@ def _demo_step(readiness_rows: list[Row]) -> Row:
     if state == "warn":
         return row("warn", LADDER_STEPS[3], "READY · stale")
     if state == "err" and text.startswith("NOT READY"):
-        return row("err", LADDER_STEPS[3], "NOT READY")
+        return row("err", LADDER_STEPS[3], text)
     if text == "missing":
         return row("off", LADDER_STEPS[3], "missing")
     return row("err", LADDER_STEPS[3], "unreadable")

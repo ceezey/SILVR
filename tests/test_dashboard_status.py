@@ -320,11 +320,11 @@ def test_ladder_demo_stale_is_ready_stale(tmp_path):
     assert steps(collect(tmp_path))[3] == {"state": "warn", "label": "Demo", "text": "READY · stale"}
 
 
-def test_ladder_demo_not_ready_drops_the_stale_suffix(tmp_path):
+def test_ladder_demo_not_ready_keeps_err_and_the_stale_suffix(tmp_path):
     fresh_demo(tmp_path, ready=False)
     assert steps(collect(tmp_path))[3] == {"state": "err", "label": "Demo", "text": "NOT READY"}
     fresh_demo(tmp_path, ready=False, hours=30)
-    assert steps(collect(tmp_path))[3] == {"state": "err", "label": "Demo", "text": "NOT READY"}
+    assert steps(collect(tmp_path))[3] == {"state": "err", "label": "Demo", "text": "NOT READY · stale"}
 
 
 def test_ladder_demo_missing_is_off_and_bad_files_are_unreadable(tmp_path):

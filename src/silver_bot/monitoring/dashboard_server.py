@@ -60,7 +60,7 @@ section{flex:1 1 38ch;min-width:0;background:var(--surface);border:1px solid var
 border-radius:4px;padding:0 16px}
 table{width:100%;border-collapse:collapse}
 th,td{padding:0 1ch 0 0;text-align:left;vertical-align:top;font-weight:normal}
-thead th,th[scope=row],footer,.detail{color:var(--muted)}
+thead th,th[scope=row],footer{color:var(--muted)}
 thead th,td:last-child{font-size:11px}
 td:last-child{overflow-wrap:anywhere}
 td.ok,td.warn,td.err,td.off{white-space:nowrap}
@@ -176,7 +176,7 @@ def _render_ladder(ladder: dict[str, Any]) -> str:
         marker = " <strong>NEXT</strong>" if is_next else ""
         cards.append(
             f'<li class="step{" next" if is_next else ""}">{index + 1} '
-            f'{html.escape(step["label"])} <span class="{step["state"]}">{TAGS[step["state"]]}</span> '
+            f'<span class="label">{html.escape(step["label"])}</span> <span class="{step["state"]}">{TAGS[step["state"]]}</span> '
             f'{html.escape(step["text"])}{marker}</li>'
         )
     return (

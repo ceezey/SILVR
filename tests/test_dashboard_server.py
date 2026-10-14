@@ -153,7 +153,9 @@ def test_unreadable_ladder_renders_one_step_and_no_strip(tmp_path):
     page = render_page(status)
 
     assert page.count('<li class="step') == 1
-    assert "KeyError" in page and "unreadable" in page
+    card = page.split('<li class="step', 1)[1].split("</li>", 1)[0]
+    assert '<span class="label">unreadable</span>' in card
+    assert "[ ERR ]" in card and "KeyError" in card
     assert "next-strip" not in page.split("</style>", 1)[1]
     assert "<strong>NEXT</strong>" not in page
 
