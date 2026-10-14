@@ -373,6 +373,16 @@ Never cut: validation, risk gates, the kill switch, stop loss, tests or secret h
 
 ### 5.1 Change Workflow
 
+Branch flow (owner decision, 2026-10-14): BE and FE work, then merge to `dev`, then QA, then a PR to `main`. `main` is the production bot; nothing is developed, tested or pushed there.
+
+1. Branch from `dev` per task: `feat/be-<name>` for bot code, `feat/fe-<name>` for the operator dashboard or Telegram (FE is built by `psl-purist`, SAD-B1).
+2. Build on the branch with tests, and run the reviewers below before merging.
+3. Merge the branch into `dev` and push. No PR and no owner sign-off is needed for this step.
+4. QA on `dev`: the full `python -m pytest`, `python tools/materialize_docs.py --check`, the [QAD](docs/qad-silverbot.md) section 6 release criteria for the affected mode gate, and a smoke run of the bot and the dashboard. The owner signs off.
+5. Open a PR from `dev` to `main` only after QA passes and the owner says go.
+
+For each change:
+
 1. When a change touches a Locked doc, propose a Change Record `docs/cr-silverbot-<slug>.md` with sections: Why, Divergences, Changes, Verification, Pre-merge gate runs, Deferred.
 2. Apply the change (code, tests, docs).
 3. Verify: run the tests and the doc checks; run the subagent reviewers that SAD section 4 requires.
