@@ -71,35 +71,23 @@ class PaperTradingEngine:
             if self.storage is not None:
                 self.storage.save_candles([candle])
 
-            if self.risk.kill_switch.is_active() and not self._kill_alert_sent:
-                event = PaperLifecycleEvent(
-                    event_type=PaperEventType.KILL_SWITCH_ACTIVE,
-                    symbol=candle.symbol,
-                    timestamp=candle.close_time or candle.open_time,
-                    message="Kill switch active",
-                    context={},
-                )
-                await self.alerter.kill_switch_active()
-                self._record_event(event, result)
-                self._kill_alert_sent = True
-
             for event in self.executor.process_candle(candle):
-                self._record_event(event, result)
-                if event.event_type == PaperEventType.PAPER_TRADE_OPENED:
-                    direction = str((event.context or {}).get("direction", "UNKNOWN"))
-                    await self.alerter.paper_trade_opened(event.symbol, direction)
-                if event.event_type == PaperEventType.PAPER_TRADE_CLOSED and event.trade is not None:
-                    self.equity += event.trade.realized_pnl
-                    result.equity = self.equity
-                    result.closed_trades += 1
-                    self.risk.release_trade(
-                        realized_pnl=event.trade.realized_pnl,
-                        day=event.trade.exit_time.date(),
+                await self._handle_execution_event(event, result)
+
+            if self.risk.kill_switch.is_active():
+                if not self._kill_alert_sent:
+                    event = PaperLifecycleEvent(
+                        event_type=PaperEventType.KILL_SWITCH_ACTIVE,
+                        symbol=candle.symbol,
+                        timestamp=candle.close_time or candle.open_time,
+                        message="Kill switch active",
+                        context={},
                     )
-                    if self.storage is not None:
-                        self.storage.save_paper_trade(event.trade)
-                    await self.alerter.paper_trade_closed(event.symbol, event.trade.realized_pnl)
-                    result.trades.append(event.trade)
+                    await self.alerter.kill_switch_active()
+                    self._record_event(event, result)
+                    self._kill_alert_sent = True
+                for event in self.executor.flatten(candle, reason="kill switch active"):
+                    await self._handle_execution_event(event, result)
 
             if not self.executor.has_active_trade:
                 await self._evaluate_signal(candle, result)
@@ -120,6 +108,27 @@ class PaperTradingEngine:
         )
         await self.alerter.bot_stopped()
         return result
+
+    async def _handle_execution_event(self, event: PaperLifecycleEvent, result: PaperTradingResult) -> None:
+        self._record_event(event, result)
+        if event.event_type == PaperEventType.PAPER_TRADE_OPENED:
+            direction = str((event.context or {}).get("direction", "UNKNOWN"))
+            await self.alerter.paper_trade_opened(event.symbol, direction)
+        elif event.event_type == PaperEventType.PAPER_ORDER_CANCELLED:
+            # The order never filled, so its reserved capacity is released with no PnL.
+            self.risk.release_trade(realized_pnl=0.0, day=event.timestamp.date())
+        elif event.event_type == PaperEventType.PAPER_TRADE_CLOSED and event.trade is not None:
+            self.equity += event.trade.realized_pnl
+            result.equity = self.equity
+            result.closed_trades += 1
+            self.risk.release_trade(
+                realized_pnl=event.trade.realized_pnl,
+                day=event.trade.exit_time.date(),
+            )
+            if self.storage is not None:
+                self.storage.save_paper_trade(event.trade)
+            await self.alerter.paper_trade_closed(event.symbol, event.trade.realized_pnl)
+            result.trades.append(event.trade)
 
     async def _evaluate_signal(self, candle: Candle, result: PaperTradingResult) -> None:
         signal = self.strategy.evaluate(self._candles)

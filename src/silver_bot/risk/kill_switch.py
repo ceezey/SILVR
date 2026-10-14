@@ -13,17 +13,19 @@ class KillSwitch:
     """Manual and automatic trading halt backed by a file.
 
     The switch fails closed: if the file exists, is a directory, or cannot be
-    checked, trading is halted.
+    checked, trading is halted. Without a path the switch is still armed: a
+    trip halts this instance in memory until it is discarded.
     """
 
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path) if path is not None else None
+        self.tripped_reason: str | None = None
 
     def is_active(self) -> bool:
         """Return true when trading must halt."""
 
         if self.path is None:
-            return False
+            return self.tripped_reason is not None
         try:
             os.stat(self.path)
         except FileNotFoundError:
@@ -53,7 +55,10 @@ class KillSwitch:
     def trip(self, reason: str) -> None:
         """Write the kill-switch file; the first trip's reason is kept."""
 
-        if self.path is None or self.is_active():
+        if self.is_active():
+            return
+        if self.path is None:
+            self.tripped_reason = reason
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"reason": reason, "tripped_at": datetime.now(timezone.utc).isoformat()}

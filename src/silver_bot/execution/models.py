@@ -17,6 +17,7 @@ class PaperEventType(str, Enum):
     SIGNAL_DETECTED = "signal_detected"
     RISK_REJECTED = "risk_rejected"
     PAPER_ORDER_CREATED = "paper_order_created"
+    PAPER_ORDER_CANCELLED = "paper_order_cancelled"
     PAPER_TRADE_OPENED = "paper_trade_opened"
     PAPER_TRADE_CLOSED = "paper_trade_closed"
     ERROR = "error"

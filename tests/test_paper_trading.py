@@ -145,3 +145,59 @@ def test_reconnecting_market_stream_recovers_from_mock_failure() -> None:
 
     assert candles == expected
     assert attempts["count"] == 2
+
+
+class TripAfterStream(MockMarketDataStream):
+    """Mock stream that creates the kill-switch file after yielding `trip_after` candles."""
+
+    def __init__(self, candles, *, kill_file, trip_after: int) -> None:
+        super().__init__(candles)
+        self.kill_file = kill_file
+        self.trip_after = trip_after
+
+    async def candles(self):
+        index = 0
+        async for item in super().candles():
+            if index == self.trip_after:
+                self.kill_file.write_text("stop", encoding="utf-8")
+            yield item
+            index += 1
+
+
+def test_kill_switch_closes_open_paper_position(tmp_path) -> None:
+    kill_file = tmp_path / "KILL_SWITCH"
+    candles = [*valid_long_setup(), candle(9, 112, 113, 105, 110), candle(10, 110, 112, 108, 111)]
+    risk = RiskManagementEngine(RiskConfig(kill_switch_path=kill_file))
+    engine = PaperTradingEngine(
+        stream=TripAfterStream(candles, kill_file=kill_file, trip_after=10),
+        strategy=strategy(),
+        risk=risk,
+    )
+
+    result = asyncio.run(engine.run())
+
+    assert result.closed_trades == 1
+    trade = result.trades[0]
+    assert trade.exit_reason.value == "kill_switch"
+    assert trade.exit_time == candles[-1].open_time
+    assert trade.realized_pnl > 0
+    assert risk.state.open_positions == 0
+    assert engine.executor.has_active_trade is False
+
+
+def test_kill_switch_cancels_pending_paper_order(tmp_path) -> None:
+    kill_file = tmp_path / "KILL_SWITCH"
+    candles = [*valid_long_setup(), candle(9, 116, 125, 116, 120)]
+    risk = RiskManagementEngine(RiskConfig(kill_switch_path=kill_file))
+    engine = PaperTradingEngine(
+        stream=TripAfterStream(candles, kill_file=kill_file, trip_after=9),
+        strategy=strategy(),
+        risk=risk,
+    )
+
+    result = asyncio.run(engine.run())
+
+    assert result.closed_trades == 0
+    assert any(event.event_type == PaperEventType.PAPER_ORDER_CANCELLED for event in result.events)
+    assert risk.state.open_positions == 0
+    assert engine.executor.has_active_trade is False
