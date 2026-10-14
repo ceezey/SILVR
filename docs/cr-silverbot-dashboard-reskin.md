@@ -4,7 +4,7 @@
 **Project:** Silver Bot (ICT Silver Bullet trading bot)
 **Version:** 0.1
 **Author:** Cian Jake Francisco
-**Status:** Approved (owner, 2026-10-14; build in progress on `dev`)
+**Status:** Approved (owner, 2026-10-14); built on dev
 **Last updated:** 2026-10-14
 **Base commit:** `f0ff6e9` on `dev`
 **PRD Reference:** [prd-silverbot.md](prd-silverbot.md) PRD-F13 (amended: AC-23.1 reworded, AC-23.8 to AC-23.13 added)
@@ -34,7 +34,7 @@ The ladder makes the evidence path visible (brand §0, "progress, not emptiness"
 | V-8 | Design spec §8: Telegram anchor and voice in this record | Deferred to the Telegram transport record (G-15) | `TelegramAlerter` builds plain `[title] message` text (`monitoring/telegram.py:103`) and has no MarkdownV2 sanitizer; restyling it is G-15 work |
 | V-9 | `pyproject.toml` has no package data | `[tool.setuptools.package-data]` ships `silver_bot.monitoring` `fonts/*.woff2` and `fonts/OFL.txt` | Without it the fonts would not install with the package |
 | V-10 | DSD §2.3 (as of `silverbot-cr-001`): mode A "loads no web font" | DSD §2.3 says mode A serves the two vendored fonts once this record is built; the "until then" clause is removed on merge | DS-4 |
-| V-12 | Section 3.2 adds the 24-hour rule to `_generated_row` only; section 4 says every `silverbot-cr-001` test still passes | Either stale condition also marks the main readiness row: `[ WRN ] READY · stale` or `[ ERR ] NOT READY · stale`; the `generated` row keeps the date and names the reason. A READY report whose `generated_at` cannot be parsed is not fresh and shows `[ WRN ] READY · stale`. Five `cr-001` tests change: `test_readiness_ready_not_ready_and_failing_checks` (its fixtures are older than 24 hours), `test_readiness_tolerates_malformed_fields` (row 0), the page-order test and the two CSP literal tests | AC-23.10, DSD §3.2 and §4.4 put stale on the main row (owner ruling, 2026-10-14); an unknown age must never let the Demo ladder step show `[ OK ]` |
+| V-12 | Section 3.2 adds the 24-hour rule to `_generated_row` only; section 4 says every `silverbot-cr-001` test still passes | Either stale condition also marks the main readiness row: `[ WRN ] READY · stale` or `[ ERR ] NOT READY · stale`; the `generated` row keeps the date and names the reason. A READY report whose `generated_at` cannot be parsed is not fresh and shows `[ WRN ] READY · stale`. Six `cr-001` tests change: `test_readiness_ready_not_ready_and_failing_checks` (its fixtures are older than 24 hours), `test_readiness_tolerates_malformed_fields` (row 0), the page-order test, the two CSP literal tests, and `test_readiness_is_stale_when_strategy_evidence_is_newer` (fixture date moved within 24 hours so only the evidence rule fires; assertions made stricter: main row `[ WRN ] READY · stale` and the exact reason) | AC-23.10, DSD §3.2 and §4.4 put stale on the main row (owner ruling, 2026-10-14); an unknown age must never let the Demo ladder step show `[ OK ]` |
 | V-11 | SAD-B1 card layout line (`docs/sad-silverbot.md:297`): "Follow the reference layout in DSD section 3.2: the safety banner (mode, live, demo, kill switch) is the top row, then the panels." | "the safety banner is the top row, then the evidence ladder and the Next strip, then the panels" | DSD §3 page order |
 
 ## 3. Changes
@@ -103,7 +103,7 @@ Standard library and pytest only, `tmp_path`, no network.
 | Fonts | Both paths 200 with `font/woff2` and the headers; one parametrized test sends `/fonts/x.woff2`, `/fonts/../status.py`, `/fonts/%2e%2e/x` and `/fonts/` and gets 404; SHA-256 of each served body equals the constant in the test | AC-23.11 |
 | CSP | Exact header on 200, 404, 405 and 400 responses (updates the two tests that assert the literal string: `test_get_root_returns_page_with_security_headers` and `test_other_methods_get_405`); no `http` URL in the HTML | AC-23.12 |
 | Brand | `<title>` and header contain `Silverbot`; inline `<svg>` in the header; every `:root` value the page uses equals its DSD §2.1 dark token; a raising collector adds one `degraded` line | AC-23.13 |
-| Unchanged | All other `silverbot-cr-001` tests still pass unchanged (secrets, read-only, Host check, bind, escaping, isolation); the five tests named in V-12 change only as V-12 states | AC-23.2 to AC-23.7 |
+| Unchanged | All other `silverbot-cr-001` tests still pass unchanged (secrets, read-only, Host check, bind, escaping, isolation); the six tests named in V-12 change only as V-12 states | AC-23.2 to AC-23.7 |
 
 Commands: `python -m pytest` (all pass) and `python tools/materialize_docs.py --check` (no changes).
 

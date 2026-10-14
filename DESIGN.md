@@ -6,7 +6,7 @@ Section references (§) point to `docs/dsd-silverbot.md`.
 
 ## 2. Brand Primitives (tokens, color, type)
 
-Target values: the Sterling system below is specified, not built. The built dashboard still follows `silverbot-cr-001` and uses the earlier tokens (`canvas` `#000000`, `surface` `#111827`, `border` `#374151`, `ink` `#F9FAFB`, `muted` `#9CA3AF`, `success` `#10B981`, `warning` `#F59E0B`, `danger` `#EF4444`; `monitoring/dashboard_server.py:32-69`) until [cr-silverbot-dashboard-reskin.md](docs/cr-silverbot-dashboard-reskin.md) (`silverbot-cr-002`, Proposed) is approved and built.
+The Sterling system below is built in mode A by [cr-silverbot-dashboard-reskin.md](docs/cr-silverbot-dashboard-reskin.md) (`silverbot-cr-002`): the dashboard's CSS `:root` holds the dark tokens of §2.1 and nothing else.
 
 ### 2.1 Neutral and brand tokens
 
@@ -33,11 +33,11 @@ Semantic colour marks state only, never decoration, and always travels with its 
 | `danger` | `#F0616D` (5.7) | `#C23142` (5.1) | 1 red | `[ ERR ]` | Check failed, evidence report 0 bytes, kill switch active, `error` event |
 | `muted` | `#9AA1AC` | `#5B6370` | 7 white | `[ OFF ]` | A flag that is off or a source that is not available |
 
-Direction arrows `▲` (long) and `▼` (short) may accompany a direction word; they are never a health signal. The 24-hour rule is in addition to the `silverbot-cr-001` rule; either condition makes a readiness report stale.
+Direction arrows `▲` (long) and `▼` (short) may accompany a direction word; they are never a health signal. The 24-hour rule is in addition to the `silverbot-cr-001` rule; either condition, or a `generated_at` that cannot be parsed, makes a readiness report stale.
 
 ### 2.3 Type
 
-IBM Plex Mono only (monospace). Font stack: `"IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace`. Mode A serves IBM Plex Mono Regular and Bold as woff2 from its own `127.0.0.1` server once `silverbot-cr-002` is built; until then it renders with `ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace` and loads no web font. Brand surfaces (Figma, README images, slides) use Plex Mono directly.
+IBM Plex Mono only (monospace). Font stack: `"IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace`. Mode A serves IBM Plex Mono Regular and Bold as woff2 from its own `127.0.0.1` server (`silverbot-cr-002`). Brand surfaces (Figma, README images, slides) use Plex Mono directly.
 
 | Style | Size / weight | Use |
 |-------|---------------|-----|
@@ -81,7 +81,7 @@ Size tiers:
 - Clear space: 25% of the mark width on every side.
 - Versions: full colour dark, full colour light, and one colour (zones as 1 px outlines, candles solid).
 - Misuse: never recolour the zones (target is always `success`, stop always `danger`), rotate, stretch, add glow or gradients, place the mark on busy imagery, or show it next to performance figures, win rates or result claims (§1.5).
-- Mode A header (when built): the S tier as inline SVG in the HTML, not a fetched resource, so it needs no CSP change. No favicon.
+- Mode A header (built, `silverbot-cr-002`): the S tier as inline SVG in the HTML (28 px), not a fetched resource, so it needs no CSP change. No favicon.
 
 ### 2.5 Spacing, shape and touch targets
 
@@ -110,7 +110,7 @@ Status page order (mode A): header; safety banner; evidence ladder; Next strip; 
 
 ### 3.2 Reference layout
 
-Target layout (silverbot-cr-002, Proposed); the built page follows silverbot-cr-001. A layout sketch, not a chart. Values are today's real state where one exists (report sizes and readiness flags read from `reports/`, both readiness reports generated on 2026-06-15 and therefore stale); every other panel shows its empty state.
+This is the built layout (`silverbot-cr-002`). A layout sketch, not a chart. Values are today's real state where one exists (report sizes and readiness flags read from `reports/`, both readiness reports generated on 2026-06-15 and therefore stale); every other panel shows its empty state.
 
 ```text
 ┌────────────────── Silverbot status · read-only · 127.0.0.1 ──────────────────┐
@@ -197,7 +197,7 @@ Every evidence or readiness file is a row: name, size in bytes, state. A 0-byte 
 
 ### 4.5 Interface Foundations
 
-Five groups of parts from which every future surface is assembled. They are specified, not built: the built dashboard still follows `silverbot-cr-001`. The groups reuse §4.1 to §4.4 where noted.
+Five groups of parts from which every future surface is assembled. Mode A builds the status cell, safety banner, panels and rows, evidence ladder, Next strip, the degraded page state and the branded 404 (`silverbot-cr-002`); buttons, inputs, navigation, toasts and dialogs stay specified, not built. The groups reuse §4.1 to §4.4 where noted.
 
 #### 4.5.1 Geometry and Rhythm
 

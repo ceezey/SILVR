@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; section 5.6 added 2026-10-09 at the `feat/operator-dashboard` head (silverbot-cr-001); sections 4.1, 4.4 and 4.7 and the kill-switch and risk-state statements re-checked 2026-10-09 against `70ccaec`; the opening notes, sections 0 to 2, 4.1, 4.4, 4.6 to 4.8, 5.1, 5.4, 5.5 and 6 re-checked 2026-10-09 against `099085b` (exit 78, supervisors, backtest in the container); the opening notes, sections 2.2, 4.6, 4.8 and 5.5 re-checked 2026-10-09 against `5c781fc` (exit 2 not restarted, `bot_stopped` on a crash, `.env.example` `MODE`)
+**Last updated:** 2026-10-14
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; section 5.6 added 2026-10-09 at the `feat/operator-dashboard` head (silverbot-cr-001) and extended 2026-10-14 at `c9b410f` (silverbot-cr-002: ladder, Next strip, 24-hour stale rule, degraded line, font routes, CSP); sections 4.1, 4.4 and 4.7 and the kill-switch and risk-state statements re-checked 2026-10-09 against `70ccaec`; the opening notes, sections 0 to 2, 4.1, 4.4, 4.6 to 4.8, 5.1, 5.4, 5.5 and 6 re-checked 2026-10-09 against `099085b` (exit 78, supervisors, backtest in the container); the opening notes, sections 2.2, 4.6, 4.8 and 5.5 re-checked 2026-10-09 against `5c781fc` (exit 2 not restarted, `bot_stopped` on a crash, `.env.example` `MODE`)
 
 This runbook says how to run, watch and stop Silver Bot, and what to do when something goes wrong. It absorbs the operational parts of the old `DEPLOYMENT.md` (VPS setup, emergency commands, security checklist). Only commands that work with the code as built are given as steps. Where the intended action is not supported by the code, the runbook says so and gives the manual alternative.
 
@@ -370,13 +370,13 @@ Command source check (old emergency commands kept only where they match): `sudo 
 
 ### 5.6 Operator dashboard
 
-A read-only status page for the checks in §5.1 (PRD-F13, [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md)). It shows six panels: the mode and kill-switch banner, readiness, risk budget, positions and trades, recent audit events, and evidence-report health.
+A read-only status page for the checks in §5.1 (PRD-F13, [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md), reskinned by [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md)). It shows the safety banner, then the evidence ladder and the Next strip, then six panels: the mode and kill-switch banner, readiness, risk budget, positions and trades, recent audit events, and evidence-report health.
 
 1. From the repository root on the host, run `python -m silver_bot.monitoring.dashboard_server` (add `--port N` to change the default 8765). Expected: one line, `silver-bot status: http://127.0.0.1:8765/ (read-only; reading <directory>; Ctrl+C to stop)`. The directory is the one it reads `reports/`, `logs/`, the kill-switch path and the database from, so start it where the bot's files are.
 2. Open `http://127.0.0.1:8765/` in a browser on the same machine. The page is built afresh on each load and never refreshes itself; reload it to see new state.
 3. Stop it with Ctrl+C. Exit 2 means the port is busy or out of range (0 to 65535); pick another with `--port`.
 
-The server listens on `127.0.0.1` only, answers GET only, and has no button or control. The kill switch is still a file the owner creates or deletes (§4.1); the page only shows whether it is active. It writes nothing and shows no secret. When it reads the SQLite database, SQLite may create the `-wal` and `-shm` files beside it (the same files the bot's own connections create); the database file itself is not changed.
+The server listens on `127.0.0.1` only, answers GET only, and has no button or control. It serves three routes: `GET /`, `GET /fonts/IBMPlexMono-Regular.woff2` and `GET /fonts/IBMPlexMono-Bold.woff2` (the vendored IBM Plex Mono 1.1.0 fonts, shipped with the package). Every other path gets a branded HTML 404 with no status data; a bad request gets a plain-text 400 and a method other than GET a plain-text 405. Every response carries `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; font-src 'self'`, so the page loads nothing from another host. The kill switch is still a file the owner creates or deletes (§4.1); the page only shows whether it is active. It writes nothing and shows no secret. When it reads the SQLite database, SQLite may create the `-wal` and `-shm` files beside it (the same files the bot's own connections create); the database file itself is not changed.
 
 Row states:
 
@@ -386,6 +386,22 @@ Row states:
 | `[ WRN ]` | Look at it: a kill switch enabled with no path (G-6), a stale readiness report or risk-state day, a rejection event, unreadable audit lines |
 | `[ ERR ]` | Unsafe or broken: the kill switch is ACTIVE, a report is missing, 0 bytes or not valid JSON, NOT READY, an `error` event, a rejected configuration, a source that could not be read |
 | `[ OFF ]` | Off or not available: LIVE false, a disabled kill switch, or a source with nothing yet (no database, no audit log, no paper run) |
+
+Evidence ladder. Five steps, each built from the evidence and readiness files the page already reads:
+
+| Step | Source | States |
+|---|---|---|
+| 1 Backtest | `reports/backtest_report.json` | non-empty JSON object `[ OK ]`; 0 bytes or not a JSON object `[ ERR ]`; missing `[ OFF ]` |
+| 2 Out-of-sample | `reports/out_of_sample_validation_report.json` | as step 1 |
+| 3 Paper | `reports/paper_trading_report.json` | as step 1 |
+| 4 Demo | `reports/demo_readiness_report.json` | READY and fresh `[ OK ]`; READY and stale `[ WRN ]`; NOT READY `[ ERR ]`; missing `[ OFF ]`; unreadable `[ ERR ]` |
+| 5 Live | none | always `[ OFF ] blocked (PRD-F12)`, even when `live_readiness_report.json` says `ready` true |
+
+NEXT is the first of steps 1 to 4 that is not `[ OK ]`. The Next strip under the ladder then shows one of four fixed texts: for step 1 or 2, `Next: run a backtest (runbook-backtest.md steps 5 and 6)`; for step 3, `Next: paper trading (not available yet, G-3)`; for step 4, `Next: refresh demo readiness  python -m silver_bot.demo_readiness (runbook-demo-testnet.md steps 3 and 4)`; when steps 1 to 4 are all `[ OK ]`, `All evidence gates pass. Live trading stays blocked (PRD-F12).` The strip is text only; it changes no configuration and touches no kill switch.
+
+Stale readiness. A readiness report is stale when an evidence report changed after its `generated_at`, or its `generated_at` is more than 24 hours old, or its `generated_at` cannot be parsed. The main readiness row then reads `[ WRN ] READY · stale` (or `[ ERR ] NOT READY · stale`), and the `generated` row names the reason or reasons. The Demo ladder step uses the same rule.
+
+Degraded line. When one or more collectors (the ladder included) raised, a line `[ WRN ] degraded: N panel(s) unreadable` appears under the banner, and the affected panels show `[ ERR ] unreadable` with the exception type.
 
 Panels 3 and 4 stay empty (`[ OFF ]`) until a paper session writes rows to SQLite, which no entrypoint does yet (G-3). An empty panel is not a fault.
 

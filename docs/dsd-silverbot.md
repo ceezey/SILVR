@@ -3,12 +3,12 @@
 **Project:** Silver Bot (ICT Silver Bullet trading bot)
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
-**Status:** Draft (Silverbot brand and design system specified; mode A built per silverbot-cr-001; reskin proposed in silverbot-cr-002)
+**Status:** Draft (Silverbot brand and design system specified; mode A approved, built and reskinned per silverbot-cr-002)
 **Last updated:** 2026-10-14
 **Last reconciled:** N/A (not a code-describing doc)
 **Design file:** [SILVR](https://www.figma.com/design/g1n3J4j2L1iPrbdjiOS30e/SILVR): pages Branding and Foundation Components mirror sections 0 to 7 (section 8).
 
-> Mode A, the read-only localhost dashboard, is built (PRD-F13, [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md)); modes B and D are not. Sections 0 to 7 specify the brand and design system that any operator surface must follow (materialized to `BRAND.md` and `DESIGN.md`, section 8). Section 9 is the approved scope of mode A (PRD-F13) and a proposal for mode B, which adds no requirement. Building mode B or any other surface still needs its own Change Record (§9.6). The operator surface that exists is listed in [prd-silverbot.md](prd-silverbot.md) section 5.1 (command-line entrypoints, the dashboard entrypoint and files). Sections 0 to 7 now specify the Silverbot brand and the Sterling design system; the built dashboard still uses the earlier tokens and layout until [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md) (`silverbot-cr-002`, Proposed) is approved and built.
+> Mode A, the read-only localhost dashboard, is built (PRD-F13, [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md)) and reskinned with the Silverbot brand and the Sterling design system ([cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md), `silverbot-cr-002`, approved and built); modes B and D are not. Sections 0 to 7 specify the brand and design system that any operator surface must follow (materialized to `BRAND.md` and `DESIGN.md`, section 8). Section 9 is the approved scope of mode A (PRD-F13) and a proposal for mode B, which adds no requirement. Building mode B or any other surface still needs its own Change Record (§9.6). The operator surface that exists is listed in [prd-silverbot.md](prd-silverbot.md) section 5.1 (command-line entrypoints, the dashboard entrypoint and files).
 
 ## 0. Brand Stance
 
@@ -42,7 +42,7 @@ Silverbot never motivates with profit or win celebrations, streaks or scores tie
 | Read by people: README, dashboard title, alert header, prose | **Silverbot** | `Silverbot status · read-only` |
 | Read by code: package, console script, module, paths | `silver-bot` / `silver_bot` | `python -m silver_bot` |
 
-Never write "SilverBot" or "the Bot" as a proper name, and never use "SILVR" as the brand name; SILVR is only the name of the Figma design file (section 8). "Silver Bot" (two words) is the legacy form still used across the suite docs; a separate rename pass replaces it. The built dashboard and the built Telegram text still show `silver-bot` until [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md) (`silverbot-cr-002`, Proposed) changes the dashboard and the Telegram transport record (G-15) changes the alerts.
+Never write "SilverBot" or "the Bot" as a proper name, and never use "SILVR" as the brand name; SILVR is only the name of the Figma design file (section 8). "Silver Bot" (two words) is the legacy form still used across the suite docs; a separate rename pass replaces it. The built dashboard shows `Silverbot` ([cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md), `silverbot-cr-002`); the built Telegram text still shows `silver-bot` until the Telegram transport record (G-15) changes the alerts.
 
 Descriptor: *A disciplined ICT Silver Bullet trading bot, built like production infrastructure.*
 
@@ -102,7 +102,7 @@ Construction, tiers and lockups: §2.4.
 
 ## 2. Brand Primitives (tokens, color, type)
 
-Target values: the Sterling system below is specified, not built. The built dashboard still follows `silverbot-cr-001` and uses the earlier tokens (`canvas` `#000000`, `surface` `#111827`, `border` `#374151`, `ink` `#F9FAFB`, `muted` `#9CA3AF`, `success` `#10B981`, `warning` `#F59E0B`, `danger` `#EF4444`; `monitoring/dashboard_server.py:32-69`) until [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md) (`silverbot-cr-002`, Proposed) is approved and built.
+The Sterling system below is built in mode A by [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md) (`silverbot-cr-002`): the dashboard's CSS `:root` holds the dark tokens of §2.1 and nothing else.
 
 ### 2.1 Neutral and brand tokens
 
@@ -129,11 +129,11 @@ Semantic colour marks state only, never decoration, and always travels with its 
 | `danger` | `#F0616D` (5.7) | `#C23142` (5.1) | 1 red | `[ ERR ]` | Check failed, evidence report 0 bytes, kill switch active, `error` event |
 | `muted` | `#9AA1AC` | `#5B6370` | 7 white | `[ OFF ]` | A flag that is off or a source that is not available |
 
-Direction arrows `▲` (long) and `▼` (short) may accompany a direction word; they are never a health signal. The 24-hour rule is in addition to the `silverbot-cr-001` rule; either condition makes a readiness report stale.
+Direction arrows `▲` (long) and `▼` (short) may accompany a direction word; they are never a health signal. The 24-hour rule is in addition to the `silverbot-cr-001` rule; either condition, or a `generated_at` that cannot be parsed, makes a readiness report stale.
 
 ### 2.3 Type
 
-IBM Plex Mono only (monospace). Font stack: `"IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace`. Mode A serves IBM Plex Mono Regular and Bold as woff2 from its own `127.0.0.1` server once `silverbot-cr-002` is built; until then it renders with `ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace` and loads no web font. Brand surfaces (Figma, README images, slides) use Plex Mono directly.
+IBM Plex Mono only (monospace). Font stack: `"IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace`. Mode A serves IBM Plex Mono Regular and Bold as woff2 from its own `127.0.0.1` server (`silverbot-cr-002`). Brand surfaces (Figma, README images, slides) use Plex Mono directly.
 
 | Style | Size / weight | Use |
 |-------|---------------|-----|
@@ -177,7 +177,7 @@ Size tiers:
 - Clear space: 25% of the mark width on every side.
 - Versions: full colour dark, full colour light, and one colour (zones as 1 px outlines, candles solid).
 - Misuse: never recolour the zones (target is always `success`, stop always `danger`), rotate, stretch, add glow or gradients, place the mark on busy imagery, or show it next to performance figures, win rates or result claims (§1.5).
-- Mode A header (when built): the S tier as inline SVG in the HTML, not a fetched resource, so it needs no CSP change. No favicon.
+- Mode A header (built, `silverbot-cr-002`): the S tier as inline SVG in the HTML (28 px), not a fetched resource, so it needs no CSP change. No favicon.
 
 ### 2.5 Spacing, shape and touch targets
 
@@ -206,7 +206,7 @@ Status page order (mode A): header; safety banner; evidence ladder; Next strip; 
 
 ### 3.2 Reference layout
 
-Target layout (silverbot-cr-002, Proposed); the built page follows silverbot-cr-001. A layout sketch, not a chart. Values are today's real state where one exists (report sizes and readiness flags read from `reports/`, both readiness reports generated on 2026-06-15 and therefore stale); every other panel shows its empty state.
+This is the built layout (`silverbot-cr-002`). A layout sketch, not a chart. Values are today's real state where one exists (report sizes and readiness flags read from `reports/`, both readiness reports generated on 2026-06-15 and therefore stale); every other panel shows its empty state.
 
 ```text
 ┌────────────────── Silverbot status · read-only · 127.0.0.1 ──────────────────┐
@@ -293,7 +293,7 @@ Every evidence or readiness file is a row: name, size in bytes, state. A 0-byte 
 
 ### 4.5 Interface Foundations
 
-Five groups of parts from which every future surface is assembled. They are specified, not built: the built dashboard still follows `silverbot-cr-001`. The groups reuse §4.1 to §4.4 where noted.
+Five groups of parts from which every future surface is assembled. Mode A builds the status cell, safety banner, panels and rows, evidence ladder, Next strip, the degraded page state and the branded 404 (`silverbot-cr-002`); buttons, inputs, navigation, toasts and dialogs stay specified, not built. The groups reuse §4.1 to §4.4 where noted.
 
 #### 4.5.1 Geometry and Rhythm
 
@@ -426,7 +426,7 @@ Panels 3 and 4 cannot be built truthfully before the unwired pieces (entrypoint,
 
 ### 9.4 Wireframe
 
-The reference layout is in §3.2; it uses these six panels in this order, with the safety banner on top.
+The reference layout is in §3.2; it uses these six panels in this order, below the safety banner, the evidence ladder and the Next strip.
 
 ### 9.5 Explicit non-goals
 
@@ -438,13 +438,13 @@ The reference layout is in §3.2; it uses these six panels in this order, with t
 
 ### 9.6 Next step
 
-If the owner wants this dashboard, open a Change Record that adds a PRD feature for it, with acceptance criteria and a decision on persisting risk state. Only then do sections 0 to 8 begin. Until that record is approved, this section stays a proposal. Mode A was approved by [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md) on 2026-10-09. The reskin of mode A is proposed in [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md).
+If the owner wants this dashboard, open a Change Record that adds a PRD feature for it, with acceptance criteria and a decision on persisting risk state. Only then do sections 0 to 8 begin. Until that record is approved, this section stays a proposal. Mode A was approved by [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md) on 2026-10-09. The reskin of mode A was approved on 2026-10-14 and built by [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md).
 
 ## Self-Check
 
-- [x] Status line reads `Draft (Silverbot brand and design system specified; mode A built per silverbot-cr-001; reskin proposed in silverbot-cr-002)` and the banner states that mode A is built, that the reskin is not built, and that mode B or any other surface still needs its own Change Record (§9.6).
+- [x] Status line reads `Draft (Silverbot brand and design system specified; mode A approved, built and reskinned per silverbot-cr-002)` and the banner states that mode A is built and reskinned, and that mode B or any other surface still needs its own Change Record (§9.6).
 - [x] Sections 0 to 7 hold the Silverbot brand (§0, §1) and the Sterling design system (§2 to §7); section 8 names the materialized `BRAND.md` (sections 0 and 1) and `DESIGN.md` (sections 2 to 7) and the SILVR Figma pages that mirror them.
-- [x] Sterling tokens, the IBM Plex Mono fonts, the evidence ladder, the Next strip and the §3.2 layout are labelled as target (`silverbot-cr-002`, Proposed); none is described as built.
+- [x] Sterling tokens, the IBM Plex Mono fonts, the evidence ladder, the Next strip and the §3.2 layout are labelled as built in mode A (`silverbot-cr-002`); the deferred components of §4.5 are labelled specified, not built.
 - [x] The §3.2 layout shows only real values (report sizes, readiness flags) or an explicit empty state; no invented metric, position or PnL.
 - [x] The Next strip texts in §4.5.5 point at runbooks and at `python -m silver_bot.demo_readiness`; none suggests editing configuration, enabling live trading or removing the kill switch.
 - [x] The §4.2 Telegram example is valid MarkdownV2, uses an event and a rejection reason that exist in the code, and is under 400 characters; it is marked as applying when the transport is built.

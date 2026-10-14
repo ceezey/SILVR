@@ -5,7 +5,7 @@
 **Maintainer:** Cian Jake Francisco
 **Last updated:** 2026-10-14
 
-This is the entry point for every working session. It lists each document, its version and status, what is stale, and the open safety items. Every doc is `Draft` at version 0.1; nothing is `Locked` yet. Two Change Records exist (one approved and built, one proposed), listed under Change Records in section 1. The manifest below is hand-maintained: when a file is added, renamed or removed under `docs/`, update the tables here in the same change. Start with [prd-silverbot.md](prd-silverbot.md) for what the bot is meant to do, [sdd-silverbot.md](sdd-silverbot.md) for how it is built, and [scrutiny-silverbot.md](scrutiny-silverbot.md) for what is wrong with it today.
+This is the entry point for every working session. It lists each document, its version and status, what is stale, and the open safety items. Every doc is `Draft` at version 0.1; nothing is `Locked` yet. Two Change Records exist (both approved and built), listed under Change Records in section 1. The manifest below is hand-maintained: when a file is added, renamed or removed under `docs/`, update the tables here in the same change. Start with [prd-silverbot.md](prd-silverbot.md) for what the bot is meant to do, [sdd-silverbot.md](sdd-silverbot.md) for how it is built, and [scrutiny-silverbot.md](scrutiny-silverbot.md) for what is wrong with it today.
 
 ## 1. Document Suite
 
@@ -20,14 +20,14 @@ All suite docs were reconciled against code at commit `62037d1`, except the four
 | Business Requirements (BRD) | [brd-silverbot.md](brd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
 | Unit Economics (UES) | [ues-silverbot.md](ues-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
 | Product Requirements (PRD) | [prd-silverbot.md](prd-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
-| Design System (DSD) | [dsd-silverbot.md](dsd-silverbot.md) | 0.1 | Draft (Silverbot brand and design system specified; mode A built per silverbot-cr-001; reskin proposed in silverbot-cr-002) | 2026-10-14 | N/A |
+| Design System (DSD) | [dsd-silverbot.md](dsd-silverbot.md) | 0.1 | Draft (Silverbot brand and design system specified; mode A approved, built and reskinned per silverbot-cr-002) | 2026-10-14 | N/A |
 | System Design (SDD) | [sdd-silverbot.md](sdd-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
 | QA and Test Plan (QAD) | [qad-silverbot.md](qad-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`; `feat/operator-dashboard`, PRD-F13 items) |
 | Subagent Roster (SAD) | [sad-silverbot.md](sad-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
 | Project Build Guide (BUILD) | [build-silverbot.md](build-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
 | Compliance & Legal Readiness Register (CLR) | [clr-silverbot.md](clr-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
 | AI Assurance Dossier (AIA) | [aia-silverbot.md](aia-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`; `099085b`, batch 2 items) |
-| Operations & Observability Runbook (OPS) | [ops-silverbot.md](ops-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
+| Operations & Observability Runbook (OPS) | [ops-silverbot.md](ops-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
 | Build Session Log (LOG) | [log-silverbot.md](log-silverbot.md) | 0.1 | Draft (append-only) | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`; `feat/operator-dashboard`, PRD-F13 items) |
 
 ### Change Records
@@ -35,7 +35,7 @@ All suite docs were reconciled against code at commit `62037d1`, except the four
 | CR ID | File | Subject | Status | Last Updated |
 |---|---|---|---|---|
 | `silverbot-cr-001` | [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md) | Operator dashboard (PRD-F13) | Approved | 2026-10-09 |
-| `silverbot-cr-002` | [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md) | Dashboard reskin and SAD-B1 update | Proposed | 2026-10-14 |
+| `silverbot-cr-002` | [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md) | Dashboard reskin and SAD-B1 update | Approved, built | 2026-10-14 |
 
 ### Runbooks
 
@@ -115,6 +115,7 @@ Change Records are listed in the table below and in section 1 under Change Recor
 
 | Date | Change | Reference |
 |---|---|---|
+| 2026-10-14 | `silverbot-cr-002` (dashboard reskin and SAD-B1 update) approved and built on `dev` (commits `af3e746` to `c9b410f`; 226 to 253 test functions, 272 to 304 passing tests). The dashboard shows the Silverbot header and the Sterling tokens, the evidence ladder and the Next strip, a 24-hour readiness stale rule, a degraded line and a branded 404, and serves vendored IBM Plex Mono from its own server under `font-src 'self'`. Docs reconciled: PRD AC-23.1 reworded and AC-23.8 to AC-23.13 added, QAD rows QAD-T253 to QAD-T279, DSD and OPS §5.6. | [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md), [prd-silverbot.md](prd-silverbot.md), [qad-silverbot.md](qad-silverbot.md), [dsd-silverbot.md](dsd-silverbot.md), [ops-silverbot.md](ops-silverbot.md) |
 | 2026-10-14 | Silverbot brand and Sterling design system specified in DSD sections 0 to 8; `silverbot-cr-002` (dashboard reskin and SAD-B1 update) proposed, not built. No bot code changed. | [dsd-silverbot.md](dsd-silverbot.md), [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md), [brand spec](superpowers/specs/2026-10-14-silverbot-brand-design.md), [design-system spec](superpowers/specs/2026-10-14-silverbot-design-system-design.md), [plan](superpowers/plans/2026-10-14-silverbot-brand-design-system.md) |
 | 2026-10-09 | Operator dashboard (PRD-F13) built on `feat/operator-dashboard` from `dev` at `b24faf5`, approved as `silverbot-cr-001` (181 to 225 test functions, 220 to 271 passing tests). A read-only status page with six panels, standard library only, served on `127.0.0.1` with `python -m silver_bot.monitoring.dashboard_server`; restraint-guardian PASS and a whole-branch review fixed in `604425e`. Docs reconciled: PRD-F13 and US-23 with AC-23.1 to AC-23.7, DSD (mode A Built, section 2.3 waiver for mode A), SAD-B1 gate scoped and the materialized files regenerated, SDD module table, QAD-T208 to QAD-T251, OPS section 5.6, the Change Record. Panels 3 and 4 stay empty until a paper session runs (G-3). | [cr-silverbot-operator-dashboard.md](cr-silverbot-operator-dashboard.md), [plan](superpowers/plans/2026-10-09-operator-dashboard.md), [log-silverbot.md](log-silverbot.md) |
 | 2026-10-09 | G-3 safety review fixes on `dev` at `5c781fc` (218 to 220 passing tests, 179 to 181 test functions). systemd has `RestartPreventExitStatus=2 78`, so exit 2 (rejected arguments, configuration or candle data) no longer restarts and a crash (exit 1) still does; the loader rejects a candle whose duration differs from `TIMEFRAME`, so a 5m file no longer loads as `1m`; `main()` audits `bot_stopped` with `exit_code` 1 when dispatch raises; `backtest_run.json` records costs, ML flag and risk per trade from the config the engine ran with; `.env.example` ships `MODE=` blank, so a copied `.env` no longer blocks backtests. Docs reconciled: OPS, SDD, PRD, AUDIT H-4, SCRUTINY G-3, G-24 and G-28 notes plus new gap G-33 (backtest runtime grows roughly quadratically with candle count; measured timings only), QAD-T187 and QAD-T200 rewritten, QAD-T206 and QAD-T207 added, the three runbooks and README. | [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3, [log-silverbot.md](log-silverbot.md) |
@@ -160,7 +161,7 @@ Owner decisions that shaped this suite (OD-1 to OD-7, from the [design spec](sup
 - OD-6: A small safety subagent roster, materialized to `.claude/agents/`.
 - OD-7: Code-first audit, then write. Code wins over old docs.
 
-Doc count: 17 suite docs (16 in the first table plus this index), 4 RFCs, 3 runbooks and 1 audit, which is 25 files under `docs/`, plus the two Change Records (the operator dashboard and the proposed dashboard reskin; 27 files in all), plus 10 tracked process records under `docs/superpowers/` (five design specs and five implementation plans: the 2026-10-08 canonical docs pair, the 2026-10-09 HIGH safety fixes pair, the 2026-10-09 G-3 entrypoint pair, the 2026-10-09 operator dashboard plan, and the 2026-10-14 brand spec, design-system spec and plan). The root holds README.md, CLAUDE.md, AGENTS.md, MODEL_CARD.md, BRAND.md and DESIGN.md.
+Doc count: 17 suite docs (16 in the first table plus this index), 4 RFCs, 3 runbooks and 1 audit, which is 25 files under `docs/`, plus the two Change Records (the operator dashboard and the dashboard reskin; 27 files in all), plus 10 tracked process records under `docs/superpowers/` (five design specs and five implementation plans: the 2026-10-08 canonical docs pair, the 2026-10-09 HIGH safety fixes pair, the 2026-10-09 G-3 entrypoint pair, the 2026-10-09 operator dashboard plan, and the 2026-10-14 brand spec, design-system spec and plan). The root holds README.md, CLAUDE.md, AGENTS.md, MODEL_CARD.md, BRAND.md and DESIGN.md.
 
 Excluded: GTM, PITCH and WRAP. This is a personal trading bot with no customers, no pitch audience and no external product launch, so market, investor and launch-wrap docs do not apply.
 
