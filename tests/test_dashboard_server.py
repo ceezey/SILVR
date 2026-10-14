@@ -2,9 +2,10 @@ import hashlib
 import html
 import http.client
 import json
+import os
 import socket
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -45,9 +46,116 @@ def test_page_shows_six_panels_in_layout_order_with_banner_first(tmp_path):
 
     positions = [page.index(f"<caption>{title.replace('&', '&amp;')}</caption>") for title in PANEL_TITLES]
     assert positions == sorted(positions)
-    assert page.index('class="row banner"') < positions[1]
+    banner = page.index('class="row banner"')
+    ladder = page.index('class="ladder"')
+    strip = page.index('class="next-strip"')
+    assert banner < ladder < strip < positions[1]
     assert "<script" not in page
     assert "generated 2026-10-09 12:00 UTC" in page
+
+
+ROOT_TOKENS = {
+    "--canvas": "#0B0D10",
+    "--surface": "#13161B",
+    "--border": "#2A2F38",
+    "--ink": "#E8EAED",
+    "--muted": "#9AA1AC",
+    "--brand": "#C3C9D2",
+    "--accent": "#7AA2F7",
+    "--success": "#3FB68B",
+    "--warning": "#E3B341",
+    "--danger": "#F0616D",
+}
+
+
+def write_report(root: Path, stem: str, content: str, mtime: float | None = None) -> None:
+    path = root / "reports" / f"{stem}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    if mtime is not None:
+        os.utime(path, (mtime, mtime))
+
+
+def today_shape(root: Path) -> None:
+    old = (NOW - timedelta(hours=40)).timestamp()
+    for stem in ("backtest_report", "out_of_sample_validation_report", "paper_trading_report"):
+        write_report(root, stem, "")
+    generated = (NOW - timedelta(hours=30)).isoformat()
+    write_report(root, "demo_readiness_report", json.dumps({"ready": True, "generated_at": generated, "checks": []}), old)
+    write_report(root, "live_readiness_report", json.dumps({"ready": False, "generated_at": generated, "checks": []}), old)
+
+
+def test_title_header_and_mark(tmp_path):
+    page = page_for(tmp_path)
+    header = page[page.index("<header>") : page.index("</header>")]
+
+    assert "<title>Silverbot status</title>" in page
+    assert "<svg" in header and "Silverbot" in header
+    assert "xmlns" not in page
+    assert "status &middot; read-only &middot; 127.0.0.1" in header
+
+
+def test_root_block_holds_exactly_the_ten_tokens():
+    from silver_bot.monitoring.dashboard_server import CSS
+
+    block = CSS[CSS.index(":root{") + 6 : CSS.index("}", CSS.index(":root{"))]
+    tokens = dict(item.split(":", 1) for item in block.replace("\n", "").split(";") if item.strip())
+
+    assert tokens == ROOT_TOKENS
+    for name in ROOT_TOKENS:
+        assert f"var({name})" in CSS
+
+
+def test_pages_carry_no_url(tmp_path):
+    from silver_bot.monitoring.dashboard_server import render_not_found
+
+    for page in (page_for(tmp_path), render_not_found()):
+        assert "http:" not in page and "https:" not in page
+        assert "<form" not in page and "<button" not in page and "<input" not in page
+
+
+def test_ladder_with_todays_data_shows_backtest_next(tmp_path):
+    today_shape(tmp_path)
+
+    page = page_for(tmp_path)
+
+    assert page.count('<li class="step') == 5
+    assert '<li class="step next">' in page
+    first = page[page.index('<li class="step next">') :]
+    assert "Backtest" in first[:200] and '<span class="err">[ ERR ]</span>' in first[:300]
+    assert "0 B" in first[:300] and "<strong>NEXT</strong>" in first[:300]
+    assert '<p class="next-strip">Next: run a backtest (runbook-backtest.md steps 5 and 6)</p>' in page
+    assert "READY · stale" in page
+    assert "blocked (PRD-F12)" in page
+
+
+def test_degraded_line_only_when_a_source_fails(tmp_path):
+    assert 'class="degraded"' not in page_for(tmp_path)
+
+    (tmp_path / "logs" / "audit.jsonl").mkdir(parents=True)
+    page = page_for(tmp_path)
+
+    assert page.count('class="degraded"') == 1
+    assert '<p class="degraded"><span class="warn">[ WRN ]</span> degraded: 1 panel unreadable</p>' in page
+
+
+def test_degraded_line_pluralises(tmp_path):
+    status = collect_status(tmp_path, load=lambda: make_config(tmp_path), now=NOW)
+    status["degraded"] = 2
+
+    assert "degraded: 2 panels unreadable" in render_page(status)
+
+
+def test_unreadable_ladder_renders_one_step_and_no_strip(tmp_path):
+    status = collect_status(tmp_path, load=lambda: make_config(tmp_path), now=NOW)
+    status["ladder"] = {"steps": [{"state": "err", "label": "unreadable", "text": "KeyError"}], "next": None, "next_text": ""}
+
+    page = render_page(status)
+
+    assert page.count('<li class="step') == 1
+    assert "KeyError" in page and "unreadable" in page
+    assert "next-strip" not in page.split("</style>", 1)[1]
+    assert "<strong>NEXT</strong>" not in page
 
 
 def test_state_tags_carry_glyph_word_and_class(tmp_path):
