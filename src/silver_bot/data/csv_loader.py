@@ -54,7 +54,7 @@ def load_binance_kline_csv(
     by_open_time: dict[datetime, Candle] = {}
     for file in files:
         for line_number, row in _rows(file):
-            candle = _parse_row(row, where=f"{file}:{line_number}", symbol=symbol, timeframe=timeframe)
+            candle = parse_kline_row(row, where=f"{file}:{line_number}", symbol=symbol, timeframe=timeframe)
             duration = candle.close_time - candle.open_time
             if duration != interval:
                 raise CandleDataError(
@@ -112,7 +112,9 @@ def _rows(file: Path) -> Iterator[tuple[int, list[str]]]:
             yield line_number, row
 
 
-def _parse_row(row: list[str], *, where: str, symbol: str, timeframe: str) -> Candle:
+def parse_kline_row(row: list[str], *, where: str, symbol: str, timeframe: str) -> Candle:
+    """Validate one Binance kline row (CSV file or REST response) as a candle."""
+
     if len(row) < 7:
         raise CandleDataError(f"{where}: expected at least 7 columns, got {len(row)}")
     try:

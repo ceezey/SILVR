@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from silver_bot.backtest.models import ExitReason, TradeRecord
 from silver_bot.execution.models import (
     PaperEventType,
@@ -44,8 +46,13 @@ class PaperExecutionEngine:
         risk_decision: RiskDecision,
         ml_probability: float | None = None,
         ml_decision: str | None = None,
+        expires_at: datetime | None = None,
     ) -> PaperLifecycleEvent:
-        """Create a simulated pending limit order."""
+        """Create a simulated pending limit order.
+
+        An order still unfilled on a candle opening at or after `expires_at` is
+        cancelled (the Silver Bullet window it came from has ended).
+        """
 
         if not risk_decision.approved:
             raise ValueError("risk_decision must be approved before paper order submission")
@@ -57,6 +64,7 @@ class PaperExecutionEngine:
             created_at=signal.generated_at,
             ml_probability=ml_probability,
             ml_decision=ml_decision,
+            expires_at=expires_at,
         )
         return PaperLifecycleEvent(
             event_type=PaperEventType.PAPER_ORDER_CREATED,
@@ -81,6 +89,14 @@ class PaperExecutionEngine:
                 self.open_position = None
                 events.append(closed)
                 return events
+
+        if (
+            self.pending_order is not None
+            and self.pending_order.expires_at is not None
+            and candle.open_time >= self.pending_order.expires_at
+        ):
+            events.append(self._cancel_pending(candle, reason="session window ended unfilled"))
+            return events
 
         if self.pending_order is not None and self.open_position is None:
             opened = self._try_open_position(candle)

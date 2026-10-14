@@ -1,3 +1,4 @@
+import json
 import asyncio
 from datetime import UTC, datetime, timedelta
 
@@ -201,3 +202,58 @@ def test_kill_switch_cancels_pending_paper_order(tmp_path) -> None:
     assert any(event.event_type == PaperEventType.PAPER_ORDER_CANCELLED for event in result.events)
     assert risk.state.open_positions == 0
     assert engine.executor.has_active_trade is False
+
+
+def test_unfilled_paper_order_is_cancelled_when_session_window_ends() -> None:
+    risk = RiskManagementEngine()
+    engine = PaperTradingEngine(
+        stream=MockMarketDataStream([*valid_long_setup(), candle(9, 116, 125, 116, 120), candle(60, 121, 130, 121, 128)]),
+        strategy=strategy(),
+        risk=risk,
+    )
+
+    result = asyncio.run(engine.run())
+
+    cancelled = [event for event in result.events if event.event_type == PaperEventType.PAPER_ORDER_CANCELLED]
+    assert len(cancelled) == 1
+    assert "session window ended" in cancelled[0].message
+    assert risk.state.open_positions == 0
+
+
+def test_history_seeds_the_strategy_without_evaluating_it() -> None:
+    setup = valid_long_setup()
+    engine = PaperTradingEngine(
+        stream=MockMarketDataStream([setup[-1], candle(9, 112, 141, 105, 140)]),
+        strategy=strategy(),
+        history=setup[:-1],
+    )
+
+    result = asyncio.run(engine.run())
+
+    assert result.candles_processed == 2
+    assert result.closed_trades == 1
+
+
+def test_on_trade_closed_and_report_writer(tmp_path) -> None:
+    from silver_bot.config import AppConfig
+    from silver_bot.execution.runtime import write_paper_report
+
+    seen = []
+    engine = PaperTradingEngine(
+        stream=MockMarketDataStream([*valid_long_setup(), candle(9, 112, 141, 105, 140)]),
+        strategy=strategy(),
+        on_trade_closed=lambda result: seen.append(result.closed_trades),
+    )
+    result = asyncio.run(engine.run())
+    path = tmp_path / "reports" / "paper_trading_report.json"
+
+    write_paper_report(path, result, config=AppConfig(), started_at=datetime(2026, 1, 2, tzinfo=UTC))
+
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert seen == [1]
+    assert engine.result is result
+    assert report["mode"] == "paper"
+    assert report["closed_trades"] == 1
+    assert report["metrics"]["total_trades"] == 1
+    assert report["ending_equity"] == result.equity
+    assert not (tmp_path / "reports" / "paper_trading_report.json.tmp").exists()

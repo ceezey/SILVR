@@ -51,13 +51,19 @@ def build_backtest_config(
 
     return BacktestConfig(
         risk=replace(build_risk_config(config), kill_switch_path=kill_switch_path),
-        ml_filter=MLFilterConfig(
-            enabled=config.ml_filter_enabled,
-            registry_path=config.ml_registry_path,
-            min_probability=config.ml_min_probability,
-            reduce_risk_threshold=config.ml_reduce_risk_threshold,
-        ),
+        ml_filter=build_ml_filter_config(config),
         export_dir=export_dir,
+    )
+
+
+def build_ml_filter_config(config: AppConfig) -> MLFilterConfig:
+    """Return the ML filter settings from AppConfig (shared by backtest and paper)."""
+
+    return MLFilterConfig(
+        enabled=config.ml_filter_enabled,
+        registry_path=config.ml_registry_path,
+        min_probability=config.ml_min_probability,
+        reduce_risk_threshold=config.ml_reduce_risk_threshold,
     )
 
 

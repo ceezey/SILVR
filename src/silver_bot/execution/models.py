@@ -49,6 +49,7 @@ class PaperOrder:
     created_at: datetime
     ml_probability: float | None = None
     ml_decision: str | None = None
+    expires_at: datetime | None = None
 
 
 @dataclass(slots=True)
