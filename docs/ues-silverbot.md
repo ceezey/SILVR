@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the cost defaults and risk rows re-checked 2026-10-09 against `70ccaec`
+**Last updated:** 2026-10-14
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the cost defaults and risk rows re-checked 2026-10-09 against `70ccaec`; the market data row re-checked 2026-10-14 against `40ea0b1`
 
 This document answers "what does one trade cost, and what win rate is needed to pay for it". It is arithmetic on the coded cost model, not a forecast: no win rate, return or profit is claimed, and the three evidence reports are 0 bytes (G-1, D-86). Requirements and owner inputs are in [brd-silverbot.md](brd-silverbot.md); the kill criteria that use these numbers are in [val-silverbot.md](val-silverbot.md) §4; gaps are in [scrutiny-silverbot.md](scrutiny-silverbot.md).
 
@@ -109,7 +109,7 @@ Amounts are not invented. The monthly budget is Owner input required (OI-2).
 | Item | Monthly cost | Source or status |
 |---|---|---|
 | VPS (24/7 host) | Owner input required (OI-2) | DEPLOYMENT.md §Recommended Hosting lists "Oracle Cloud Always Free VPS" and "Low-cost VPS" (line 27 and nearby). If the owner uses the Always Free tier the hosting cost is 0 by that tier's name, but the old document states no amount and the current terms of the tier are not verified here (Open), so it is recorded under OI-2. |
-| Historical and live market data | Owner input required (OI-8) | The historical fetch is a stub that raises NotImplementedError (G-13); the source is not chosen. Public exchange data may be free but that is not established by the repository (Open). |
+| Historical and live market data | Owner input required (OI-8) | Since `973cd82` the adapter reads the public Binance klines endpoint, which needs no key, for paper and demo sessions; backtests use CSV files the owner downloads, and the long-term source is not chosen (G-13). Public exchange data may be free but that is not established by the repository (Open). |
 | Exchange | No account fee stated; trading fees per section 1 | Maker 0.0002 and taker 0.0005 are coded defaults; the real fee tier of the owner's account is Owner input required (OI-10). |
 | Telegram alerts | No cost stated in the repository | Open. A real transport does not exist yet (G-15). |
 | Owner time | Owner input required (OI-5) | Monitoring hours per day. |

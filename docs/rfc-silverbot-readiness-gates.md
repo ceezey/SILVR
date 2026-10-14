@@ -6,8 +6,8 @@
 **Version:** 0.1
 **Author:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 1, 3.2, 3.4, 3.6 and 4 to 8 re-checked 2026-10-09 against `70ccaec` (G-2 fix `88220e6`, G-10 fix `0a76564`, G-4 fix `c6d909d`, G-5 and G-6 load rules `5e4acc5`, `08c81ad`); the G-1 and G-3 rows in section 7.2 re-checked 2026-10-09 against `099085b`
+**Last updated:** 2026-10-14
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 1, 3.2, 3.4, 3.6 and 4 to 8 re-checked 2026-10-09 against `70ccaec` (G-2 fix `88220e6`, G-10 fix `0a76564`, G-4 fix `c6d909d`, G-5 and G-6 load rules `5e4acc5`, `08c81ad`); the G-1 and G-3 rows in section 7.2 re-checked 2026-10-09 against `099085b`; sections 3.5, 3.6, 3.7, 6 and 7 re-checked 2026-10-14 against `40ea0b1` (PRD-F2 to PRD-F5 batch: `973cd82` paper and demo runtime with a public klines fetch, `40ea0b1` exact-host guard and redirect refusal)
 **PRD Reference:** [prd-silverbot.md](prd-silverbot.md) PRD-F8 (readiness gates), PRD-F5 (demo/testnet mode), PRD-F12 (live trading, `Planned, blocked`)
 **SDD Reference:** [sdd-silverbot.md](sdd-silverbot.md) §3.4 (configuration reference), §4.2 and §4.3 (exchange adapter), §5.1 (live-trading block), §5.2 (secrets handling)
 
@@ -148,7 +148,7 @@ Relative paths resolve against the project root (`readiness.py:157-158`). The ch
 | `TRADING_MODE` or `MODE` equal to `live` | rejected by the mode enum parse before the dedicated branch; the dedicated message `TRADING_MODE=live is not supported in Phase 1` is unreachable | `config/settings.py:100,107-108` (D-79) |
 | Base `place_order` | always raises `OrderPlacementDisabled("Real order placement is disabled in Phase 1")`; no subclass overrides it | `exchange/base.py:44-47` |
 | Base `cancel_order` | always raises `OrderPlacementDisabled("Real order cancellation is disabled in Phase 1")` | `exchange/base.py:49-52` |
-| Adapter | no HTTP, no request signing, no endpoint paths; `fetch_ohlcv` raises `NotImplementedError("Binance Futures OHLCV network fetching is not implemented in Phase 1")` | `exchange/binance_futures.py:68-72` |
+| Adapter | public market data only (`973cd82`): `fetch_ohlcv` sends one unsigned GET to the klines path with no API key header and no request signing; no account or order endpoint is called; redirects are refused and the base URL must be exactly the production or testnet host (`40ea0b1`) | `exchange/binance_futures.py:37-52,55-69,92-93,107-148`; `tests/test_market_data.py::test_fetch_ohlcv_never_sends_api_credentials`, `::test_redirects_are_refused` |
 | Image and compose | `LIVE_TRADING=false` forced; no live service | `Dockerfile:6,31`, `docker-compose.yaml:3-8` |
 
 The old documents described a live gate of mode, flags, readiness report, no-withdraw key and inactive kill switch (D-10). That gate does not exist. The block above is safe but is not that gate.
@@ -175,9 +175,9 @@ These apply whenever `DEMO_TRADING` is true (D-78), not only for `MODE=demo`. A 
 | Kill-switch path when enabled, every mode (`08c81ad`) | `KILL_SWITCH_PATH is required when KILL_SWITCH_ENABLED=true` | `config/settings.py:174-175` |
 | Demo daily-loss cap | `MAX_DAILY_LOSS must be greater than 0 and no more than 0.02 in demo mode` | `config/settings.py:191-192` |
 | Demo leverage cap | `MAX_LEVERAGE must be greater than 0 and no more than 3 in demo mode` | `config/settings.py:193-194` |
-| Adapter testnet guard | `Demo/testnet mode requires the Binance Futures testnet endpoint` | `exchange/binance_futures.py:39-40` |
+| Adapter testnet guard | `Demo/testnet mode requires the Binance Futures testnet endpoint` | `exchange/binance_futures.py:90-91` |
 
-**Testnet URL guard (D-13, G-10; fixed in `0a76564`).** One function, `is_binance_futures_testnet_url` (`config/settings.py:348-365`), serves both the config check and the adapter (`exchange/binance_futures.py:13,39-40`). It strips the value, parses it with `urlsplit`, and passes only when the scheme is `https`, `hostname` equals `testnet.binancefuture.com` (case-insensitive), there is no username or password, and the port is absent or 443; a malformed port returns False. Lookalikes such as `https://testnet.binancefuture.com.evil.com`, `https://evil.com/?x=testnet.binancefuture.com`, `https://user@testnet.binancefuture.com`, `http://...`, port 8443, a trailing dot and a bare host all fail (`tests/test_exchange.py:98,117,121`, `tests/test_config.py:244`). The adapter applies the guard only when `testnet=True`. The adapter does no network I/O yet.
+**Testnet URL guard (D-13, G-10; fixed in `0a76564`).** One function, `is_binance_futures_testnet_url` (`config/settings.py:348-365`), serves both the config check and the adapter (`exchange/binance_futures.py:20,90-91`). It strips the value, parses it with `urlsplit`, and passes only when the scheme is `https`, `hostname` equals `testnet.binancefuture.com` (case-insensitive), there is no username or password, and the port is absent or 443; a malformed port returns False. Lookalikes such as `https://testnet.binancefuture.com.evil.com`, `https://evil.com/?x=testnet.binancefuture.com`, `https://user@testnet.binancefuture.com`, `http://...`, port 8443, a trailing dot and a bare host all fail (`tests/test_exchange.py:98,117,121`, `tests/test_config.py:244`). The adapter applies the testnet guard when `testnet=True`, and since `40ea0b1` refuses any base URL that is neither the exact testnet nor the exact production host (`exchange/binance_futures.py:92-93`; `tests/test_market_data.py::test_adapter_rejects_hosts_other_than_binance_futures`). Its only network I/O is the unsigned public klines GET (`973cd82`), with redirects refused.
 
 **Fixed flaw (D-2, H-14, G-4; `c6d909d`).** `.env.example` now sets `PAPER_TRADING=true` and `DEMO_TRADING=false` and loads as paper mode (`tests/test_config.py:258`). Demo readiness check 2 (mode is demo) therefore fails on an unchanged copy, as it should; demo use needs the commented demo block filled in.
 
@@ -188,7 +188,7 @@ These apply whenever `DEMO_TRADING` is true (D-78), not only for `MODE=demo`. A 
 | Demo needs `MODE=demo`, `DEMO_TRADING=true`, `BINANCE_TESTNET=true`, `LIVE_TRADING=false`, `PAPER_TRADING=false`, testnet endpoint, keys, risk engine, kill switch with a path and inactive file, `STOP_LOSS_REQUIRED=true`, limits at or below 0.005, 0.02 and 3 | Carried; matches the 18 checks and the config-load rules | none |
 | "Demo mode rejects production Binance URLs" | Carried since `0a76564`: exact `https` host match (before it, a substring match accepted lookalikes) | D-13 |
 | `DEMO_TRADING` applies only to `MODE=demo` | Changed: applies in any mode and promotes paper to demo | D-78 |
-| Demo is a working testnet mode | Dropped: no network I/O; the app never builds an adapter | D-46, G-3 |
+| Demo is a working testnet mode | Changed (`973cd82`): demo reads public testnet klines through the adapter and fills simulated paper orders; it places no testnet order and sends no signed request | D-46, G-3, G-17 |
 | Live readiness list (three reports, risk engine, kill switch, inactive file, Telegram, keys, `LIVE_TRADING=true`, `PAPER_TRADING=false`, `READINESS_CHECK_PASSED`, `API_WITHDRAWALS_DISABLED`, three limits) | Carried exactly as the 15 checks above | none |
 | Readiness reads `.env`-style values | Changed: live readiness reads only process environment | D-45 |
 | Kill-switch file "must be absent" | Carried; a directory at the path also counts as active | D-80 |
@@ -235,7 +235,7 @@ These apply whenever `DEMO_TRADING` is true (D-78), not only for `MODE=demo`. A 
 | Readiness consulted by startup or config load | Planned | D-10, G-2 |
 | A live-ready state reachable by a loadable configuration | Planned | H-3 |
 | Exact-host testnet check | Built | `config/settings.py:348-365`; `0a76564` (D-13, G-10) |
-| Demo runtime (an adapter doing network I/O) | Planned | D-46, G-17 |
+| Demo runtime (an adapter doing network I/O) | Partial | `main.py:114-148` and `execution/runtime.py:42-97` (`973cd82`): public testnet klines with simulated fills; no testnet order placement (D-46, G-17) |
 | Live trading (PRD-F12) | Planned, blocked | Config-load rejection and disabled order methods (section 3.5) |
 
 ## 7. Risks & Open Items
@@ -263,7 +263,7 @@ Until all ten hold, PRD-F12 stays `Planned, blocked`.
 |-----|------|--------|
 | G-1 | Evidence reports are 0 bytes; no performance statement is possible (D-86, H-2). The backtest CLI writes the backtest and out-of-sample reports since `099085b`; none exists from real data. | Open |
 | G-2 | Readiness accepted 0-byte reports (H-2). Fixed. Not fixed by this gap: no code consults readiness (D-10, waits on G-3) and the live-ready state is unreachable (H-3, kept by design while live is blocked). | Closed (`88220e6`) |
-| G-3 | Backtest runtime and mode dispatch built; paper and demo exit 78 and have no runtime (D-1, D-46). H-4 fixed (`f6bc017`). | Partial (`099085b`) |
+| G-3 | Backtest runtime and mode dispatch built (`099085b`); paper and demo runtime built on public klines with simulated fills (`973cd82`). Remaining: no recorded live network run, no testnet order path (D-1, D-46). H-4 fixed (`f6bc017`). | Partial (`973cd82`) |
 | G-4 | `.env.example` fails `load_config` as shipped (D-2, H-14). | Open |
 | G-10 | Testnet URL guard was a substring match (D-13). Fixed: exact `https` host match. | Closed (`0a76564`) |
 | G-15 | Telegram has no real transport, so the "alerts tested" check proves nothing (D-3). | Open |

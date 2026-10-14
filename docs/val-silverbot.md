@@ -4,7 +4,7 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
+**Last updated:** 2026-10-14
 **Last reconciled:** N/A (not a code-describing doc)
 
 This brief asks whether the idea in [idea-silverbot.md](idea-silverbot.md) deserves more effort, and states when to stop. It is deliberately conservative: no market evidence and no performance evidence exist today. Gap ids are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md); requirements are in [brd-silverbot.md](brd-silverbot.md).
@@ -41,12 +41,12 @@ Feature ids are from PRD §3 of [prd-silverbot.md](prd-silverbot.md); statuses a
 | PRD-F3 Risk engine and kill switch | 14 gates implemented | Per-trade cap, settings factory, fail-closed auto-tripping kill switch and SQLite state are built but used by no running bot (G-5, G-6, G-7 partial) |
 | PRD-F4 Paper trading | Paper executor and engine | Market stream, reconnect and REST fallback are skeletons (G-13); no runtime (G-3) |
 | PRD-F5 Demo/testnet | Config rules and readiness checks | All network I/O is a stub (G-13, G-17) |
-| PRD-F6 ML filter | Components and tests; disabled | Wired to settings in CLI backtests only (G-9); no model shipped; leakage unchecked (G-22) |
+| PRD-F6 ML filter | Components and tests; disabled | Wired to settings in CLI backtests and paper and demo sessions (G-9); no model shipped; leakage unchecked (G-22) |
 | PRD-F7 Monitoring | Builders for logs, reports, dashboard JSON | No Telegram transport (G-15); unwired (G-16) |
 | PRD-F8 Readiness | Checkers and report export | Report checks reject empty or non-JSON-object files since `88220e6`; never consulted (D-10) |
 | PRD-F9 Safe config | Typed loader, fail-closed validation | Shipped `.env.example` loads as paper since `c6d909d` (G-4 closed) |
-| PRD-F10 Data and storage | SQLite storage | Historical fetch raises NotImplementedError (G-13, G-14) |
-| PRD-F11 Deployment | Dockerfile, compose, systemd files | The paper container exits 78 and is not restarted; no paper runtime (G-3, G-26) |
+| PRD-F10 Data and storage | SQLite storage | Public klines fetch for paper and demo since `973cd82`; no historical download command for backtests (G-13, G-14) |
+| PRD-F11 Deployment | Dockerfile, compose, systemd files | The paper container runs a paper session since `973cd82`; no recorded run on a host (G-3, G-26) |
 | PRD-F12 Live trading | Blocked at config load | `Planned, blocked` |
 
 Feasibility verdict: the foundations are real; running anything end to end is not yet possible. The next evidence step is a cost-inclusive backtest on owner-supplied history (G-1, G-12).

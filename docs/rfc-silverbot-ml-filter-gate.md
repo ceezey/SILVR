@@ -6,8 +6,8 @@
 **Version:** 0.1
 **Author:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 3.2, 3.4, 4 to 8 and every `ml/filter.py` line re-checked 2026-10-09 against `70ccaec` (G-8 fix `8e66054`); the settings-wiring statements in sections 2, 3.9, 6, 7 and 8 re-checked 2026-10-09 against `099085b` (`f84557e`)
+**Last updated:** 2026-10-14
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 3.2, 3.4, 4 to 8 and every `ml/filter.py` line re-checked 2026-10-09 against `70ccaec` (G-8 fix `8e66054`); the settings-wiring statements in sections 2, 3.9, 6, 7 and 8 re-checked 2026-10-09 against `099085b` (`f84557e`); the same statements re-checked 2026-10-14 against `40ea0b1` (paper and demo runtime `973cd82`)
 **PRD Reference:** [prd-silverbot.md](prd-silverbot.md) PRD-F6
 **SDD Reference:** [sdd-silverbot.md](sdd-silverbot.md) §8 (ML architecture) and §8.1 (leakage and misuse surface), §3.4 (configuration reference)
 
@@ -48,8 +48,8 @@ flowchart TD
 Wiring facts:
 
 - The backtest builds the filter from `BacktestConfig.ml_filter`, whose default is `MLFilterConfig()`, which is **disabled** (`backtest/engine.py:42`, `backtest/models.py:41`).
-- The paper loop builds `MLProbabilityFilter()` with no config when none is injected, which is also disabled (`execution/paper_trading.py:53`).
-- The settings keys `ML_FILTER_ENABLED`, `ML_REGISTRY_PATH`, `ML_MIN_PROBABILITY` and `ML_REDUCE_RISK_THRESHOLD` are parsed and validated at config load (`config/settings.py:80-83,152-170`). Since `f84557e`, `build_backtest_config` converts them into `BacktestConfig.ml_filter` for CLI backtests (`backtest/runner.py:50-55`; `tests/test_backtest_runner.py:144`). The paper loop still builds `MLProbabilityFilter()` with defaults, so the keys have **no effect outside backtests** (`execution/paper_trading.py:53`; D-4, G-9 partial).
+- A `PaperTradingEngine` built with no `ml_filter` uses `MLProbabilityFilter()` with no config, which is also disabled (`execution/paper_trading.py:61`); the paper and demo runtime always injects one built from settings (`execution/runtime.py:87`).
+- The settings keys `ML_FILTER_ENABLED`, `ML_REGISTRY_PATH`, `ML_MIN_PROBABILITY` and `ML_REDUCE_RISK_THRESHOLD` are parsed and validated at config load (`config/settings.py:80-83,152-170`). Since `f84557e`, `build_backtest_config` converts them into `BacktestConfig.ml_filter` for CLI backtests, through `build_ml_filter_config` since `973cd82` (`backtest/runner.py:54,59-67`; `tests/test_backtest_runner.py:146`). Since `973cd82` the paper and demo runtime builds the filter from the same settings through `build_ml_filter_config` (`execution/runtime.py:87`, `973cd82`), so the keys take effect in backtests and in paper and demo sessions (D-4, G-9 partial).
 - No code outside `ml/` and the tests calls `train_baseline_models`, `build_calibration_report`, `evaluate_model_promotion`, `MLDatasetBuilder` or `ModelRegistry.register_model`; there is no command-line entry point for the offline pipeline (G-22).
 
 ## 3. Technical Details & Contracts
@@ -190,7 +190,7 @@ Leakage control is name-based plus prefix slicing, and the dataset builder passe
 |------------------------|--------|---------|
 | ML may only approve, reject or reduce risk; never generate trades, place orders, raise risk, bypass stop loss or kill switch, or use the final test set | Carried; consistent with the code (section 3.3) | none |
 | Thresholds: approve at or above `ML_MIN_PROBABILITY` 0.60; reduce between `ML_REDUCE_RISK_THRESHOLD` 0.55 and 0.60; reject below 0.55 | Carried as coded | D-70 (the plan's illustrative 0.65 is dropped) |
-| ML filter is configurable by `ML_FILTER_ENABLED` and related keys | Carried for CLI backtests only (`f84557e`); not wired in the paper loop | D-4, G-9 (Partial) |
+| ML filter is configurable by `ML_FILTER_ENABLED` and related keys | Carried for CLI backtests (`f84557e`) and the paper and demo runtime (`973cd82`) | D-4, G-9 (Partial) |
 | New model replaces the active one only if out-of-sample improves, drawdown is not worse, trade count is sufficient and calibration is acceptable | Narrowed: accuracy, test degradation, Brier and sample count only | D-36 |
 | A model may become active only after offline evaluation | Dropped as an enforced rule: not coupled to the registry | D-37 |
 | Suggested features include liquidity, FVG, displacement, MSS, HTF bias, spread, volatility regime | Dropped: 23 features only | D-38 |
@@ -238,7 +238,7 @@ Leakage control is name-based plus prefix slicing, and the dataset builder passe
 | Dataset, features, split, training, calibration report | Built | `ml/dataset.py`, `ml/features.py`, `ml/training.py`, `ml/calibration.py` |
 | Promotion policy and audit export | Built | `ml/promotion.py`; 9 promotion tests |
 | Registry with register, activate and rollback | Built | `ml/registry.py:40-124`; registry test |
-| Settings-to-filter wiring (ML env keys take effect) | Partial | `build_backtest_config` builds `MLFilterConfig` from settings for CLI backtests (`backtest/runner.py:50-55`); the paper loop does not (D-4, G-9) |
+| Settings-to-filter wiring (ML env keys take effect) | Partial | `build_ml_filter_config` builds `MLFilterConfig` from settings for CLI backtests and the paper and demo runtime (`backtest/runner.py:54,59-67`, `execution/runtime.py:87`, `973cd82`); no model is shipped (D-4, G-9) |
 | Invalid-probability rejection (NaN, infinite, outside `[0, 1]`) | Built | `ml/filter.py:134-146`; `8e66054` (H-1, G-8) |
 | Promotion enforced on the registry | Planned | D-37 |
 | Offline pipeline entry point | Planned | G-22 |
@@ -252,7 +252,7 @@ Leakage control is name-based plus prefix slicing, and the dataset builder passe
 | Ref | Item | Status |
 |-----|------|--------|
 | G-8 | NaN model probability becomes 1.0 and approves a signal (H-1). Fixed: invalid probabilities reject. | Closed (`8e66054`) |
-| G-9 | ML filter wired to settings in CLI backtests only (D-4); not in the paper loop; no model is shipped. Safe because the filter is disabled by default. | Partial (`f84557e`) |
+| G-9 | ML filter wired to settings in CLI backtests (`f84557e`) and in the paper and demo runtime (`973cd82`) (D-4); no model is shipped. Safe because the filter is disabled by default. | Partial (`973cd82`) |
 | G-22 | Pipeline gaps: no entry point, calibration report-only, promotion narrower and not enforced, 23 features, name-based leakage control, no purge or embargo, possible HTF lookahead (D-36 to D-39, D-68 to D-76, U-6). | Open |
 | G-23 | Pickle artifact load is arbitrary code execution if the registry or artifacts are untrusted (H-8). | Open |
 | G-28 | No tests for stale model, corrupt artifact, invalid `MLFilterConfig` (NaN is tested since `8e66054`). | Open |
@@ -266,6 +266,6 @@ Leakage control is name-based plus prefix slicing, and the dataset builder passe
 - [x] Every filter reason and every promotion reason is copied verbatim with its source line, including the two "Current active ... missing" reasons.
 - [x] The "risk only goes down" guarantee lists each layer and the one conditional (unclamped paper loop, D-62).
 - [x] The invalid-probability rejection and the old NaN-approves flaw it replaced are stated with code lines and tests (H-1, G-8).
-- [x] ML environment keys are recorded as wired for CLI backtests only (D-4, G-9 partial); readiness and promotion are recorded as advisory (D-37).
+- [x] ML environment keys are recorded as wired for CLI backtests and the paper and demo runtime (D-4, G-9 partial); readiness and promotion are recorded as advisory (D-37).
 - [x] Each dropped or changed old-plan rule in section 3.8 carries a `D-#`.
 - [ ] A trained model exists, is calibrated and passes the promotion policy on real evidence (not yet; Planned).

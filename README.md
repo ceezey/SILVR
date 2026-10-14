@@ -28,12 +28,12 @@ Full proposal conditions: [RFC-004 §7.1](docs/rfc-silverbot-readiness-gates.md)
 
 ## Current Status
 
-Honest summary at commit `5c781fc` on `dev` (see [docs/prd-silverbot.md](docs/prd-silverbot.md) section 3 for the per-feature table):
+Honest summary on `dev` after the PRD-F2 to PRD-F5 batch (2026-10-14) (see [docs/prd-silverbot.md](docs/prd-silverbot.md) section 3 for the per-feature table):
 
 - Built and tested: signal engine, risk engine, config loading, readiness checkers, backtest from the command line (`python -m pytest -q`: 220 passed).
 - HIGH safety fixes batch 1 (2026-10-09): a NaN or out-of-range ML probability now rejects; the testnet URL guard is an exact `https` host match; `.env.example` loads as paper mode; readiness rejects empty or non-JSON reports; backtests default to 5 bps slippage and 3 bps spread; risk per trade is capped at 0.5% everywhere; the kill switch fails closed and trips itself on the daily-loss and consecutive-loss limits; risk state can persist in SQLite. Backtests use the settings caps and a simulated per-run kill switch; no paper bot uses the real kill switch or the persisted state until a paper runtime builds its engine with `build_risk_engine` (G-3). Details: [docs/scrutiny-silverbot.md](docs/scrutiny-silverbot.md) section 3.
 - Partial: backtester, paper trading, demo/testnet mode, ML filter, monitoring, market data, deployment files.
-- Entrypoint (G-3 entrypoint batch 2, 2026-10-09): `python -m silver_bot` runs the mode from configuration. Backtest mode loads Binance kline CSV files given with `--candles` and writes six reports, including a chronological out-of-sample report and a run record (exit 0; 2 on bad input). Paper and demo exit 78 (`mode not available yet: needs market data (G-13)`), and the systemd unit and compose do not restart on 78 (systemd also stops on exit 2 since `5c781fc`). There is no paper or demo runtime yet (G-3, G-13, G-17).
+- Entrypoint (G-3 entrypoint batch 2, 2026-10-09): `python -m silver_bot` runs the mode from configuration. Backtest mode loads Binance kline CSV files given with `--candles` and writes seven reports, including a chronological out-of-sample report with walk-forward windows, a Monte Carlo summary and BRD pass or fail criteria, and a run record (exit 0; 2 on bad input). Since the PRD-F2 to PRD-F5 batch (2026-10-14), paper mode reads closed candles from the Binance Futures public klines endpoint and demo mode reads them from the testnet; both fill trades locally (simulated), send no order anywhere and write `reports/paper_trading_report.json` (exit 0 on stop, 1 when market data is unreachable, 2 on bad input). Testnet order placement is not built (G-17).
 - No evidence: `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are empty until the owner runs a backtest on real data, and `reports/` is git-ignored. Nothing here supports any claim about strategy performance.
 - Known safety hazards are listed in [docs/audit-docs-drift.md](docs/audit-docs-drift.md) and [docs/scrutiny-silverbot.md](docs/scrutiny-silverbot.md).
 
@@ -47,7 +47,7 @@ Backtest on Binance USD-M futures klines (full steps, including checksums, in [d
 2. In `.env` set `MODE=` (blank), `TRADING_MODE=backtest` and `PAPER_TRADING=false`; `SYMBOL` and `TIMEFRAME` must match the files.
 3. Run `python -m silver_bot --candles data/candles`. Expected: exit 0 and six files in `reports/`.
 
-The reports are not committed (`reports/` is git-ignored), and no number from them is a performance claim. Paper and demo modes exit 78 for now; testnet preparation steps are in [docs/runbook-demo-testnet.md](docs/runbook-demo-testnet.md).
+The reports are not committed (`reports/` is git-ignored), and no number from them is a performance claim. Paper and demo modes run on live market data with simulated fills; demo steps are in [docs/runbook-demo-testnet.md](docs/runbook-demo-testnet.md).
 
 ## Safe Defaults
 
