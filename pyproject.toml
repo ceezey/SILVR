@@ -20,6 +20,9 @@ silver-bot = "silver_bot.main:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"silver_bot.monitoring" = ["fonts/*.woff2", "fonts/OFL.txt"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

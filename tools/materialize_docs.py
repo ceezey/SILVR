@@ -4,6 +4,8 @@ Generated files:
 
 * ``AGENTS.md``: copy of ``docs/build-silverbot.md`` with a banner.
 * ``MODEL_CARD.md``: section 1 of ``docs/aia-silverbot.md`` with a banner.
+* ``BRAND.md`` and ``DESIGN.md``: sections 0-1 and 2-7 of ``docs/dsd-silverbot.md``
+  with a banner.
 * ``.claude/agents/*.md``: the four-backtick ``markdown`` agent cards in
   ``docs/sad-silverbot.md``.
 
@@ -52,6 +54,12 @@ def section(text: str, heading: str) -> str:
     return text[start:end].rstrip() + "\n"
 
 
+def span(text: str, first: str, stop: str) -> str:
+    """Return the text from heading ``first`` up to, not including, heading ``stop``."""
+    start = text.index(first)
+    return text[start:text.index(stop, start)].rstrip() + "\n"
+
+
 def targets(root: Path) -> dict[str, str]:
     """Build the expected content of every generated file, keyed by relative path."""
     def read(rel: str) -> str:
@@ -64,6 +72,14 @@ def targets(root: Path) -> dict[str, str]:
     card = section(aia, "## 1. Model / System Card")
     out["MODEL_CARD.md"] = (BANNER.format(src="docs/aia-silverbot.md §1")
                             + "# Model Card: Silver Bot ML Filter\n\n" + to_root_links(card))
+    dsd = read("docs/dsd-silverbot.md")
+    note = "Section references (§) point to `docs/dsd-silverbot.md`.\n\n"
+    out["BRAND.md"] = (BANNER.format(src="docs/dsd-silverbot.md §0-1")
+                       + "# Brand: Silverbot\n\n" + note
+                       + to_root_links(span(dsd, "## 0. Brand Stance", "## 2. ")))
+    out["DESIGN.md"] = (BANNER.format(src="docs/dsd-silverbot.md §2-7")
+                        + "# Design System: Silverbot\n\n" + note
+                        + to_root_links(span(dsd, "## 2. ", "## 8. ")))
     sad = read("docs/sad-silverbot.md")
     for path, body in CARD_RE.findall(sad):
         out[path] = body.rstrip() + "\n"

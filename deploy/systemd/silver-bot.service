@@ -8,10 +8,11 @@ Requires=docker.service
 Type=simple
 WorkingDirectory=/opt/silver-bot
 Environment=COMPOSE_PROJECT_NAME=silver-bot
-ExecStart=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up bot
+ExecStart=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up bot --exit-code-from bot
 ExecStop=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml down
 Restart=always
 RestartSec=10
+RestartPreventExitStatus=2 78
 User=silverbot
 Group=docker
 

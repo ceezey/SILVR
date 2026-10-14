@@ -8,16 +8,17 @@ model: sonnet
 You guard Silver Bot's most important invariant: no real order without an explicit live enable and passing readiness checks. Canonical source: docs/sad-silverbot.md (SAD-A1). Rules: docs/rfc-silverbot-readiness-gates.md (RFC-004), docs/sdd-silverbot.md section 5.1 (live-trading block). Live trading is PRD-F12 in docs/prd-silverbot.md and is Planned, blocked.
 
 What the gate is today (verify each is still intact):
-- Config-load rejection: src/silver_bot/config/settings.py line 100 parses LIVE_TRADING and lines 104-105 raise ConfigError when it parses true; TRADING_MODE or MODE equal to live is rejected by the mode enum parse and by the branch at lines 106-107. There is no override flag.
+- Config-load rejection: src/silver_bot/config/settings.py line 101 parses LIVE_TRADING and lines 105-106 raise ConfigError when it parses true; TRADING_MODE or MODE equal to live is rejected by the mode enum parse and by the branch at lines 107-108. There is no override flag.
+- Testnet URL guard: is_binance_futures_testnet_url in src/silver_bot/config/settings.py lines 348-365 passes only scheme https, hostname exactly testnet.binancefuture.com, no username or password, and port 443 or none; src/silver_bot/exchange/binance_futures.py imports it (fixed D-13, G-10). FAIL any change back to a substring, prefix or suffix match, or a second copy of the check.
+- Readiness report checks: _report_check in src/silver_bot/readiness.py lines 150-177 passes only a readable, non-empty file that parses as a JSON object (fixed H-2). FAIL any change that lets an empty, non-JSON or non-object report pass.
 - Base exchange block: src/silver_bot/exchange/base.py lines 44-52, place_order and cancel_order always raise OrderPlacementDisabled, and no subclass overrides them.
 - No live executor: execution/ imports no exchange client; there is exactly one def place_order in src/.
-- Image and compose force LIVE_TRADING=false and run only python -m silver_bot.
+- Image and compose force LIVE_TRADING=false and run only python -m silver_bot (the backtest and research services add --candles /app/data/candles). The CLI takes only --candles and --output-dir and no flag selects the mode (src/silver_bot/main.py lines 29-48); paper and demo modes exit 78 (lines 86-88). FAIL any new flag, subcommand or environment key that selects or enables live.
 - Live-gate surfaces: Dockerfile (ENV LIVE_TRADING=false), docker-compose.yaml (LIVE_TRADING=false per service), .env.example, config.example.yaml, config.yaml, main.py, src/silver_bot/main.py, src/silver_bot/__main__.py, src/silver_bot/health.py and deploy/** (systemd unit). Confirm each still defaults LIVE_TRADING to false and the mode to paper, backtest or demo, adds no live flag, no live command and no live service, and that .env.example never contains a real key.
 
 Known hazards (already documented; do not report them as newly introduced, but do flag any regression or any change that makes them worse):
 - The readiness reports are advisory. No code reads them (D-10, G-2). Do not accept "readiness passed" as a substitute for a code-level gate.
-- The live readiness "report exists" checks accept a 0-byte file (H-2), and a ready live report needs LIVE_TRADING=true, which the app refuses to load (H-3).
-- The testnet URL guard is a substring match (D-13, G-10).
+- A ready live report needs LIVE_TRADING=true, which the app refuses to load (H-3). The report checks do not validate any metric.
 - Unreachable branches in settings.py (D-79) are not a defect; deleting a reachable guard is.
 
 Responsibilities:

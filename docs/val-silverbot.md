@@ -4,7 +4,7 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
+**Last updated:** 2026-10-09
 **Last reconciled:** N/A (not a code-describing doc)
 
 This brief asks whether the idea in [idea-silverbot.md](idea-silverbot.md) deserves more effort, and states when to stop. It is deliberately conservative: no market evidence and no performance evidence exist today. Gap ids are in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift findings are in [audit-docs-drift.md](audit-docs-drift.md); requirements are in [brd-silverbot.md](brd-silverbot.md).
@@ -15,7 +15,7 @@ This brief asks whether the idea in [idea-silverbot.md](idea-silverbot.md) deser
 
 **Evidence that the strategy has an edge: none.** `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are 0 bytes (G-1, D-86). The backtest engine is covered by tests on synthetic data only. No profit, win rate, drawdown or return figure exists anywhere in this repository, and none is claimed here.
 
-**Evidence that the cost model is realistic: none.** Backtest slippage and spread default to 0 bps (`src/silver_bot/backtest/models.py:34-35`; D-5, G-11), although the old BACKTESTING.md described its cost treatment as conservative. See [ues-silverbot.md](ues-silverbot.md) §1.
+**Evidence that the cost model is realistic: none.** Backtest slippage and spread defaulted to 0 bps until `59ed6d5` and now default to 5.0 and 3.0 bps (`src/silver_bot/backtest/models.py:34-35`; D-5, G-11 closed), but no fill data shows whether those values are realistic. See [ues-silverbot.md](ues-silverbot.md) §1.
 
 ## 2. Alternatives / Substitute Scan
 
@@ -38,15 +38,15 @@ Feature ids are from PRD §3 of [prd-silverbot.md](prd-silverbot.md); statuses a
 |---|---|---|
 | PRD-F1 Signal engine | Implemented with tests (caveats G-18, G-19) | Any proof of edge; lookahead check (U-7) |
 | PRD-F2 Backtester | Event-driven engine, fee model, journal, metrics (partial, G-20) | Non-empty reports; a run with non-zero slippage and spread; walk-forward and out-of-sample split (G-12) |
-| PRD-F3 Risk engine and kill switch | 14 gates implemented | Unified limits (G-5); kill switch inert by default (G-6); persisted state (G-7) |
+| PRD-F3 Risk engine and kill switch | 14 gates implemented | Per-trade cap, settings factory, fail-closed auto-tripping kill switch and SQLite state are built but used by no running bot (G-5, G-6, G-7 partial) |
 | PRD-F4 Paper trading | Paper executor and engine | Market stream, reconnect and REST fallback are skeletons (G-13); no runtime (G-3) |
 | PRD-F5 Demo/testnet | Config rules and readiness checks | All network I/O is a stub (G-13, G-17) |
-| PRD-F6 ML filter | Components and tests; disabled | Not wired (G-9); no model shipped; leakage unchecked (G-22) |
+| PRD-F6 ML filter | Components and tests; disabled | Wired to settings in CLI backtests only (G-9); no model shipped; leakage unchecked (G-22) |
 | PRD-F7 Monitoring | Builders for logs, reports, dashboard JSON | No Telegram transport (G-15); unwired (G-16) |
-| PRD-F8 Readiness | Checkers and report export | Existence-only checks accept 0-byte files (G-2) |
-| PRD-F9 Safe config | Typed loader, fail-closed validation | Shipped `.env.example` does not load (G-4) |
+| PRD-F8 Readiness | Checkers and report export | Report checks reject empty or non-JSON-object files since `88220e6`; never consulted (D-10) |
+| PRD-F9 Safe config | Typed loader, fail-closed validation | Shipped `.env.example` loads as paper since `c6d909d` (G-4 closed) |
 | PRD-F10 Data and storage | SQLite storage | Historical fetch raises NotImplementedError (G-13, G-14) |
-| PRD-F11 Deployment | Dockerfile, compose, systemd files | Container runs a stub that exits (G-3, G-26) |
+| PRD-F11 Deployment | Dockerfile, compose, systemd files | The paper container exits 78 and is not restarted; no paper runtime (G-3, G-26) |
 | PRD-F12 Live trading | Blocked at config load | `Planned, blocked` |
 
 Feasibility verdict: the foundations are real; running anything end to end is not yet possible. The next evidence step is a cost-inclusive backtest on owner-supplied history (G-1, G-12).
@@ -60,15 +60,15 @@ Source: the old BACKTESTING.md §Pass/Fail Criteria (lines 487-504) and §Red Fl
 | K1 | Backtest profit factor is below the minimum | profit factor below 1.2 | BACKTESTING.md:494 (research threshold, not a profit guarantee) |
 | K2 | Expectancy is not positive | expectancy at or below 0 | BACKTESTING.md:495 |
 | K3 | Profit disappears after fees | net profit at or below 0 with the coded fees | BACKTESTING.md:511 |
-| K4 | Profit disappears after realistic slippage and spread | net profit at or below 0 with non-zero slippage and spread | BACKTESTING.md:512; the 0 bps default is not realistic (G-11) |
+| K4 | Profit disappears after realistic slippage and spread | net profit at or below 0 with non-zero slippage and spread | BACKTESTING.md:512; the defaults are now 5.0 and 3.0 bps (G-11 closed), not yet checked against fills |
 | K5 | Maximum drawdown exceeds what the owner can accept | Owner input required (OI-3) | BACKTESTING.md:496 ("acceptable for account size") |
 | K6 | Trade count is too small to be meaningful | Owner input required (OI-9) | BACKTESTING.md:497 and :516 (no number given) |
 | K7 | Result depends on one lucky trade or one month | Open (no definition in old docs; to be set in QAD) | BACKTESTING.md:498-499, :513-514 |
 | K8 | Walk-forward or Monte Carlo results collapse | Open; neither exists in code (D-6, G-12) | BACKTESTING.md:517-518 |
-| K9 | Out-of-sample results are not acceptable | Open; the split helper is unwired (G-12) | BACKTESTING.md:501 |
+| K9 | Out-of-sample results are not acceptable | Open; the backtest CLI writes a chronological split report, but no pass or fail criteria exist (G-12) | BACKTESTING.md:501 |
 | K10 | Paper trading does not match backtest behaviour | Open (no tolerance defined) | BACKTESTING.md:519 |
-| K11 | Any evidence report is empty or missing | Any of the three report files is 0 bytes | G-1, D-86; the readiness check does not catch this today (G-2) |
-| K12 | Any safety rule is broken in a test or run | Any order without a stop loss, any bypass of the risk engine or kill switch | AGENTS.md safety rules; risk engine rejection at `src/silver_bot/risk/engine.py:36-37` |
+| K11 | Any evidence report is empty or missing | Any of the three report files is 0 bytes | G-1, D-86; the live readiness report checks fail on an empty file since `88220e6` |
+| K12 | Any safety rule is broken in a test or run | Any order without a stop loss, any bypass of the risk engine or kill switch | AGENTS.md safety rules; risk engine rejection at `src/silver_bot/risk/engine.py:54-55` |
 
 Mode order for proceeding: backtest, then paper, then demo/testnet, then (blocked) live. A stop on any row means fix or rework, not skip ahead.
 

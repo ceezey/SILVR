@@ -46,7 +46,7 @@ def engine(config: BacktestConfig | None = None) -> BacktestEngine:
                 minimum_signal_score=70,
             )
         ),
-        config=config or BacktestConfig(maker_fee=0.0, taker_fee=0.0),
+        config=config or BacktestConfig(maker_fee=0.0, taker_fee=0.0, slippage_bps=0.0, spread_bps=0.0),
     )
 
 
@@ -57,7 +57,7 @@ def test_backtest_records_winning_trade_and_exports(tmp_path: Path) -> None:
     ]
 
     result = engine(
-        BacktestConfig(maker_fee=0.0, taker_fee=0.0, export_dir=tmp_path)
+        BacktestConfig(maker_fee=0.0, taker_fee=0.0, slippage_bps=0.0, spread_bps=0.0, export_dir=tmp_path)
     ).run(candles)
 
     assert len(result.trades) == 1
@@ -176,3 +176,10 @@ def test_backtest_logs_risk_rejection_when_kill_switch_active(tmp_path: Path) ->
 
     assert result.trades == []
     assert any(record.reason == "Risk rejected: Kill switch is active" for record in result.rejected_signals)
+
+
+def test_backtest_cost_defaults_are_conservative() -> None:
+    config = BacktestConfig()
+
+    assert config.slippage_bps == 5.0
+    assert config.spread_bps == 3.0

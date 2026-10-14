@@ -6,8 +6,8 @@
 **Version:** 0.1
 **Author:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; sections 1, 3.2, 3.4, 3.6 and 4 to 8 re-checked 2026-10-09 against `70ccaec` (G-2 fix `88220e6`, G-10 fix `0a76564`, G-4 fix `c6d909d`, G-5 and G-6 load rules `5e4acc5`, `08c81ad`); the G-1 and G-3 rows in section 7.2 re-checked 2026-10-09 against `099085b`
 **PRD Reference:** [prd-silverbot.md](prd-silverbot.md) PRD-F8 (readiness gates), PRD-F5 (demo/testnet mode), PRD-F12 (live trading, `Planned, blocked`)
 **SDD Reference:** [sdd-silverbot.md](sdd-silverbot.md) §3.4 (configuration reference), §4.2 and §4.3 (exchange adapter), §5.1 (live-trading block), §5.2 (secrets handling)
 
@@ -20,7 +20,7 @@ Two checkers produce readiness reports without trading: `silver_bot.demo_readine
 The aim of a readiness gate is to stop the operator moving to a riskier mode before the evidence and controls exist. As built, the gates do **not** do that:
 
 1. **Advisory only.** No code reads any readiness report. `load_config` and `main` never call either checker. The only live control is the unconditional block at config load (D-10, G-2).
-2. **Existence only.** The "report exists" checks accept a 0-byte file. The three evidence reports are 0 bytes yet pass (H-2, D-86, G-1).
+2. **Shallow evidence checks.** Since `88220e6` the three report checks require a readable, non-empty file that parses as a JSON object, so the committed 0-byte reports now fail (H-2 fixed, G-2 closed). They still do not check any metric, threshold or freshness, and no evidence exists (D-86, G-1).
 3. **Unreachable green.** The live checker requires `LIVE_TRADING=true`, which the application refuses to load (H-3).
 
 Objectives:
@@ -45,7 +45,7 @@ Input sources differ between the two checkers (D-45):
 | Checker | Reads | Boolean defaults | Float defaults | Source |
 |---------|-------|------------------|----------------|--------|
 | Demo | `.env` in the project root (simple loader that skips malformed lines), overlaid by `os.environ`; or only the `environ` mapping when one is passed. `config.yaml` is read only inside check 1 | None: a missing boolean fails with "value is missing" | A missing value counts as the safe limit and passes | `demo_readiness.py:51-53,114-123,274-276,297-307` |
-| Live | `os.environ` only, or the passed mapping. It does **not** read `.env` or `config.yaml` | None: a missing boolean fails with "value is missing" | A missing value counts as the safe limit and passes | `readiness.py:74,168-187,279-281` |
+| Live | `os.environ` only, or the passed mapping. It does **not** read `.env` or `config.yaml` | None: a missing boolean fails with "value is missing" | A missing value counts as the safe limit and passes | `readiness.py:74,180-199,291-293` |
 
 Consequence: a value set only in `.env` is seen by the demo checker but not by the live checker, and a value set only in `config.yaml` fails the demo checks 2 to 16 (the yaml file reaches only check 1).
 
@@ -86,14 +86,14 @@ Check 18 scans `git ls-files` when inside a git work tree, else walks the tree. 
 
 | # | Check name | Pass condition | Failure reason (verbatim) | Source |
 |---|-----------|----------------|---------------------------|--------|
-| 1 | `backtest_report_exists` | the file at env `BACKTEST_REPORT_PATH` (default `reports/backtest_report.json`) exists and is a file; pass text `Found <resolved path>` | `Missing required report: <resolved path>. Set BACKTEST_REPORT_PATH to the completed report path.` | `readiness.py:76,150-165` |
-| 2 | `out_of_sample_validation_report_exists` | same for env `OOS_VALIDATION_REPORT_PATH` (default `reports/out_of_sample_validation_report.json`) | `Missing required report: <resolved path>. Set OOS_VALIDATION_REPORT_PATH to the completed report path.` | `readiness.py:77-83` |
-| 3 | `paper_trading_report_exists` | same for env `PAPER_TRADING_REPORT_PATH` (default `reports/paper_trading_report.json`) | `Missing required report: <resolved path>. Set PAPER_TRADING_REPORT_PATH to the completed report path.` | `readiness.py:84-90` |
+| 1 | `backtest_report_exists` | the file at env `BACKTEST_REPORT_PATH` (default `reports/backtest_report.json`) is a file, reads as UTF-8 (a BOM is allowed), is not blank and parses as a JSON object; pass text `Found <resolved path>` | `Missing required report: <resolved path>. Set BACKTEST_REPORT_PATH to the completed report path.`, `Report <resolved path> could not be read: <error>`, `Report <resolved path> is empty. Set BACKTEST_REPORT_PATH to a completed report.`, `Report <resolved path> is not valid JSON.` or `Report <resolved path> must contain a JSON object.` | `readiness.py:76,150-177` |
+| 2 | `out_of_sample_validation_report_exists` | same for env `OOS_VALIDATION_REPORT_PATH` (default `reports/out_of_sample_validation_report.json`) | as check 1 with `OOS_VALIDATION_REPORT_PATH` | `readiness.py:77-83` |
+| 3 | `paper_trading_report_exists` | same for env `PAPER_TRADING_REPORT_PATH` (default `reports/paper_trading_report.json`) | as check 1 with `PAPER_TRADING_REPORT_PATH` | `readiness.py:84-90` |
 | 4 | `risk_engine_enabled` | `RISK_ENGINE_ENABLED` is true | boolean failure text | `readiness.py:91` |
-| 5 | `kill_switch_enabled` | `KILL_SWITCH_ENABLED` is true and `KILL_SWITCH_PATH` non-blank; pass text `Kill switch is configured` | `KILL_SWITCH_ENABLED must be true and KILL_SWITCH_PATH must point to the kill-switch file` (flag unparsable or absent), `KILL_SWITCH_ENABLED must be true` (flag false), or `KILL_SWITCH_PATH is required when KILL_SWITCH_ENABLED=true` | `readiness.py:92,190-207` |
-| 6 | `kill_switch_not_active` | the resolved kill-switch path does not exist; pass text `Kill switch file is not active` | `KILL_SWITCH_PATH is required before checking whether the kill switch is active` or `Kill switch file is active at <resolved path>; live readiness is blocked until this file is intentionally cleared` | `readiness.py:93,210-227` |
-| 7 | `telegram_alerts_tested_or_disabled` | `TELEGRAM_ENABLED` is false (pass text `Telegram is explicitly disabled`), or it is true and `TELEGRAM_ALERTS_TESTED` is true (pass text `Telegram alerts tested`) | `TELEGRAM_ENABLED must be explicitly true or false for readiness` (unset or unparsable) or `Telegram is enabled, so set TELEGRAM_ALERTS_TESTED=true after a real alert test or set TELEGRAM_ENABLED=false` | `readiness.py:94,230-254` |
-| 8 | `api_keys_loaded_from_env_only` | `BINANCE_API_KEY` and `BINANCE_API_SECRET` both non-blank in the process environment; pass text `API key and secret are present in the readiness environment` | `BINANCE_API_KEY and BINANCE_API_SECRET must both be present in the process environment; use placeholders only in examples` | `readiness.py:95,257-270` |
+| 5 | `kill_switch_enabled` | `KILL_SWITCH_ENABLED` is true and `KILL_SWITCH_PATH` non-blank; pass text `Kill switch is configured` | `KILL_SWITCH_ENABLED must be true and KILL_SWITCH_PATH must point to the kill-switch file` (flag unparsable or absent), `KILL_SWITCH_ENABLED must be true` (flag false), or `KILL_SWITCH_PATH is required when KILL_SWITCH_ENABLED=true` | `readiness.py:92,202-219` |
+| 6 | `kill_switch_not_active` | the resolved kill-switch path does not exist; pass text `Kill switch file is not active` | `KILL_SWITCH_PATH is required before checking whether the kill switch is active` or `Kill switch file is active at <resolved path>; live readiness is blocked until this file is intentionally cleared` | `readiness.py:93,222-239` |
+| 7 | `telegram_alerts_tested_or_disabled` | `TELEGRAM_ENABLED` is false (pass text `Telegram is explicitly disabled`), or it is true and `TELEGRAM_ALERTS_TESTED` is true (pass text `Telegram alerts tested`) | `TELEGRAM_ENABLED must be explicitly true or false for readiness` (unset or unparsable) or `Telegram is enabled, so set TELEGRAM_ALERTS_TESTED=true after a real alert test or set TELEGRAM_ENABLED=false` | `readiness.py:94,242-266` |
+| 8 | `api_keys_loaded_from_env_only` | `BINANCE_API_KEY` and `BINANCE_API_SECRET` both non-blank in the process environment; pass text `API key and secret are present in the readiness environment` | `BINANCE_API_KEY and BINANCE_API_SECRET must both be present in the process environment; use placeholders only in examples` | `readiness.py:95,269-282` |
 | 9 | `live_trading_enabled_intent` | `LIVE_TRADING` is **true** | boolean failure text | `readiness.py:96` |
 | 10 | `paper_trading_disabled_for_live` | `PAPER_TRADING` is false | boolean failure text | `readiness.py:97` |
 | 11 | `manual_readiness_confirmation` | `READINESS_CHECK_PASSED` is true | boolean failure text | `readiness.py:98` |
@@ -108,7 +108,7 @@ Two of these checks assert the owner's word and cannot verify it: `manual_readin
 
 ### 3.3 Failure text shared by the checks
 
-Boolean checks (`demo_readiness.py:250-265`, `readiness.py:168-187`). `<x>` is `true` or `false`.
+Boolean checks (`demo_readiness.py:250-265`, `readiness.py:180-199`). `<x>` is `true` or `false`.
 
 | Case | Live text | Demo text |
 |------|-----------|-----------|
@@ -117,9 +117,9 @@ Boolean checks (`demo_readiness.py:250-265`, `readiness.py:168-187`). `<x>` is `
 | Not parseable as a boolean | `<KEY> must be a boolean value (<x> required); got <value>` | `<KEY> must be boolean; got <value>` |
 | Wrong value | `<KEY> must be <x>; got <value>` | `<KEY> must be <x>; got <value>` |
 
-Accepted true values are `1 true yes y on`; false values are `0 false no n off`, after trimming and lower-casing (`readiness.py:291-299`).
+Accepted true values are `1 true yes y on`; false values are `0 false no n off`, after trimming and lower-casing (`readiness.py:303-311`).
 
-Float checks (`demo_readiness.py:268-283`, `readiness.py:273-288`):
+Float checks (`demo_readiness.py:268-283`, `readiness.py:285-300`):
 
 | Case | Live text | Demo text |
 |------|-----------|-----------|
@@ -132,60 +132,61 @@ Float checks (`demo_readiness.py:268-283`, `readiness.py:273-288`):
 
 | Evidence | Default path | Env override | Size in the working tree | What the check verifies | What it does not verify |
 |----------|--------------|--------------|--------------------------|-------------------------|--------------------------|
-| Backtest report | `reports/backtest_report.json` | `BACKTEST_REPORT_PATH` | 0 bytes | the path exists and is a file | content, size, JSON validity, freshness, any metric |
+| Backtest report | `reports/backtest_report.json` | `BACKTEST_REPORT_PATH` | 0 bytes | the path is a file, readable as UTF-8, not blank, a JSON object | which keys exist, any metric or threshold, freshness |
 | Out-of-sample validation report | `reports/out_of_sample_validation_report.json` | `OOS_VALIDATION_REPORT_PATH` | 0 bytes | same | same |
 | Paper trading report | `reports/paper_trading_report.json` | `PAPER_TRADING_REPORT_PATH` | 0 bytes | same | same |
 
-Relative paths resolve against the project root (`readiness.py:157-158`). The decision is `resolved.exists() and resolved.is_file()` and nothing else (`readiness.py:159`).
+Relative paths resolve against the project root (`readiness.py:157-158`). The check is `_report_check` (`readiness.py:150-177`, renamed from `_file_exists` in `88220e6`; the check names are unchanged so report consumers do not break). `{}` passes.
 
-**Recorded flaw (H-2, D-86, G-1, G-2).** A 0-byte file passes. The report `reports/live_readiness_report.json` in the working tree (generated 2026-06-15, `ready` false) lists all three report-exists checks as passed while the three source files are 0 bytes; it is false only because of other checks (kill switch not configured, `LIVE_TRADING` not true, `PAPER_TRADING` not false, no manual confirmation). The same flaw was executed against three 0-byte temporary files and all three checks passed. No backtest, out-of-sample or paper result has ever been recorded, so a green evidence check today would mean nothing. The local `reports/demo_readiness_report.json` (generated 2026-06-15) shows `ready` true from a local environment; it proves the checker ran, not that a demo runtime exists (D-46, G-3).
+**Fixed flaw (H-2, G-2; `88220e6`).** Before the fix a 0-byte file passed. Tests now pin the rejection: `tests/test_readiness.py:160` `test_live_readiness_rejects_unusable_report` (empty, whitespace only, `not json`, `[]`) and `:171` `test_live_readiness_accepts_report_with_utf8_bom`. Still open (D-86, G-1): the three evidence files are 0 bytes, so a fresh run fails all three checks. The report `reports/live_readiness_report.json` in the working tree (generated 2026-06-15, before the fix, `ready` false) lists all three report-exists checks as passed while the three source files are 0 bytes; it is false only because of other checks (kill switch not configured, `LIVE_TRADING` not true, `PAPER_TRADING` not false, no manual confirmation). No backtest, out-of-sample or paper result has ever been recorded, so a green evidence check today would mean nothing. The local `reports/demo_readiness_report.json` (generated 2026-06-15) shows `ready` true from a local environment; it proves the checker ran, not that a demo runtime exists (D-46, G-3).
 
 ### 3.5 What stops live trading today (not readiness)
 
 | Control | Behaviour | Source |
 |---------|-----------|--------|
-| `LIVE_TRADING` true | `ConfigError("LIVE_TRADING=true is rejected in Phase 1")`; no override, no readiness lookup | `config/settings.py:100,104-105` |
-| `TRADING_MODE` or `MODE` equal to `live` | rejected by the mode enum parse before the dedicated branch; the dedicated message `TRADING_MODE=live is not supported in Phase 1` is unreachable | `config/settings.py:99,106-107` (D-79) |
+| `LIVE_TRADING` true | `ConfigError("LIVE_TRADING=true is rejected in Phase 1")`; no override, no readiness lookup | `config/settings.py:101,105-106` |
+| `TRADING_MODE` or `MODE` equal to `live` | rejected by the mode enum parse before the dedicated branch; the dedicated message `TRADING_MODE=live is not supported in Phase 1` is unreachable | `config/settings.py:100,107-108` (D-79) |
 | Base `place_order` | always raises `OrderPlacementDisabled("Real order placement is disabled in Phase 1")`; no subclass overrides it | `exchange/base.py:44-47` |
 | Base `cancel_order` | always raises `OrderPlacementDisabled("Real order cancellation is disabled in Phase 1")` | `exchange/base.py:49-52` |
-| Adapter | no HTTP, no request signing, no endpoint paths; `fetch_ohlcv` raises `NotImplementedError("Binance Futures OHLCV network fetching is not implemented in Phase 1")` | `exchange/binance_futures.py:67-71` |
+| Adapter | no HTTP, no request signing, no endpoint paths; `fetch_ohlcv` raises `NotImplementedError("Binance Futures OHLCV network fetching is not implemented in Phase 1")` | `exchange/binance_futures.py:68-72` |
 | Image and compose | `LIVE_TRADING=false` forced; no live service | `Dockerfile:6,31`, `docker-compose.yaml:3-8` |
 
 The old documents described a live gate of mode, flags, readiness report, no-withdraw key and inactive kill switch (D-10). That gate does not exist. The block above is safe but is not that gate.
 
 ### 3.6 Demo and testnet rules enforced at config load
 
-These apply whenever `DEMO_TRADING` is true (D-78), not only for `MODE=demo`. A `DEMO_TRADING=true` setting promotes `TRADING_MODE=paper` to `demo` (`config/settings.py:96-97`).
+These apply whenever `DEMO_TRADING` is true (D-78), not only for `MODE=demo`. A `DEMO_TRADING=true` setting promotes `TRADING_MODE=paper` to `demo` (`config/settings.py:97-98`).
 
 | Rule | `ConfigError` text (verbatim) | Source |
 |------|-------------------------------|--------|
-| Paper mode needs the paper flag | `PAPER_TRADING must be true when TRADING_MODE=paper` | `config/settings.py:108-109` |
-| Demo mode needs the demo flag | `DEMO_TRADING must be true when MODE=demo` | `config/settings.py:110-111` |
-| Demo and live together (unreachable, live raises first) | `DEMO_TRADING=true cannot be combined with LIVE_TRADING=true` | `config/settings.py:112-113` |
-| Demo and paper together | `PAPER_TRADING must be false when DEMO_TRADING=true` | `config/settings.py:114-115` |
-| Demo needs keys | `BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode` | `config/settings.py:140-141` |
-| Keys come as a pair | `BINANCE_API_KEY and BINANCE_API_SECRET must be provided together` | `config/settings.py:136-137` |
-| Demo needs testnet | `BINANCE_TESTNET must be true when MODE=demo` | `config/settings.py:142-143` |
-| Demo needs a testnet endpoint | `Demo mode requires a Binance Futures testnet endpoint` | `config/settings.py:144-145` |
-| Demo needs the risk engine | `RISK_ENGINE_ENABLED must be true in demo mode` | `config/settings.py:178-179` |
-| Demo needs the kill switch on | `KILL_SWITCH_ENABLED must be true in demo mode` | `config/settings.py:180-181` |
-| Demo needs a kill-switch path | `KILL_SWITCH_PATH is required in demo mode` | `config/settings.py:182-183` |
-| Demo needs the stop-loss flag | `STOP_LOSS_REQUIRED must be true in demo mode` | `config/settings.py:184-185` |
-| Demo risk cap | `MAX_RISK_PER_TRADE must be greater than 0 and no more than 0.005 in demo mode` | `config/settings.py:186-187` |
-| Demo daily-loss cap | `MAX_DAILY_LOSS must be greater than 0 and no more than 0.02 in demo mode` | `config/settings.py:188-189` |
-| Demo leverage cap | `MAX_LEVERAGE must be greater than 0 and no more than 3 in demo mode` | `config/settings.py:190-191` |
-| Adapter testnet guard | `Demo/testnet mode requires the Binance Futures testnet endpoint` | `exchange/binance_futures.py:38-39` |
+| Paper mode needs the paper flag | `PAPER_TRADING must be true when TRADING_MODE=paper` | `config/settings.py:109-110` |
+| Demo mode needs the demo flag | `DEMO_TRADING must be true when MODE=demo` | `config/settings.py:111-112` |
+| Demo and live together (unreachable, live raises first) | `DEMO_TRADING=true cannot be combined with LIVE_TRADING=true` | `config/settings.py:113-114` |
+| Demo and paper together | `PAPER_TRADING must be false when DEMO_TRADING=true` | `config/settings.py:115-116` |
+| Demo needs keys | `BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode` | `config/settings.py:141-142` |
+| Keys come as a pair | `BINANCE_API_KEY and BINANCE_API_SECRET must be provided together` | `config/settings.py:137-138` |
+| Demo needs testnet | `BINANCE_TESTNET must be true when MODE=demo` | `config/settings.py:143-144` |
+| Demo needs a testnet endpoint | `Demo mode requires a Binance Futures testnet endpoint` | `config/settings.py:145-146` |
+| Demo needs the risk engine | `RISK_ENGINE_ENABLED must be true in demo mode` | `config/settings.py:183-184` |
+| Demo needs the kill switch on | `KILL_SWITCH_ENABLED must be true in demo mode` | `config/settings.py:185-186` |
+| Demo needs a kill-switch path (now unreachable: the every-mode rule below raises first) | `KILL_SWITCH_PATH is required in demo mode` | `config/settings.py:187-188` |
+| Demo needs the stop-loss flag | `STOP_LOSS_REQUIRED must be true in demo mode` | `config/settings.py:189-190` |
+| Risk cap, every mode (`5e4acc5`) | `MAX_RISK_PER_TRADE must be greater than 0 and no more than 0.005` | `config/settings.py:180-181` |
+| Kill-switch path when enabled, every mode (`08c81ad`) | `KILL_SWITCH_PATH is required when KILL_SWITCH_ENABLED=true` | `config/settings.py:174-175` |
+| Demo daily-loss cap | `MAX_DAILY_LOSS must be greater than 0 and no more than 0.02 in demo mode` | `config/settings.py:191-192` |
+| Demo leverage cap | `MAX_LEVERAGE must be greater than 0 and no more than 3 in demo mode` | `config/settings.py:193-194` |
+| Adapter testnet guard | `Demo/testnet mode requires the Binance Futures testnet endpoint` | `exchange/binance_futures.py:39-40` |
 
-**Recorded flaw (D-13, G-10).** The testnet URL guard, in both the config check and the adapter, lower-cases the value and tests that `testnet.binancefuture.com` is a substring (`config/settings.py:345-347`, `exchange/binance_futures.py:74-78`). A lookalike host such as `https://testnet.binancefuture.com.example.org`, or a URL that carries that text in a query string, passes. The adapter applies the guard only when `testnet=True`. The risk is latent today because the adapter does no network I/O. The required behaviour is an exact scheme and host match. This is `Planned`.
+**Testnet URL guard (D-13, G-10; fixed in `0a76564`).** One function, `is_binance_futures_testnet_url` (`config/settings.py:348-365`), serves both the config check and the adapter (`exchange/binance_futures.py:13,39-40`). It strips the value, parses it with `urlsplit`, and passes only when the scheme is `https`, `hostname` equals `testnet.binancefuture.com` (case-insensitive), there is no username or password, and the port is absent or 443; a malformed port returns False. Lookalikes such as `https://testnet.binancefuture.com.evil.com`, `https://evil.com/?x=testnet.binancefuture.com`, `https://user@testnet.binancefuture.com`, `http://...`, port 8443, a trailing dot and a bare host all fail (`tests/test_exchange.py:98,117,121`, `tests/test_config.py:244`). The adapter applies the guard only when `testnet=True`. The adapter does no network I/O yet.
 
-**Recorded flaw (D-2, H-14, G-4).** `.env.example` as shipped fails `load_config` with `BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode`, so demo readiness check 1 fails on a copy of the example file.
+**Fixed flaw (D-2, H-14, G-4; `c6d909d`).** `.env.example` now sets `PAPER_TRADING=true` and `DEMO_TRADING=false` and loads as paper mode (`tests/test_config.py:258`). Demo readiness check 2 (mode is demo) therefore fails on an unchanged copy, as it should; demo use needs the commented demo block filled in.
 
 ### 3.7 Old configuration text: carried and dropped
 
 | Old text (CONFIGURATION.md and RISK_POLICY.md) | Status | Finding |
 |-----------------------------------------------|--------|---------|
 | Demo needs `MODE=demo`, `DEMO_TRADING=true`, `BINANCE_TESTNET=true`, `LIVE_TRADING=false`, `PAPER_TRADING=false`, testnet endpoint, keys, risk engine, kill switch with a path and inactive file, `STOP_LOSS_REQUIRED=true`, limits at or below 0.005, 0.02 and 3 | Carried; matches the 18 checks and the config-load rules | none |
-| "Demo mode rejects production Binance URLs" | Changed: a substring match that accepts lookalike hosts | D-13 |
+| "Demo mode rejects production Binance URLs" | Carried since `0a76564`: exact `https` host match (before it, a substring match accepted lookalikes) | D-13 |
 | `DEMO_TRADING` applies only to `MODE=demo` | Changed: applies in any mode and promotes paper to demo | D-78 |
 | Demo is a working testnet mode | Dropped: no network I/O; the app never builds an adapter | D-46, G-3 |
 | Live readiness list (three reports, risk engine, kill switch, inactive file, Telegram, keys, `LIVE_TRADING=true`, `PAPER_TRADING=false`, `READINESS_CHECK_PASSED`, `API_WITHDRAWALS_DISABLED`, three limits) | Carried exactly as the 15 checks above | none |
@@ -200,10 +201,10 @@ These apply whenever `DEMO_TRADING` is true (D-78), not only for `MODE=demo`. A 
 | Alternative | Why not (as built) |
 |-------------|--------------------|
 | Make readiness a startup gate that the entrypoint and config load consult | The intended design, not built (G-2). `Planned`. |
-| Validate evidence content (valid JSON, non-empty, required metrics, thresholds from the BRD, freshness) | Not built (H-2). `Planned`. |
-| Reject 0-byte and invalid-JSON evidence files immediately | The smallest fix, not built (H-2). `Planned`. |
+| Validate evidence content (required metrics, thresholds from the BRD, freshness) | Not built. `Planned`. |
+| Reject 0-byte and invalid-JSON evidence files immediately | Built in `88220e6` (H-2). |
 | Let live readiness pass without `LIVE_TRADING=true` | The checker asserts live intent, which the app refuses to load (H-3); a separate approval mechanism is needed. `Planned`. |
-| Exact scheme-and-host match for the testnet URL | Not built (D-13, G-10). `Planned`. |
+| Exact scheme-and-host match for the testnet URL | Built in `0a76564` (D-13, G-10). |
 | One shared environment source for both checkers | Not built; they differ (D-45). Open. |
 | Verify withdrawal permission by an exchange call | Not possible today: no exchange call exists. `Planned`. |
 
@@ -213,14 +214,14 @@ These apply whenever `DEMO_TRADING` is true (D-78), not only for `MODE=demo`. A 
 
 - Neither checker can enable live trading, open a connection or place an order. They read the environment and the file system and write one JSON file.
 - The real safety control is the unconditional config-load block and the disabled order methods (section 3.5), not these reports.
-- A green report must not be read as permission. Today it would be meaningless: empty evidence passes, owner assertions pass on a string, and the live-ready state is unreachable for a loadable configuration (H-2, H-3).
+- A green report must not be read as permission. Today it would be meaningless: evidence is checked only for being a JSON object, owner assertions pass on a string, and the live-ready state is unreachable for a loadable configuration (H-3).
 - Never place real keys in `.env.example`, `config.yaml` or any tracked file. The demo secret scan (check 18) is a backstop that lists no paths and has pattern gaps; it does not replace review.
 
 **Privacy.** The reports contain check names, booleans and reason strings. Reasons can include resolved local file paths (`Found <path>`, kill-switch path) but never key values. The live checker reads `BINANCE_API_KEY` and `BINANCE_API_SECRET` only to test that they are non-blank. The real `.env` was not opened for this RFC (U-16).
 
-**Performance.** Each checker does a handful of file-existence tests, plus, for demo check 18, a read of every tracked text file. No benchmark exists and none is claimed.
+**Performance.** Each checker does a handful of file tests and reads the three report files, plus, for demo check 18, a read of every tracked text file. No benchmark exists and none is claimed.
 
-**Evidence of behaviour (tests).** 15 readiness tests cover the live and demo checkers, report export and the config rules. The 0-byte pass was executed against temporary files during this reconciliation, but no committed test pins it as a defect, and there is no test that rejects an empty evidence file (G-28).
+**Evidence of behaviour (tests).** `tests/test_readiness.py` (11 test functions) and `tests/test_demo_readiness.py` (6) cover the live and demo checkers, report export and the config rules. `tests/test_readiness.py:160` rejects an empty, whitespace-only, non-JSON and non-object report, and `:171` accepts a UTF-8 BOM. No test checks report metrics, because the check reads none.
 
 ## 6. Execution Status
 
@@ -228,11 +229,12 @@ These apply whenever `DEMO_TRADING` is true (D-78), not only for `MODE=demo`. A 
 |-----------|--------|----------|
 | Demo readiness checker (18 checks), report export, exit codes | Built | `demo_readiness.py:43-111` |
 | Live readiness checker (15 checks), report export, exit codes | Built | `readiness.py:66-147` |
-| Demo and live config rules at load | Built | `config/settings.py:96-191` |
-| Evidence content validation (non-empty, valid, thresholds) | Planned | H-2, D-86, G-1 |
+| Demo and live config rules at load | Built | `config/settings.py:97-194` |
+| Evidence file validation (non-empty, valid JSON object) | Built | `readiness.py:150-177`; `88220e6` (H-2) |
+| Evidence content validation (metrics, thresholds, freshness) | Planned | D-86, G-1 |
 | Readiness consulted by startup or config load | Planned | D-10, G-2 |
 | A live-ready state reachable by a loadable configuration | Planned | H-3 |
-| Exact-host testnet check | Planned | D-13, G-10 |
+| Exact-host testnet check | Built | `config/settings.py:348-365`; `0a76564` (D-13, G-10) |
 | Demo runtime (an adapter doing network I/O) | Planned | D-46, G-17 |
 | Live trading (PRD-F12) | Planned, blocked | Config-load rejection and disabled order methods (section 3.5) |
 
@@ -242,12 +244,12 @@ These apply whenever `DEMO_TRADING` is true (D-78), not only for `MODE=demo`. A 
 
 These are proposals for the owner to accept or change. They do not enable live trading, and no live proposal exists. Meeting them would only allow a proposal to be written; the decision is a separate owner decision recorded as a change record.
 
-1. **Evidence exists and is meaningful.** Non-empty, cost-inclusive backtest and out-of-sample reports that meet the thresholds the BRD defines as BRD-M1 to BRD-M8, and a non-empty paper report from a stable paper run (G-1, G-11, G-12). The readiness check must reject empty or invalid files (H-2).
+1. **Evidence exists and is meaningful.** Non-empty, cost-inclusive backtest and out-of-sample reports that meet the thresholds the BRD defines as BRD-M1 to BRD-M8, and a non-empty paper report from a stable paper run (G-1, G-11, G-12). The readiness check rejects empty or invalid files (H-2, fixed in `88220e6`); it must also check the metrics.
 2. **A runtime exists.** A real entrypoint that dispatches by mode, real market data, and a demo/testnet run against an adapter that does network I/O (G-3, G-13, G-17).
 3. **Readiness is meaningful and consulted.** Evidence content is validated, the result gates startup, and the live-ready state is reachable without a config the app rejects (G-2, H-3).
 4. **The kill switch is effective.** Armed by default from settings, with automatic triggers on the loss limits, a documented reset and a close-or-reduce action ([RFC-002](rfc-silverbot-risk-kill-switch.md); G-6).
 5. **Risk limits are unified and persisted.** One source of truth capped at the documented 0.005 per trade, 0.02 daily loss and 3 leverage, with state surviving a restart (G-5, G-7).
-6. **The testnet guard is exact.** Scheme and host match, not a substring (G-10).
+6. **The testnet guard is exact.** Scheme and host match, not a substring (G-10, met in `0a76564`).
 7. **Alerting is real and tested.** A working Telegram transport with a recorded alert test (G-15).
 8. **Key handling is settled.** Keys only from the environment, withdrawals disabled on the exchange key and confirmed by the owner, no secret in any tracked file.
 9. **ML is either off or hardened.** The NaN flaw fixed and the filter wired and tested if used ([RFC-003](rfc-silverbot-ml-filter-gate.md); G-8, G-9).
@@ -259,11 +261,11 @@ Until all ten hold, PRD-F12 stays `Planned, blocked`.
 
 | Ref | Item | Status |
 |-----|------|--------|
-| G-1 | Evidence reports are 0 bytes; no performance statement is possible (D-86, H-2). | Open |
-| G-2 | Readiness is unreliable and unused (H-2, H-3, D-10). | Open |
-| G-3 | No running runtime; the entrypoint is a startup-only stub (D-1, H-4). | Open |
+| G-1 | Evidence reports are 0 bytes; no performance statement is possible (D-86, H-2). The backtest CLI writes the backtest and out-of-sample reports since `099085b`; none exists from real data. | Open |
+| G-2 | Readiness accepted 0-byte reports (H-2). Fixed. Not fixed by this gap: no code consults readiness (D-10, waits on G-3) and the live-ready state is unreachable (H-3, kept by design while live is blocked). | Closed (`88220e6`) |
+| G-3 | Backtest runtime and mode dispatch built; paper and demo exit 78 and have no runtime (D-1, D-46). H-4 fixed (`f6bc017`). | Partial (`099085b`) |
 | G-4 | `.env.example` fails `load_config` as shipped (D-2, H-14). | Open |
-| G-10 | Testnet URL guard is a substring match (D-13). | Open |
+| G-10 | Testnet URL guard was a substring match (D-13). Fixed: exact `https` host match. | Closed (`0a76564`) |
 | G-15 | Telegram has no real transport, so the "alerts tested" check proves nothing (D-3). | Open |
 | G-17 | Exchange order placement, signing and account endpoints are stubs. | Planned |
 | G-24 | Config quirks that affect readiness inputs: `MODE` overrides `TRADING_MODE`, `DEMO_TRADING` promotes paper, differing readiness env sources (D-42, D-45, D-78). | Open |
@@ -274,8 +276,8 @@ Until all ten hold, PRD-F12 stays `Planned, blocked`.
 
 - [x] The demo list has 18 checks and the live list has 15, in code order, with names and failure text copied verbatim.
 - [x] The three evidence files and the default and override paths match `readiness.py:76-90`.
-- [x] The 0-byte-passes flaw is recorded with H-2, D-86 and G-1, and the unreachable live-ready state with H-3.
-- [x] The substring testnet check is recorded with D-13 and G-10.
+- [x] The 0-byte-passes flaw and its fix are recorded with H-2, D-86 and G-1, and the unreachable live-ready state with H-3.
+- [x] The exact-host testnet check that replaced the substring match is recorded with D-13 and G-10.
 - [x] Live trading is labelled `Planned, blocked`; the ten conditions in section 7.1 are proposals, not approvals.
 - [x] Each carried, changed or dropped old rule in section 3.7 carries a `D-#` or `H-#` where it differs.
 - [ ] A readiness gate that validates evidence content and is consulted at startup exists in code (not yet; Planned).

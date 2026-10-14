@@ -4,10 +4,10 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; the batch 1 **Resolved:** lines are checked against `70ccaec`; the batch 2 **Resolved:** lines (D-1, D-4, D-33, D-46, H-4) are checked 2026-10-09 against `099085b`; the H-4 **Resolved:** line is re-checked 2026-10-09 against `5c781fc` (exit 2 no longer restarts)
 
-This audit records findings, not decisions. It compares the old root documents (README.md, AGENTS.md, ARCHITECTURE.md, BACKTESTING.md, CONFIGURATION.md, DEPLOYMENT.md, ML_MODEL.md, RISK_POLICY.md, STRATEGY_NOTES.md, PROGRESS.md, TODO.md) with the code at the reconciled commit. Code wins: where they disagree, the finding states what the code does. Each finding closes in the canonical doc named on its **Resolved in** line; until that doc is written the finding stays open. Finding ids `D-1` to `D-86` are frozen and cited by later documents. Severity: HIGH weakens or fakes a safety gate or makes a core claim false; MEDIUM misleads results or operations; LOW is cosmetic or contained. Counts: 14 HIGH, 37 MEDIUM, 35 LOW (86 total). Code paths are relative to `src/silver_bot/` unless they start with a root filename. Code hazards that contradict no old document are listed separately under "Code hazards (not doc drift)". Two registers follow the hazards: the stub register (S-1 to S-34) and the unknowns register (U-1 to U-21); the ids are cited by other suite documents.
+This audit records findings, not decisions. It compares the old root documents (README.md, AGENTS.md, ARCHITECTURE.md, BACKTESTING.md, CONFIGURATION.md, DEPLOYMENT.md, ML_MODEL.md, RISK_POLICY.md, STRATEGY_NOTES.md, PROGRESS.md, TODO.md) with the code at the reconciled commit. Code wins: where they disagree, the finding states what the code does. Each finding closes in the canonical doc named on its **Resolved in** line; until that doc is written the finding stays open. Finding ids `D-1` to `D-86` are frozen and cited by later documents. Severity: HIGH weakens or fakes a safety gate or makes a core claim false; MEDIUM misleads results or operations; LOW is cosmetic or contained. Counts: 14 HIGH, 37 MEDIUM, 35 LOW (86 total). Code paths are relative to `src/silver_bot/` unless they start with a root filename. Code hazards that contradict no old document are listed separately under "Code hazards (not doc drift)". Two registers follow the hazards: the stub register (S-1 to S-34) and the unknowns register (U-1 to U-21); the ids are cited by other suite documents. Findings and hazards fixed in code after the reconciled commit carry a **Resolved:** line naming the fix commit; the Old doc said and Code does lines stay as recorded at `62037d1`.
 
 
 ## HIGH
@@ -17,12 +17,14 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** README.md:332 `TRADING_MODE=backtest ... python main.py` runs a backtest; README.md:338 runs paper trading; README.md:351 starts demo mode; DEPLOYMENT.md:267 service starts the bot which "defaults to paper mode"; DEPLOYMENT.md:346-357 paper ready when "bot runs continuously", "daily report works"
 - **Code does:** `main.py:14-50` ignores mode, initialises SQLite, writes bot_started and bot_stopped to logs/audit.jsonl and returns 0; no exchange, stream, strategy, backtest or order code runs; the `bot` compose service therefore exits and restarts (docker-compose.yaml:31-32)
 - **Resolved in:** OPS (runbook, container and service behaviour) and SDD (entrypoint and runtime wiring); PRD-F11 status in PRD section 3
+- **Resolved:** Partial, `099085b` (G-3 entrypoint batch 2, with `e5baec7`, `f84557e` and `f6bc017`). `main()` now dispatches on the mode (`main.py:83-91`): backtest mode loads Binance kline CSV files from `--candles` and runs `run_backtest`, which writes six reports and returns 0 (`main.py:94-112`, `backtest/runner.py:60-124`); paper and demo log and audit `mode_unavailable` and return 78 (`main.py:25-26,89-91`); compose `backtest` and `research` pass `--candles /app/data/candles` (`docker-compose.yaml:73,84`) and the `bot` service is no longer restarted (H-4). Tests: `tests/test_main.py:42,51,85`. Remaining: no paper or demo runtime (G-13, G-17).
 
 ### D-2. `.env.example` fails load_config as written
 
 - **Old doc said:** README.md:23-25 and 268-270, CONFIGURATION.md:9-13, `.env.example:1` "Keep these values for normal paper deployment" with PAPER_TRADING=true, DEMO_TRADING=false
-- **Code does:** `.env.example:5-6` sets PAPER_TRADING=false and DEMO_TRADING=true; settings.py:96-97 promotes paper to demo; settings.py:140-141 then raises "BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode" (executed, confirmed)
+- **Code does:** `.env.example:6-7` sets PAPER_TRADING=false and DEMO_TRADING=true; settings.py:96-97 promotes paper to demo; settings.py:140-141 then raises "BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode" (executed, confirmed)
 - **Resolved in:** SDD (configuration section: keys, load order, validation) and OPS (environment setup)
+- **Resolved:** Fixed in `c6d909d` (G-4, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). `.env.example:6-7` now sets PAPER_TRADING=true and DEMO_TRADING=false; `tests/test_config.py:258` `test_shipped_env_example_loads_as_paper` loads the shipped file as paper mode.
 
 ### D-3. Telegram alerts cannot reach a network
 
@@ -35,12 +37,14 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** ML_MODEL.md:322-331 filter configurable via ML_FILTER_ENABLED etc.
 - **Code does:** settings parse the keys (settings.py:151-169) but nothing builds `MLFilterConfig` from them; `execution/paper_trading.py:53` uses `MLProbabilityFilter()` (disabled default); only `backtest/models.py:41` references MLFilterConfig
 - **Resolved in:** AIA (model lifecycle and filter wiring) and SDD (ML section); PRD-F6 status in PRD section 3
+- **Resolved:** Partial, `f84557e` (G-9). `build_backtest_config` builds `MLFilterConfig` from `ML_FILTER_ENABLED`, `ML_REGISTRY_PATH`, `ML_MIN_PROBABILITY` and `ML_REDUCE_RISK_THRESHOLD` for CLI backtests (`backtest/runner.py:50-55`; `tests/test_backtest_runner.py:144`). Remaining: the paper loop still uses `MLProbabilityFilter()` with defaults (`execution/paper_trading.py:53`).
 
 ### D-5. Backtest cost defaults are 0 bps
 
 - **Old doc said:** BACKTESTING.md:194, 210 slippage example 1-5 bps, spread 1-3 bps ("conservative")
 - **Code does:** `backtest/models.py:34-35` slippage_bps=0.0, spread_bps=0.0 (verified)
 - **Resolved in:** SDD (backtest and validation section) and QAD (backtest and validation scenarios); PRD-F2 status in PRD section 3
+- **Resolved:** Fixed in `59ed6d5` (G-11, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). `backtest/models.py:34-35` now defaults to slippage_bps=5.0 and spread_bps=3.0; `tests/test_backtest_engine.py:181` `test_backtest_cost_defaults_are_conservative`. Whether these values match real fills is unverified (no fill data exists).
 
 ### D-6. Multi-symbol, multi-session, walk-forward, sensitivity and Monte Carlo do not exist
 
@@ -77,24 +81,28 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** RISK_POLICY.md:50-62 enforced set; RISK_POLICY.md:99-121 MAX_RISK_PER_TRADE <= 0.005
 - **Code does:** `risk/models.py:29` RiskConfig allows up to 0.05; Settings risk limits (demo-only checks, settings.py:186-190) never wired into RiskConfig (`backtest/engine.py:41`, `execution/paper_trading.py:49`)
 - **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
+- **Resolved:** Partial, `5e4acc5` (G-5, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). `RiskConfig` rejects risk_per_trade outside (0, 0.005] (`risk/models.py:10,32-33`); `load_config` rejects MAX_RISK_PER_TRADE outside (0, 0.005] in every mode (`config/settings.py:180-181`); `build_risk_engine` maps MAX_RISK_PER_TRADE, MAX_DAILY_LOSS, MAX_LEVERAGE and the kill-switch path into `RiskConfig` (`risk/factory.py:15-28`). Remaining: no runtime path calls `build_risk_engine` until the G-3 entrypoint exists; the backtest and paper engines still build their own `RiskConfig`; MAX_DAILY_LOSS and MAX_LEVERAGE bounds stay demo-only (`config/settings.py:191-194`).
 
 ### D-12. Kill switch inert by default
 
 - **Old doc said:** RISK_POLICY.md:61, 139, AGENTS.md "kill switch validation" mandatory
 - **Code does:** `risk/models.py:26` kill_switch_path None; `execution/paper_trading.py:49` default engine has no path
 - **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
+- **Resolved:** Partial, `08c81ad` and `5e4acc5` (G-6, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). `load_config` rejects KILL_SWITCH_ENABLED=true with a blank KILL_SWITCH_PATH in every mode (`config/settings.py:174-175`); `build_risk_engine` passes the path when enabled (`risk/factory.py:26`). Remaining: `RiskConfig.kill_switch_path` still defaults to None (`risk/models.py:29`) and no runtime path calls `build_risk_engine` until G-3.
 
 ### D-13. Testnet URL check is substring
 
 - **Old doc said:** CONFIGURATION.md:57, 221-222 "rejects production URLs"
 - **Code does:** `config/settings.py:345-347`, `exchange/binance_futures.py:74-78` lookalike hosts such as testnet.binancefuture.com.example.org pass the testnet-only guard (re-rated HIGH: weakens a safety gate; latent today because the adapter does no network I/O)
 - **Resolved in:** SDD (exchange and readiness section) and CLR (live-trading controls); PRD-F5, PRD-F8 and PRD-F12 in PRD section 3
+- **Resolved:** Fixed in `0a76564` (G-10, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). One guard, `config/settings.py:348-365` `is_binance_futures_testnet_url`, passes only scheme `https`, hostname exactly `testnet.binancefuture.com` (case-insensitive), no userinfo and port 443 or none; `exchange/binance_futures.py:13,39` imports it. Tests: `tests/test_exchange.py:98,117,121`, `tests/test_config.py:244`.
 
 ### D-86. Evidence reports are 0 bytes yet readiness reports them as present
 
 - **Old doc said:** `reports/live_readiness_report.json` (generated 2026-06-15) lists `backtest_report_exists`, `out_of_sample_validation_report_exists` and `paper_trading_report_exists` as `"passed": true` ("Found reports\<name>.json"); README.md:221 and PROGRESS.md:272 make live trading conditional on that evidence
 - **Code does:** `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are all 0 bytes; `readiness.py:150-165` checks existence only (see H-2); no backtest, out-of-sample or paper result has ever been recorded
 - **Resolved in:** QAD (strategy evidence section), BRD §7 (success metrics), SDD (exchange and readiness section) and CLR (live-trading controls); PRD-F2 and PRD-F8 in PRD section 3
+- **Resolved:** Partial, `88220e6` (G-2, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). The three report checks now fail an empty, unreadable, non-JSON or non-object file (`readiness.py:150-177`), so a 0-byte report no longer passes. Remaining: the three reports are still 0 bytes and no evidence has been recorded (G-1); the check does not validate report content beyond "is a JSON object".
 
 
 ## MEDIUM
@@ -152,6 +160,7 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** ARCHITECTURE.md:273 "Trigger kill switch"
 - **Code does:** `risk/kill_switch.py:8-17` read-only file-exists check
 - **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
+- **Resolved:** Partial, `08c81ad` (G-6, HIGH safety fixes batch 1, merged to `dev` at `70ccaec`). `KillSwitch.trip` writes the file (`risk/kill_switch.py:53-60`); the engine trips it on the daily-loss and consecutive-loss limits (`risk/engine.py:83,86,129`). Remaining: no position close (G-21) and no reset tooling beyond deleting the file.
 
 ### D-23. Execution responsibilities overstated
 
@@ -218,6 +227,7 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** BACKTESTING.md:13-22, 126
 - **Code does:** `backtest/validation.py:23-46` split helper only; not called by engine
 - **Resolved in:** SDD (backtest and validation section) and QAD (backtest and validation scenarios); PRD-F2 status in PRD section 3
+- **Resolved:** Partial, `f84557e` (G-12). `run_backtest` calls `chronological_split` (0.6 / 0.2 / 0.2), runs each segment in a fresh engine, tunes nothing and records `parameters_tuned: false` (`backtest/runner.py:76-98`; `tests/test_backtest_runner.py:75`). Remaining: no code stops a caller tuning on the final test set.
 
 ### D-34. No Parquet, no candle load
 
@@ -287,7 +297,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ### D-45. Readiness env sources
 
-- **Old doc said:** CONFIGURATION.md:74, 69-82, 403-427; `.env.example:30-31`
+- **Old doc said:** CONFIGURATION.md:74, 69-82, 403-427; `.env.example:31-32`
 - **Code does:** `readiness.py:74,168-187` reads only process env, no boolean defaults; demo_readiness reads `.env` (demo_readiness.py:51-53)
 - **Resolved in:** SDD (configuration section: keys, load order, validation) and OPS (environment setup)
 
@@ -296,6 +306,7 @@ This audit records findings, not decisions. It compares the old root documents (
 - **Old doc said:** CONFIGURATION.md:198-201; PROGRESS.md:286
 - **Code does:** adapter does no network I/O; app never builds an adapter (`exchange/binance_futures.py:71`, `main.py:14-50`)
 - **Resolved in:** SDD (exchange and readiness section) and CLR (live-trading controls); PRD-F5, PRD-F8 and PRD-F12 in PRD section 3
+- **Resolved:** Partial, `099085b` (G-3). Demo mode no longer exits 0 as if it had run: `main()` logs and audits `mode_unavailable` (`mode not available yet: needs market data (G-13)`) and returns 78 (`main.py:89-91`; `tests/test_main.py:51` `test_demo_mode_exits_78`). Remaining: the adapter still does no network I/O and nothing builds it at runtime (G-13, G-17).
 
 ### D-47. Telegram items marked done in TODO.md
 
@@ -399,7 +410,7 @@ This audit records findings, not decisions. It compares the old root documents (
 ### D-63. Stop distance units
 
 - **Old doc said:** RISK_POLICY.md:130-132
-- **Code does:** `risk/models.py:19`, `risk/engine.py:49` absolute price units
+- **Code does:** `risk/models.py:19`, `risk/engine.py:54` absolute price units
 - **Resolved in:** SDD (risk engine and kill switch section) and RFC-002 (risk and kill switch); PRD-F3 status in PRD section 3
 
 ### D-64. simulator.py
@@ -537,7 +548,7 @@ This audit records findings, not decisions. It compares the old root documents (
 
 ## Code hazards (not doc drift)
 
-These were found while reading code and contradict no old document. Recorded, not fixed: code changes are out of scope for this pass. Each HIGH and MEDIUM hazard has a gap row in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3. Hazards are closed by a later code-change plan, not by documentation.
+These were found while reading code and contradict no old document. Recorded, not fixed: code changes are out of scope for this pass. Each HIGH and MEDIUM hazard has a gap row in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3. Hazards are closed by a later code-change plan, not by documentation. The HIGH safety fixes batch 1 ([plan](superpowers/plans/2026-10-09-high-safety-fixes.md), merged to `dev` at `70ccaec`) fixed H-1, H-2, H-7 and H-14 and partly fixed H-5, H-9, H-11 and H-13; the G-3 entrypoint batch 2 ([plan](superpowers/plans/2026-10-09-g3-entrypoint.md), code complete on `dev` at `099085b`) fixed H-4; each carries a **Resolved:** line.
 
 
 ### H-1. NaN model probability becomes 1.0 and approves a signal
@@ -545,7 +556,8 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Severity:** HIGH
 - **Evidence:** `ml/filter.py:179`: `max(0.0, min(1.0, nan))` evaluates to 1.0 (executed). A broken model output would approve a trade; the risk engine still applies afterwards.
 - **Gap row:** G-8 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Recorded, not fixed: code changes are out of scope for this pass.
+- **Status:** Fixed in `8e66054`.
+- **Resolved:** `_predict_probability` returns the raw value (`ml/filter.py:193`); `evaluate` rejects a NaN, infinite or out-of-[0, 1] probability with risk_multiplier 0.0, probability None and reason "ML model returned an invalid probability" (`ml/filter.py:134-146`). Tests: `tests/test_ml_probability_filter.py:197` `test_ml_filter_rejects_invalid_probability`, `:210` `test_ml_filter_boundary_probabilities_keep_threshold_logic`. Exceptions raised while loading or calling a model still propagate.
 
 
 ### H-2. Live readiness "report exists" passes a 0-byte file
@@ -553,7 +565,8 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Severity:** HIGH
 - **Evidence:** `readiness.py:150-165`; committed `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are 0 bytes yet three report checks pass (executed). See also D-86.
 - **Gap row:** G-1, G-2 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Recorded, not fixed: code changes are out of scope for this pass.
+- **Status:** Fixed in `88220e6`.
+- **Resolved:** `_report_check` (`readiness.py:150-177`) passes only a readable, non-empty file that parses as a JSON object; check names are unchanged. Tests: `tests/test_readiness.py:160` `test_live_readiness_rejects_unusable_report` (empty, whitespace, `not json`, `[]`), `:171` `test_live_readiness_accepts_report_with_utf8_bom`. The reports themselves are still 0 bytes (G-1), so live readiness now fails those three checks.
 
 
 ### H-3. A ready live report needs settings the app refuses to load
@@ -569,7 +582,8 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Severity:** MEDIUM
 - **Evidence:** `main.py:50` returns after the start and stop audit events; `docker-compose.yaml:32` (restart: unless-stopped) and `deploy/systemd/silver-bot.service:13` (Restart=always) loop it.
 - **Gap row:** G-3 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Recorded, not fixed: code changes are out of scope for this pass.
+- **Status:** Fixed in `f6bc017` and `099085b`; exit 2 added to the no-restart list in `5c781fc`.
+- **Resolved:** Paper and demo mode return 78 (`main.py:25,89-91`). The unit runs `docker compose ... up bot --exit-code-from bot`, so systemd sees the bot's exit code instead of compose's 0, and `RestartPreventExitStatus=2 78` stops it restarting on 78 (`deploy/systemd/silver-bot.service:11,15`); compose `bot` has `restart: "no"`, so systemd is the only supervisor (`docker-compose.yaml:32`). Tests: `tests/test_deployment_files.py:61` `test_systemd_propagates_exit_code_and_stops_on_mode_unavailable`, `:68` `test_compose_bot_does_not_self_restart`, `tests/test_main.py:42` `test_paper_mode_exits_78_and_audits`. Since `5c781fc` exit 2 (rejected arguments, configuration or candle data) is not restarted either (`deploy/systemd/silver-bot.service:15`); `Restart=always` still restarts any other code, such as 1 for a crash, every 10 s (`:13-14`).
 
 
 ### H-5. Settings risk limits are not wired into RiskConfig; RiskConfig allows 5% per trade
@@ -577,7 +591,8 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Severity:** HIGH
 - **Evidence:** `risk/models.py:29` allows risk_per_trade up to 0.05; `config/settings.py:186-190` limits are checked in demo mode only and never reach RiskConfig. See D-11.
 - **Gap row:** G-5 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Recorded, not fixed: code changes are out of scope for this pass.
+- **Status:** Partial, `5e4acc5`.
+- **Resolved:** `RiskConfig` caps risk_per_trade at 0.005 (`risk/models.py:10,32-33`); `load_config` caps MAX_RISK_PER_TRADE at 0.005 in every mode (`config/settings.py:180-181`); `build_risk_engine` (`risk/factory.py:15-28`) wires the settings caps into `RiskConfig`. Remaining: nothing calls `build_risk_engine` at runtime until G-3. Tests: `tests/test_risk_engine.py:129,134,138,162`, `tests/test_config.py:228`.
 
 
 ### H-6. Strategy config is never built from settings
@@ -593,7 +608,8 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Severity:** MEDIUM
 - **Evidence:** `backtest/models.py:34-35`. See D-5.
 - **Gap row:** G-11 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Recorded, not fixed: code changes are out of scope for this pass.
+- **Status:** Fixed in `59ed6d5`.
+- **Resolved:** `backtest/models.py:34-35` defaults are slippage_bps=5.0 and spread_bps=3.0; `tests/test_backtest_engine.py:181` `test_backtest_cost_defaults_are_conservative`. A caller can still pass 0.0 explicitly.
 
 
 ### H-8. Pickle artifact load is arbitrary code execution if registry or artifacts are untrusted
@@ -609,7 +625,8 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Severity:** HIGH
 - **Evidence:** `risk/kill_switch.py:11-17`; `execution/paper_trading.py:49` builds a default engine with no path. See D-12 and D-22.
 - **Gap row:** G-6 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Recorded, not fixed: code changes are out of scope for this pass.
+- **Status:** Partial, `08c81ad`.
+- **Resolved:** `KillSwitch.is_active` fails closed: active when the path exists (file or directory), when `os.stat` raises any `OSError` other than not-found, or when the nearest existing ancestor is not a directory (`risk/kill_switch.py:22-51`). `trip` writes `{"reason", "tripped_at"}` JSON and keeps the first reason (`risk/kill_switch.py:53-60`); the engine trips on the daily-loss and consecutive-loss limits (`risk/engine.py:83,86,129`). Remaining: the engine default path is still None outside `build_risk_engine`, which has no runtime caller until G-3; no position close; no reset tooling beyond deleting the file ([ops-silverbot.md](ops-silverbot.md)).
 
 
 ### H-10. Pending order reservation leaks risk capacity if never filled
@@ -625,7 +642,8 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Severity:** HIGH
 - **Evidence:** `risk/models.py:47-63`. Combined with the H-4 restart loop, restarts would reset those gates repeatedly.
 - **Gap row:** G-7 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Recorded, not fixed: code changes are out of scope for this pass.
+- **Status:** Partial, `2d7f713`.
+- **Resolved:** `storage/sqlite.py:117-125` adds the single-row `risk_state` table; `save_risk_state` and `load_risk_state` (`storage/sqlite.py:261-319`) persist it and raise `RiskStateError` on an unreadable row. `RiskManagementEngine` loads it at construction, saves after `reserve_trade`, `release_trade` and a day roll, and rejects every request with "Risk state could not be loaded; trading halted" if loading fails (`risk/engine.py:28-46,115,127-133`). Remaining: only an engine built with a store persists; `build_risk_engine` attaches one but has no runtime caller until G-3. `open_positions` survives a restart while paper positions do not, so a crash with an open trade needs a manual reset ([ops-silverbot.md](ops-silverbot.md)).
 
 
 ### H-12. Polling stream may yield a still-forming candle once; reconnect wrapper catches only ConnectionError
@@ -641,15 +659,17 @@ These were found while reading code and contradict no old document. Recorded, no
 - **Severity:** MEDIUM
 - **Evidence:** Test inventory: 19 files, 108 tests (facts sheet 06, test gaps).
 - **Gap row:** G-28 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Recorded, not fixed: code changes are out of scope for this pass.
+- **Status:** Partial, `8e66054`.
+- **Resolved:** NaN, infinite and out-of-range model output is now tested (`tests/test_ml_probability_filter.py:197`). Stale model, corrupt artifact, `main()` and `health.py` remain untested.
 
 
 ### H-14. `.env.example` fails `load_config` as shipped
 
 - **Severity:** HIGH
-- **Evidence:** `.env.example:5-6` sets PAPER_TRADING=false and DEMO_TRADING=true, which `config/settings.py:96-97,140-141` turns into a demo configuration that demands API keys. Same root cause as D-2.
+- **Evidence:** `.env.example:6-7` sets PAPER_TRADING=false and DEMO_TRADING=true, which `config/settings.py:96-97,140-141` turns into a demo configuration that demands API keys. Same root cause as D-2.
 - **Gap row:** G-4 in [scrutiny-silverbot.md](scrutiny-silverbot.md) section 3
-- **Status:** Recorded, not fixed: code changes are out of scope for this pass.
+- **Status:** Fixed in `c6d909d`.
+- **Resolved:** `.env.example:6-7` sets PAPER_TRADING=true and DEMO_TRADING=false; `tests/test_config.py:258` `test_shipped_env_example_loads_as_paper`.
 
 
 ## Stub register (S-#)
@@ -675,7 +695,7 @@ Stubs, partial and missing items found while reading the code, with ids as recor
 | S-15 | Strategy config not wired to settings | `backtest/engine.py:39`, `execution/paper_trading.py:48` | G-18 |
 | S-16 | Strategy: liquidity from swings only; no invalidation; no spread/ATR/news filters; no entry/SL/TP option selectors; crude HTF bias; midnight-spanning sessions unsupported | `strategy/liquidity.py:37`, `strategy/silver_bullet.py:67-209`, `strategy/sessions.py:43-45` | G-19 |
 | S-17 | Redundant strategy code: MSS direction check cannot fire; fallback "No complete setup after sweep" effectively unreachable | `strategy/silver_bullet.py:149-150,107` | G-19 |
-| S-18 | Risk: no emergency shutdown, no kill-switch trigger/reset tooling, no automatic triggers | `risk/kill_switch.py:8-17` | G-6 |
+| S-18 | Risk: no emergency shutdown, no kill-switch trigger/reset tooling, no automatic triggers. Resolved in part: automatic trip added in `08c81ad` (`risk/kill_switch.py:53-60`); shutdown and reset tooling still absent | `risk/kill_switch.py:8-17` (at `62037d1`) | G-6 |
 | S-19 | Execution: no partial TP/breakeven/trailing/time exit; no stale-order cancel/expiry/partial fills; gap-through-stop not modelled; ERROR event never emitted | `execution/trade_management.py:9-33`, `execution/models.py:22` | G-21 |
 | S-20 | Live executor and live trading: absent, rejected by config | `config/settings.py:104-107` | G-17 |
 | S-21 | ML offline pipeline (dataset, train, calibrate, promote, register) has no entry point | `ml/__init__.py:7-46` | G-9, G-22 |
@@ -683,7 +703,7 @@ Stubs, partial and missing items found while reading the code, with ids as recor
 | S-23 | No shipped model; `models/` empty | directory listing | G-9 |
 | S-24 | Calibration report-only; training emits no test_metrics/calibration; no staleness/drift/regime/alt labels | `ml/calibration.py`, `ml/training.py:218-223` | G-22 |
 | S-25 | Demo-mode runtime: config and readiness exist, no runtime | `main.py:14-50` | G-3 |
-| S-26 | Live readiness is report-only, not consulted; "report exists" is existence-only | `readiness.py:1-5,159` | G-2 |
+| S-26 | Live readiness is report-only, not consulted; "report exists" is existence-only. Resolved in part: report content check (non-empty JSON object) added in `88220e6` (`readiness.py:150-177`); still not consulted | `readiness.py:1-5,159` (at `62037d1`) | G-2 |
 | S-27 | Health check only validates config; live branch unreachable | `health.py:11-17` | G-27 |
 | S-28 | config.yaml parser is a minimal line parser; risk limits unchecked outside demo | `config/settings.py:281-301,170-191` | G-24 |
 | S-29 | requirements.txt absent; no runtime dependencies declared (scikit-learn optional and undeclared) | `pyproject.toml:10-15` | G-25 |
@@ -727,7 +747,7 @@ Areas checked that matched the old documents (no finding raised):
 
 - Backtest fee defaults: BACKTESTING.md:178-183 (maker 0.0002, taker 0.0005) match `backtest/models.py:32-33`.
 - AGENTS.md ML rules (ML may approve, reject or reduce risk only) match `ml/filter.py` and the paper loop; an unpromoted model still cannot raise risk (see the D-37 note).
-- AGENTS.md risk rules are a subset of the 14 gates in `risk/engine.py:30-87`.
+- AGENTS.md risk rules are a subset of the 14 gates in `risk/engine.py:34-92`.
 - README.md:387-388 (`.env` is not copied into the image) matches `Dockerfile:15-17`.
 - CONFIGURATION.md:3-5 configuration load order (defaults, config.yaml, .env, process env) matches `config/settings.py:67-93`.
 - ML_MODEL.md:336-339 default thresholds (0.60 approve, 0.55 reduce) match `ml/filter.py`.

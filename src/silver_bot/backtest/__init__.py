@@ -11,18 +11,22 @@ from silver_bot.backtest.models import (
     TradeRecord,
 )
 from silver_bot.backtest.reporting import export_backtest_result
+from silver_bot.backtest.runner import BacktestRunSummary, build_backtest_config, run_backtest
 from silver_bot.backtest.validation import BacktestSplit, BacktestValidationSuite
 
 __all__ = [
     "BacktestConfig",
     "BacktestEngine",
     "BacktestResult",
+    "BacktestRunSummary",
     "BacktestSplit",
     "BacktestValidationSuite",
     "EquityPoint",
     "ExitReason",
     "PendingOrder",
     "TradeRecord",
+    "build_backtest_config",
     "calculate_metrics",
     "export_backtest_result",
+    "run_backtest",
 ]

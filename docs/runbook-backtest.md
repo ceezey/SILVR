@@ -4,164 +4,143 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-09 against code at commit `099085b` (G-3 entrypoint batch 2); steps 4 to 6 and the Verify rows marked `5c781fc` re-run 2026-10-09 against `5c781fc` (G-3 review fixes)
 
-This runbook says how to run the backtest engine, where its outputs land, how to produce a chronological out-of-sample split, how to check that the report files are not empty, and how to run the live readiness checker on them. It absorbs the "outputs" parts of the old `BACKTESTING.md`.
+This runbook downloads Binance USD-M futures klines, runs the backtest from the command line, and reads the six reports it writes. It absorbs the "outputs" parts of the old `BACKTESTING.md`. Live trading is `Planned, blocked`; nothing here enables it or places an order.
 
-**What does not exist (read this first).**
+**Read this first.**
 
-- There is no backtest command line. `python -m silver_bot`, `python main.py` and the `silver-bot` script all ignore the mode and run a startup stub (D-1, G-3). The Compose `backtest` and `research` profiles run the same stub. The engine is a Python library, so every step below is a short Python script.
-- Real historical data fetching is not implemented. `HistoricalOHLCVFetcher` delegates to the exchange adapter, and the only adapter's `fetch_ohlcv` raises `NotImplementedError("Binance Futures OHLCV network fetching is not implemented in Phase 1")` (G-13). You must supply candles yourself, for example from a CSV you downloaded elsewhere.
-- No code writes `reports/out_of_sample_validation_report.json`, and nothing evaluates pass or fail criteria. The split helper `BacktestValidationSuite.chronological_split` exists but is not called by the engine, and walk-forward, Monte Carlo and sensitivity runs are absent (G-12).
-- The three evidence files in `reports/` are 0 bytes today (G-1). This runbook produces evidence files under a folder you choose; it does not claim any strategy performance.
+- The command line runs one backtest per call on local CSV files (`main.py:94-112`, `099085b`). The code downloads nothing (G-13): you fetch the files from data.binance.vision by hand (steps 1 to 4).
+- Each run backtests the full period, then a chronological 60/20/20 split (training, validation, final test), each segment in a fresh engine with fresh risk state; nothing is tuned (`backtest/runner.py:60-124`). There is no walk-forward, Monte Carlo, sensitivity run or pass or fail verdict (G-12).
+- Strategy settings are the code defaults (`SilverBulletStrategyEngine()`, `backtest/engine.py:39`; G-18). Costs and balance are the `BacktestConfig` defaults: maker fee 0.0002, taker fee 0.0005, slippage 5.0 bps, spread 3.0 bps, balance 10000 (`backtest/models.py:30-35`). Risk caps and the `ML_*` settings come from your configuration (`backtest/runner.py:48-55`).
+- The reports are not committed. `reports/` and `data/` are git-ignored (`.gitignore:5,7`). No doc in this repository may quote a number from these reports as a performance claim; a report is evidence only for the owner's gate review (QAD §6.1).
+- Paper and demo modes exit 78 (`main.py:89-91`); only backtest mode runs.
 
-Related documents: [prd-silverbot.md](prd-silverbot.md) (PRD-F2), [sdd-silverbot.md](sdd-silverbot.md) (backtest design and file artifacts), [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (readiness checkers), [runbook-local-dev.md](runbook-local-dev.md) (setup), [scrutiny-silverbot.md](scrutiny-silverbot.md) (G-1, G-2, G-11, G-12, G-13).
+Related documents: [prd-silverbot.md](prd-silverbot.md) (PRD-F2), [sdd-silverbot.md](sdd-silverbot.md) (sections 3.3 and 4.6), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) (simulated kill switch), [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (readiness checkers), [runbook-local-dev.md](runbook-local-dev.md) (setup), [ops-silverbot.md](ops-silverbot.md) §5.5 (the same run in the container), [scrutiny-silverbot.md](scrutiny-silverbot.md) (G-1, G-12, G-13).
+
+## Kill switch in backtests (simulated per run)
+
+A backtest never uses the real kill switch at `KILL_SWITCH_PATH`. Every engine run (the full period and each of the three segments) gets its own `KILL_SWITCH` file inside a fresh temporary directory (`backtest/runner.py:127-144`; decision ED-5 in the [G-3 entrypoint spec](superpowers/specs/2026-10-09-g3-entrypoint-design.md)).
+
+- It is always on, even with `KILL_SWITCH_ENABLED=false` (`backtest/runner.py:49`).
+- The risk engine trips it as it would the real one: on the max-daily-loss or max-consecutive-losses limit (`risk/engine.py:83,86,129`). After a trip every later entry in that simulated run is rejected with `Kill switch is active`.
+- A real kill file neither blocks a backtest nor is modified by one (`tests/test_backtest_runner.py:107`).
+- The trip is reported, then the temporary directory is deleted: `backtest_run.json` has `kill_switch: {mode: simulated_per_run, tripped, reason, tripped_at}` for the full period, and each segment of `out_of_sample_validation_report.json` has `kill_switch: {tripped, reason, tripped_at}` (`backtest/runner.py:116,145-169`).
 
 ## Steps
 
-Run every command from one working folder with the virtual environment active (see [runbook-local-dev.md](runbook-local-dev.md)). The examples use a scratch folder so that nothing is written into the repository `reports/` directory.
+Run every command from the repository root with the virtual environment active ([runbook-local-dev.md](runbook-local-dev.md)). The examples use BTCUSDT 1m; change both everywhere for another market.
 
-1. **Supply candles.** Create a CSV with the header `open_time,open,high,low,close,volume`, one row per candle, `open_time` in ISO 8601 with a UTC offset, for example `2026-01-02T15:00:00+00:00`. Candles need not be in order (the engine sorts them), but each row must have `high >= max(open, close)` and `low <= min(open, close)` or loading raises `ValueError`. The fetcher cannot supply this file; it raises `NotImplementedError` (shown in Verify).
+1. **Choose the market and the months.** The symbol and timeframe must match `SYMBOL` and `TIMEFRAME` in your configuration (defaults `BTCUSDT`, `1m`). The loader accepts timeframes in `m`, `h`, `d` and `w` (`data/csv_loader.py:19,35-41`); Binance's `1mo` files are rejected. Expected: one symbol, one timeframe, a list of `YYYY-MM` months.
 
-2. **Write the run script** `run_backtest.py`. It uses only the engine's public API (`BacktestEngine`, `BacktestConfig`, `Candle`, the strategy classes):
+2. **Make an empty download folder** outside the repository: `mkdir -p ~/klines && cd ~/klines`. Expected: an empty folder. Keep downloads apart from `data/candles/` and from any code.
 
-   ```python
-   """Run the Silver Bot backtest engine on locally supplied candles."""
-   import csv
-   import sys
-   from datetime import UTC, datetime, timedelta
-   from pathlib import Path
+3. **Download each month.** The monthly USD-M futures files are at
 
-   from silver_bot.backtest import BacktestConfig, BacktestEngine
-   from silver_bot.models import Candle
-   from silver_bot.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
-
-
-   def load_candles(path: str) -> list[Candle]:
-       """Read candles from a CSV with columns open_time,open,high,low,close,volume."""
-       rows = []
-       with open(path, newline="") as handle:
-           for row in csv.DictReader(handle):
-               opened = datetime.fromisoformat(row["open_time"]).astimezone(UTC)
-               rows.append(Candle(
-                   symbol="BTCUSDT", timeframe="1m",
-                   open_time=opened, close_time=opened + timedelta(minutes=1),
-                   open=float(row["open"]), high=float(row["high"]),
-                   low=float(row["low"]), close=float(row["close"]),
-                   volume=float(row["volume"]),
-               ))
-       return rows
-
-
-   if __name__ == "__main__":
-       candles = load_candles(sys.argv[1])
-       config = BacktestConfig(slippage_bps=1.0, spread_bps=1.0, export_dir=Path(sys.argv[2]))
-       strategy = SilverBulletStrategyEngine(
-           SilverBulletStrategyConfig(swing_lookback=2, atr_period=3, minimum_rr=2.0, minimum_signal_score=70)
-       )
-       result = BacktestEngine(strategy=strategy, config=config).run(candles)
-       print(result.metrics["total_trades"], result.metrics["net_profit"])
-       print(result.export_paths)
+   ```text
+   https://data.binance.vision/data/futures/um/monthly/klines/<SYMBOL>/<TIMEFRAME>/<SYMBOL>-<TIMEFRAME>-<YYYY>-<MM>.zip
    ```
 
-   Notes on the settings. `BacktestConfig` defaults are `initial_balance=10000.0`, `maker_fee=0.0002`, `taker_fee=0.0005`, and **zero** slippage and spread; the script sets 1 bps each so costs are non-zero (G-11). The strategy settings in the script (`swing_lookback=2`, `atr_period=3`, `minimum_signal_score=70`) are the values the unit tests use for a 10-candle sample; they are not tuned for real data. For real data start from `SilverBulletStrategyEngine()` defaults and choose settings on the training and validation slices only (step 5). The engine always runs the risk engine and the kill-switch check; the ML filter is off unless configured.
-
-3. **Run the backtest:**
+   `<SYMBOL>` is the contract, for example `BTCUSDT`; `<TIMEFRAME>` the interval, for example `1m`; `<YYYY>-<MM>` the month. Each zip has a checksum file at the same URL plus `.CHECKSUM`. For three months of BTCUSDT 1m:
 
    ```bash
-   python run_backtest.py candles.csv out
+   for m in 2025-11 2025-12 2026-01; do
+     curl -fLO "https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-$m.zip"
+     curl -fLO "https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-$m.zip.CHECKSUM"
+   done
+   sha256sum -c *.CHECKSUM
    ```
 
-   The script prints the trade count, net profit and the four exported paths. The engine also appends audit lines to `logs/audit.jsonl` in the current folder.
+   PowerShell: `Invoke-WebRequest -Uri "<url>" -OutFile "<file>"` per file, then compare `(Get-FileHash <file> -Algorithm SHA256).Hash` with the first field of the `.CHECKSUM` file. Expected: `curl` exits 0 for each file and `sha256sum` prints `OK` for each zip. A month that has not ended yet has no monthly file (HTTP 404).
 
-4. **Find the outputs.** With `export_dir` set, the engine writes four files into that folder and returns their paths in `result.export_paths`:
+4. **Unzip the CSVs into `data/candles/`.** From the repository root:
+
+   ```bash
+   mkdir -p data/candles
+   for z in ~/klines/*.zip; do unzip -o "$z" -d data/candles; done
+   ls data/candles
+   ```
+
+   PowerShell: `Get-ChildItem ~/klines/*.zip | ForEach-Object { Expand-Archive $_ -DestinationPath data/candles -Force }`. Expected: one `BTCUSDT-1m-YYYY-MM.csv` per month directly in `data/candles/`. The loader reads every `*.csv` directly inside the folder in name order and ignores other files and subfolders (`data/csv_loader.py:87-102`). Keep one symbol and one timeframe per folder: the loader stamps `SYMBOL` on every row and does not read it from the file, and since `5c781fc` it rejects any candle whose own duration differs from `TIMEFRAME` (`data/csv_loader.py:58-62`).
+
+5. **Set backtest mode.** In `.env` at the repository root set:
+
+   ```text
+   MODE=
+   TRADING_MODE=backtest
+   PAPER_TRADING=false
+   DEMO_TRADING=false
+   LIVE_TRADING=false
+   SYMBOL=BTCUSDT
+   TIMEFRAME=1m
+   ```
+
+   `MODE` must stay blank or `backtest`. Since `5c781fc` the shipped `.env.example` leaves `MODE` blank (`.env.example:2-3`), so a `.env` copied from it works once `TRADING_MODE` and `PAPER_TRADING` are set as above. A non-blank `MODE` overrides `TRADING_MODE` from every source (D-42): with `MODE=paper` the run loads as paper with `PAPER_TRADING=false` and exits 2 with `PAPER_TRADING must be true when TRADING_MODE=paper`. Expected: `python -c "from silver_bot.config import load_config; print(load_config().mode)"` prints `TradingMode.BACKTEST`.
+
+6. **Run the backtest:**
+
+   ```bash
+   python -m silver_bot --candles data/candles; echo $?
+   ```
+
+   `--candles` may repeat and takes a file or a directory; `--output-dir DIR` writes the reports somewhere other than `reports/`. Expected: one log line `wrote <name>: reports/<file>` for each of six reports, then `backtest complete: N candles, G gaps`, then `0`. Other exit codes:
+
+   | Exit | Log line | Fix |
+   |---|---|---|
+   | 2 | `backtest mode needs --candles` | Pass `--candles data/candles` |
+   | 2 | `candle data rejected: <file>:<line>: <reason>` | Fix or remove the named file |
+   | 2 | `candle data rejected: <file>:<line>: candle duration <d> does not match TIMEFRAME=<tf>` | The file's interval is not `TIMEFRAME` (since `5c781fc` a 5m file with `TIMEFRAME=1m` is rejected); set `TIMEFRAME` to the file's interval or use files of that interval |
+   | 2 | `candle data rejected: Candle spacing <step> before <time> is not a multiple of TIMEFRAME=<tf>` | Candles sit off the `TIMEFRAME` grid, usually files of different intervals in one folder. Missing intervals are allowed: they load and are counted in `inputs.gaps` |
+   | 2 | `configuration rejected: <reason>` | Fix `.env` (step 5) |
+   | 2 | `--candles only applies to backtest mode` | The mode is not backtest; check `MODE` and `TRADING_MODE` |
+   | 78 | `paper mode not available yet: needs market data (G-13)` | The mode is paper or demo; set backtest mode (step 5) |
+
+   The run also writes `data/silver_bot.sqlite3` and appends `bot_started` and `bot_stopped` (with `exit_code`) to `logs/audit.jsonl`. Runtime grows roughly quadratically with the candle count: the engine passes the growing candle prefix to the strategy on every bar (`backtest/engine.py:106`), and on each in-session bar `detect_swing_points` rescans that whole history (`strategy/structure.py:18`; G-33). Measured on the dev machine on 2026-10-09 with synthetic 1m candles, one engine pass took 0.27 s for 1,000 candles, 0.52 s for 2,000 and 1.78 s for 4,000; a run makes four passes (the full period and three out-of-sample segments). These are timings, not strategy results. Start with one month. To run the same thing in the container, see [ops-silverbot.md](ops-silverbot.md) §5.5.
+
+7. **Read the six reports** in `reports/` (or `--output-dir`):
 
    | File | Content |
    |------|---------|
-   | `trades.csv` | One row per closed trade: ids, direction, entry and exit times and prices, stop, target, size, `realized_pnl`, `realized_r`, `fees`, `slippage`, excursions, `exit_reason`, `setup_quality_score`, notes, ML fields |
+   | `backtest_report.json` | Full-period metrics dictionary only: trade counts, win rate, profit factor, expectancy, average R, drawdown, streaks, fees, net profit, return, per-session performance |
+   | `trades.csv` | One row per closed trade: ids, direction, entry and exit times and prices, stop, target, size, `realized_pnl`, `realized_r`, `fees`, `slippage`, excursions, `exit_reason`, `setup_quality_score`, notes, ML fields. A zero-trade run writes a 0-byte file |
    | `equity_curve.csv` | `timestamp,equity,realized_pnl,drawdown` per candle (realized equity only; drawdown in currency) |
-   | `rejected_signals.csv` | Every NO_TRADE, ML rejection and risk rejection with its reason |
-   | `backtest_report.json` | The metrics dictionary only: trade counts, win rate, profit factor, expectancy, average R, drawdown, streaks, fees, net profit, return, per-session performance |
+   | `rejected_signals.csv` | Every NO_TRADE, ML rejection and risk rejection with its reason, including `Risk rejected: Kill switch is active` after a simulated trip |
+   | `out_of_sample_validation_report.json` | `method` `chronological_split`, `fractions` 0.6 / 0.2 / 0.2, `parameters_tuned` false, and `segments.training`, `segments.validation`, `segments.final_test`, each with `candles`, `start`, `end`, `metrics` and `kill_switch`. An empty segment has 0 candles and nulls |
+   | `backtest_run.json` | The run record: `inputs.files` and `inputs.gaps` from the loader, `symbol`, `timeframe`, `candles`, `first_open_time`, `last_open_time`, `slippage_bps`, `spread_bps`, `maker_fee`, `taker_fee`, `ml_filter_enabled`, `risk_per_trade`, `kill_switch` and `package_version` |
 
-   Without `export_dir` nothing is written; the result stays in memory. A run with zero trades writes `trades.csv` as a zero-byte file with no header, so a 0-byte `trades.csv` can be a valid "no trades" result; the JSON report is the file to check for content.
+   Check, in this order: `backtest_run.json` lists the files you meant and `inputs.gaps` is 0 (a gap is a missing interval; the loader counts it and fills nothing); the cost fields are non-zero (BRD-M3); `kill_switch.tripped` in the run record and in each segment (if true, the rest of that run after `tripped_at` took no trade, so read its metrics with that in mind); `trades.csv` has rows. Discipline: if you change strategy code or settings between runs, choose them on the training and validation segments only and look at `final_test` once at the end; no code enforces this (D-33).
 
-5. **Produce the out-of-sample split.** Write `run_oos.py`, which splits chronologically (60% training, 20% validation, remaining 20% final test), runs the engine on each slice, and writes one JSON file of per-slice metrics:
-
-   ```python
-   """Run the engine on each chronological slice and write one JSON file of metrics."""
-   import json
-   import sys
-   from pathlib import Path
-
-   from silver_bot.backtest import BacktestConfig, BacktestEngine
-   from silver_bot.backtest.validation import BacktestValidationSuite
-   from run_backtest import load_candles
-
-   candles = load_candles(sys.argv[1])
-   out = Path(sys.argv[2])
-   out.mkdir(parents=True, exist_ok=True)
-   split = BacktestValidationSuite().chronological_split(candles, training_fraction=0.6, validation_fraction=0.2)
-   report = {}
-   for name in ("training", "validation", "final_test"):  # run final_test once, after settings are frozen
-       slice_ = getattr(split, name)
-       config = BacktestConfig(slippage_bps=1.0, spread_bps=1.0, export_dir=out / name)
-       report[name] = {"candles": len(slice_), "metrics": BacktestEngine(config=config).run(slice_).metrics}
-   (out / "out_of_sample_validation_report.json").write_text(
-       json.dumps(report, indent=2, sort_keys=True, default=str)
-   )
-   print({k: v["metrics"]["total_trades"] for k, v in report.items()})
-   ```
+8. **Run the live readiness checker on the reports** (it reads only process environment, and its defaults are `reports/backtest_report.json` and `reports/out_of_sample_validation_report.json`):
 
    ```bash
-   python run_oos.py candles.csv oos
+   python -m silver_bot.readiness --output readiness/live_readiness_report.json; echo $?
    ```
 
-   Discipline: tune strategy and cost settings on `training` and `validation` only. Run `final_test` once, after the settings are frozen; no code enforces this (F03.61), so it is a manual rule (never optimize on the final test set). The JSON file is a plain per-slice metrics dump with no pass or fail verdict; deciding what counts as a pass is an open owner input (see [brd-silverbot.md](brd-silverbot.md) section 8).
-
-6. **Check the report files are non-empty.** The readiness checker does not do this (G-2), so do it yourself:
-
-   ```bash
-   find out oos -type f -size 0
-   ```
-
-   Every path printed is an empty file. Expect only `trades.csv` files from slices that had no trades. On Windows PowerShell: `Get-ChildItem out,oos -Recurse -File | Where-Object Length -eq 0`. Also open `out/backtest_report.json` and confirm `total_trades` is greater than zero and that you understand the cost settings used.
-
-7. **Run the live readiness checker on your reports.** It reads only process environment variables (not `.env`), so point the three report paths at your files with inline variables and send its own report to a safe folder:
-
-   ```bash
-   BACKTEST_REPORT_PATH=out/backtest_report.json OOS_VALIDATION_REPORT_PATH=oos/out_of_sample_validation_report.json python -m silver_bot.readiness --output readiness/live_readiness_report.json
-   ```
-
-   PowerShell:
-
-   ```powershell
-   $env:BACKTEST_REPORT_PATH="out/backtest_report.json"; $env:OOS_VALIDATION_REPORT_PATH="oos/out_of_sample_validation_report.json"; python -m silver_bot.readiness --output readiness/live_readiness_report.json
-   ```
-
-   Exit code 2 and `"ready": false` are the expected result: live trading is blocked at configuration load regardless, the paper report is missing, and the manual confirmations are unset. The checker only tests that each report path exists and is a file (it also passes 0-byte files), so a pass on those three checks is not evidence.
+   Expected: `2` and `"ready": false`: live trading is blocked at configuration load regardless, the paper report does not exist, and the manual confirmations are unset. `backtest_report_exists` and `out_of_sample_validation_report_exists` pass once step 6 succeeded, because the checker tests only that each report is a readable, non-empty JSON object (`readiness.py:150-177`). It reads no metric, so passing those two checks is not evidence.
 
 ## Verify
 
-Run against the 10-candle synthetic sample (the unit-test setup, written to a scratch folder). These numbers come from synthetic data used to prove the commands work; they are not a strategy result and must not be quoted as one.
+Run on 2026-10-09 at `099085b` (rows marked `5c781fc` re-run at that commit) with `python -m silver_bot` from a scratch folder holding a 120-row synthetic file in Binance format (header row, ms timestamps). No number from these runs is a strategy result, and none is recorded here.
 
-| Step | Command | Observed |
-|------|---------|----------|
-| 3 | `python run_backtest.py candles.csv out` | `1 211.69942074999986` then the four paths under `out`; exit 0 |
-| 3 | default strategy settings on the same 10 candles | `0 0`; `trades.csv` is 0 bytes; the JSON report is 374 bytes |
-| 4 | `ls -l out` | `backtest_report.json` 651 bytes, `equity_curve.csv` 492, `rejected_signals.csv` 756, `trades.csv` 730 |
-| 5 | `python run_oos.py candles.csv oos` | `{'training': 0, 'validation': 0, 'final_test': 0}` (slices of 6, 2 and 2 candles are too short to trade); `out_of_sample_validation_report.json` 1498 bytes |
-| 6 | `find out oos -type f -size 0` | `oos/training/trades.csv`, `oos/validation/trades.csv`, `oos/final_test/trades.csv` (all zero-trade runs); nothing from `out` |
-| 7 | `python -m silver_bot.readiness` with the two paths set | exit 2, `ready` false; `backtest_report_exists` True, `out_of_sample_validation_report_exists` True, `paper_trading_report_exists` False |
-| Fetcher | `HistoricalOHLCVFetcher(BinanceFuturesAdapter(testnet=True)).fetch(symbol="btcusdt", timeframe="1m", start=..., end=...)` | `NotImplementedError: Binance Futures OHLCV network fetching is not implemented in Phase 1` |
+| Check | Command | Observed |
+|-------|---------|----------|
+| Backtest | `TRADING_MODE=backtest PAPER_TRADING=false python -m silver_bot --candles data/candles` | six `wrote` lines, `backtest complete: 120 candles, 0 gaps`, exit 0; six files in `reports/`; `backtest_run.json` `kill_switch` is `{"mode": "simulated_per_run", "reason": null, "tripped": false, "tripped_at": null}` |
+| No `--candles` | same environment, no flag | `backtest mode needs --candles`, exit 2 |
+| Paper | default environment | `paper mode not available yet: needs market data (G-13)`, exit 78 |
+| Paper with `--candles` | default environment, `--candles data/candles` | `--candles only applies to backtest mode`, exit 2 |
+| Live flag | `LIVE_TRADING=true python -m silver_bot` | `configuration rejected: LIVE_TRADING=true is rejected in Phase 1`, exit 2 |
+| Copied `.env.example` (`5c781fc`) | `cp .env.example .env`, process `TRADING_MODE=backtest PAPER_TRADING=false` | six `wrote` lines, `backtest complete: 120 candles, 0 gaps`, exit 0; with `MODE=paper` in `.env` the same command logs `configuration rejected: PAPER_TRADING must be true when TRADING_MODE=paper` and exits 2 |
+| 5m file as `1m` (`5c781fc`) | a 3-row 5m file with a header, default `TIMEFRAME=1m` | `candle data rejected: five.csv:2: candle duration 0:05:00 does not match TIMEFRAME=1m`, exit 2; with `TIMEFRAME=5m` six `wrote` lines and exit 0 |
+| Download | `curl -fLO` of `BTCUSDT-1m-2026-01.zip` and its `.CHECKSUM` | both HTTP 200; `sha256sum -c` prints `OK`; the CSV starts with the header `open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore` and millisecond timestamps |
 
-Done means: step 3 exits 0, `out/backtest_report.json` has `total_trades` above zero, step 6 lists no empty `*_report.json` or `out_of_sample_validation_report.json`, and you have not copied anything into `reports/` until you intend it to be evidence. Live trading stays blocked whatever step 7 prints.
+Done means: step 6 exits 0, the six files exist, `backtest_run.json` lists the intended files, and nothing from `reports/` is committed or quoted. Live trading stays blocked whatever step 8 prints.
 
 ## Self-Check
 
-- [x] Every command and script was executed against the code on a synthetic candle file under a scratch folder; no file was written to the repository `reports/` directory.
-- [x] The absence of a backtest CLI, of real historical fetching (G-13) and of an out-of-sample report writer is stated before the steps.
-- [x] Costs are set non-zero in the scripts and the zero default is called out (G-11).
-- [x] No strategy performance number is presented as a result; the sample figures are labelled synthetic.
-- [x] The readiness checker's existence-only behaviour (G-2) is stated beside the command that uses it.
-- [ ] The scripts were not run on real market data, because no code in the repository can fetch it.
+- [x] Every command except the PowerShell variants was executed against the code at `099085b` in a scratch folder; nothing was written to the repository `reports/` directory.
+- [x] The absence of a network download (G-13), walk-forward and pass or fail criteria (G-12) is stated before the steps.
+- [x] The simulated per-run kill switch and where its trips are reported are stated (ED-5).
+- [x] The reports are git-ignored and no performance number appears in this runbook.
+- [x] The readiness checker's report checks (non-empty JSON object only, no metrics) are stated beside the command that uses it.
+- [ ] A full real-data run has been reviewed by the owner (not yet; G-1).

@@ -73,15 +73,15 @@ def evaluate_live_readiness(
     root = Path(project_root)
     env = dict(os.environ if environ is None else environ)
     checks = [
-        _file_exists("backtest_report_exists", root, env, "BACKTEST_REPORT_PATH", "reports/backtest_report.json"),
-        _file_exists(
+        _report_check("backtest_report_exists", root, env, "BACKTEST_REPORT_PATH", "reports/backtest_report.json"),
+        _report_check(
             "out_of_sample_validation_report_exists",
             root,
             env,
             "OOS_VALIDATION_REPORT_PATH",
             "reports/out_of_sample_validation_report.json",
         ),
-        _file_exists(
+        _report_check(
             "paper_trading_report_exists",
             root,
             env,
@@ -147,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report.ready else 2
 
 
-def _file_exists(
+def _report_check(
     check_name: str,
     root: Path,
     env: Mapping[str, str],
@@ -156,13 +156,25 @@ def _file_exists(
 ) -> ReadinessCheck:
     path = Path(env.get(env_key, default_path))
     resolved = path if path.is_absolute() else root / path
-    if resolved.exists() and resolved.is_file():
-        return ReadinessCheck(check_name, True, f"Found {resolved}")
-    return ReadinessCheck(
-        check_name,
-        False,
-        f"Missing required report: {resolved}. Set {env_key} to the completed report path.",
-    )
+    if not resolved.is_file():
+        return ReadinessCheck(
+            check_name,
+            False,
+            f"Missing required report: {resolved}. Set {env_key} to the completed report path.",
+        )
+    try:
+        text = resolved.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        return ReadinessCheck(check_name, False, f"Report {resolved} could not be read: {exc}")
+    if not text.strip():
+        return ReadinessCheck(check_name, False, f"Report {resolved} is empty. Set {env_key} to a completed report.")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return ReadinessCheck(check_name, False, f"Report {resolved} is not valid JSON.")
+    if not isinstance(payload, dict):
+        return ReadinessCheck(check_name, False, f"Report {resolved} must contain a JSON object.")
+    return ReadinessCheck(check_name, True, f"Found {resolved}")
 
 
 def _bool_check(

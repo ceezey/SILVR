@@ -56,3 +56,24 @@ def test_systemd_service_runs_compose_paper_bot() -> None:
     assert "docker compose" in service
     assert "up bot" in service
     assert "TRADING_MODE=live" not in service
+
+
+def test_systemd_propagates_exit_code_and_stops_on_mode_unavailable() -> None:
+    service = read("deploy/systemd/silver-bot.service")
+
+    assert "up bot --exit-code-from bot" in service
+    assert "RestartPreventExitStatus=2 78" in service
+
+
+def test_compose_bot_does_not_self_restart() -> None:
+    compose = read("docker-compose.yaml")
+    bot_block = compose.split("\n  bot:\n", 1)[1].split("\n  paper:\n", 1)[0]
+
+    assert 'restart: "no"' in bot_block
+    assert "unless-stopped" not in compose
+
+
+def test_compose_backtest_services_read_candles_directory() -> None:
+    compose = read("docker-compose.yaml")
+
+    assert compose.count('command: ["python", "-m", "silver_bot", "--candles", "/app/data/candles"]') == 2

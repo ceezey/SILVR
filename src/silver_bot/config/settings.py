@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Mapping
+from urllib.parse import urlsplit
 
 
 class ConfigError(ValueError):
@@ -141,7 +142,7 @@ def load_config(
         raise ConfigError("BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode")
     if demo_trading and not binance_testnet:
         raise ConfigError("BINANCE_TESTNET must be true when MODE=demo")
-    if demo_trading and binance_base_url and not _is_binance_testnet_url(binance_base_url):
+    if demo_trading and binance_base_url and not is_binance_futures_testnet_url(binance_base_url):
         raise ConfigError("Demo mode requires a Binance Futures testnet endpoint")
     telegram_enabled = _parse_bool(raw.get("TELEGRAM_ENABLED", "false"), "TELEGRAM_ENABLED")
     telegram_bot_token = _blank_to_none(raw.get("TELEGRAM_BOT_TOKEN"))
@@ -170,10 +171,14 @@ def load_config(
     risk_engine_enabled = _parse_bool(raw.get("RISK_ENGINE_ENABLED", "true"), "RISK_ENGINE_ENABLED")
     kill_switch_enabled = _parse_bool(raw.get("KILL_SWITCH_ENABLED", "false"), "KILL_SWITCH_ENABLED")
     kill_switch_path = Path(raw["KILL_SWITCH_PATH"]) if _blank_to_none(raw.get("KILL_SWITCH_PATH")) else None
+    if kill_switch_enabled and kill_switch_path is None:
+        raise ConfigError("KILL_SWITCH_PATH is required when KILL_SWITCH_ENABLED=true")
     stop_loss_required = _parse_bool(raw.get("STOP_LOSS_REQUIRED", "true"), "STOP_LOSS_REQUIRED")
     max_risk_per_trade = _parse_float(raw.get("MAX_RISK_PER_TRADE", "0.005"), "MAX_RISK_PER_TRADE")
     max_daily_loss = _parse_float(raw.get("MAX_DAILY_LOSS", "0.02"), "MAX_DAILY_LOSS")
     max_leverage = _parse_float(raw.get("MAX_LEVERAGE", "3"), "MAX_LEVERAGE")
+    if not 0 < max_risk_per_trade <= 0.005:
+        raise ConfigError("MAX_RISK_PER_TRADE must be greater than 0 and no more than 0.005")
     if demo_trading:
         if not risk_engine_enabled:
             raise ConfigError("RISK_ENGINE_ENABLED must be true in demo mode")
@@ -183,8 +188,6 @@ def load_config(
             raise ConfigError("KILL_SWITCH_PATH is required in demo mode")
         if not stop_loss_required:
             raise ConfigError("STOP_LOSS_REQUIRED must be true in demo mode")
-        if not 0 < max_risk_per_trade <= 0.005:
-            raise ConfigError("MAX_RISK_PER_TRADE must be greater than 0 and no more than 0.005 in demo mode")
         if not 0 < max_daily_loss <= 0.02:
             raise ConfigError("MAX_DAILY_LOSS must be greater than 0 and no more than 0.02 in demo mode")
         if not 0 < max_leverage <= 3:
@@ -342,6 +345,21 @@ def _strip_quotes(value: str) -> str:
     return value
 
 
-def _is_binance_testnet_url(value: str) -> bool:
-    normalized = value.strip().lower()
-    return "testnet.binancefuture.com" in normalized
+BINANCE_FUTURES_TESTNET_HOST = "testnet.binancefuture.com"
+
+
+def is_binance_futures_testnet_url(value: str) -> bool:
+    """Return whether a URL is exactly the Binance Futures testnet over https."""
+
+    try:
+        parts = urlsplit(value.strip())
+        port = parts.port
+    except ValueError:
+        return False
+    return (
+        parts.scheme.lower() == "https"
+        and parts.hostname == BINANCE_FUTURES_TESTNET_HOST
+        and parts.username is None
+        and parts.password is None
+        and port in (None, 443)
+    )

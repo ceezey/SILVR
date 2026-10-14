@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-08
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`
+**Last updated:** 2026-10-09
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`; the D-4 and D-11 rows of the deprecations register re-checked 2026-10-09 against `099085b`
 
 This guide tells a coding agent or a human how to build Silver Bot from the canonical docs. It is materialized to the root `AGENTS.md`, which every future session reads first. Safety rules in section 5 are carried over from the previous `AGENTS.md` and must not be weakened.
 
@@ -54,11 +54,11 @@ Re-ground (re-read the relevant doc and the code) when:
 | Demo mode (PRD-F5) and readiness (PRD-F8) | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) | readiness tests, subagent SAD-A1 |
 | ML filter (PRD-F6) | [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md), [aia-silverbot.md](aia-silverbot.md) | ML tests, subagent SAD-A3 |
 | Monitoring (PRD-F7), deployment (PRD-F11) | [ops-silverbot.md](ops-silverbot.md) | monitoring tests, runbook steps |
-| Config (PRD-F9), data and storage (PRD-F10) | SDD config and data sections | config tests, the runbook-local-dev step 3 env block loads; `.env.example` is known to fail (G-4) |
+| Config (PRD-F9), data and storage (PRD-F10) | SDD config and data sections | config tests, the runbook-local-dev step 3 env block loads; `.env.example` loads as paper mode since `c6d909d` (G-4 closed, `tests/test_config.py:258`) |
 
 ## 2. Subagents
 
-Four safety reviewers run before merge on the paths each guards. The roster, trigger rules and orchestration are in [sad-silverbot.md](sad-silverbot.md) section 4. The generated cards live in `.claude/agents/`. Do not edit them by hand.
+Four safety reviewers run before merge on the paths each guards, and one standard-library-only builder (`psl-purist`, SAD-B1) writes operator UI and Telegram code on request. The roster, trigger rules and orchestration are in [sad-silverbot.md](sad-silverbot.md) sections 3 and 4. The generated cards live in `.claude/agents/`. Do not edit them by hand.
 
 ## 3. Stack Currency & Deprecations
 
@@ -80,8 +80,8 @@ No version in this table is invented. If `pyproject.toml` or the `Dockerfile` ch
 
 | ID | Old convention (in old docs) | Current code | Use instead |
 |----|------------------------------|--------------|-------------|
-| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Keys parse but have no runtime effect | Treat ML as not wired; see [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) |
-| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Keys validate in demo mode but are not wired to `RiskConfig` | Caps live in `RiskConfig` defaults; see [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) |
+| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Partly resolved (`f84557e`): the keys reach the filter in CLI backtests only (`src/silver_bot/backtest/runner.py:50-55`); the paper loop ignores them | Treat ML as not wired outside backtests; see [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) |
+| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into `RiskConfig` (`4726cb5`) and CLI backtests use it with a simulated per-run kill switch; nothing calls `build_risk_engine` at runtime yet (G-3), and the daily-loss and leverage bounds are checked in demo mode only | Build a runtime engine with `build_risk_engine(config, storage)` (`src/silver_bot/risk/factory.py:26-33`); a backtest takes `build_risk_config` through `build_backtest_config` (`src/silver_bot/backtest/runner.py:35-57`) and never the real kill-switch path; never hand-build a `RiskConfig` for a running bot; see [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) |
 | D-10 | Live trading is gated by `LIVE_TRADING` plus readiness | `LIVE_TRADING=true` is rejected at load; readiness is never consulted by the entrypoint | Live is `Planned, blocked`; see [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) |
 
 The full list is in [audit-docs-drift.md](audit-docs-drift.md).
@@ -119,13 +119,18 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
 
 ### (b) An order request passes through the risk engine and kill switch
 
-`src/silver_bot/risk/engine.py:25-36` (kill switch is the first check) and `src/silver_bot/execution/paper_trading.py:207-216` (the caller must ask the risk engine before any fill):
+`src/silver_bot/risk/engine.py:38-55` (an unreadable persisted risk state halts first; the kill switch is the first gate) and `src/silver_bot/execution/paper_trading.py:207-216` (the caller must ask the risk engine before any fill):
 
 ```python
     def evaluate(self, request: RiskRequest) -> RiskDecision:
         """Return a risk decision with an explicit approval or rejection reason."""
 
+        if self.state_load_error is not None:
+            return self._reject("Risk state could not be loaded; trading halted")
+        previous_day = self.state.current_day
         self.state.roll_day(request.signal_day)
+        if self.state.current_day != previous_day:
+            self._save_state()
 
         if self.kill_switch.is_active():
             return self._reject("Kill switch is active")
@@ -159,7 +164,7 @@ A rejected decision is recorded and the function returns before any position is 
 
 ### (c) Fail-closed config validation rejects live mode
 
-`src/silver_bot/config/settings.py:104-107`:
+`src/silver_bot/config/settings.py:105-108`:
 
 ```python
     if live_trading:
@@ -366,6 +371,16 @@ Never cut: validation, risk gates, the kill switch, stop loss, tests or secret h
 
 ### 5.1 Change Workflow
 
+Branch flow (owner decision, 2026-10-14): BE and FE work, then merge to `dev`, then QA, then a PR to `main`. `main` is the production bot; nothing is developed, tested or pushed there.
+
+1. Branch from `dev` per task: `feat/be-<name>` for bot code, `feat/fe-<name>` for the operator dashboard or Telegram (FE is built by `psl-purist`, SAD-B1).
+2. Build on the branch with tests, and run the reviewers below before merging.
+3. Merge the branch into `dev` and push. No PR and no owner sign-off is needed for this step.
+4. QA on `dev`: the full `python -m pytest`, `python tools/materialize_docs.py --check`, the [QAD](qad-silverbot.md) section 6 release criteria for the affected mode gate, and a smoke run of the bot and the dashboard. The owner signs off.
+5. Open a PR from `dev` to `main` only after QA passes and the owner says go.
+
+For each change:
+
 1. When a change touches a Locked doc, propose a Change Record `docs/cr-silverbot-<slug>.md` with sections: Why, Divergences, Changes, Verification, Pre-merge gate runs, Deferred.
 2. Apply the change (code, tests, docs).
 3. Verify: run the tests and the doc checks; run the subagent reviewers that SAD section 4 requires.
@@ -413,6 +428,8 @@ None. The bot has no public web surface; crawler policy is not applicable.
 | `AGENTS.md` | this doc (with a banner; links rewritten to `docs/...`) | generated |
 | `CLAUDE.md` | hand-maintained pointer to `AGENTS.md` | hand |
 | `MODEL_CARD.md` | [aia-silverbot.md](aia-silverbot.md) section 1 | generated |
+| `BRAND.md` | [dsd-silverbot.md](dsd-silverbot.md) sections 0 and 1 | generated |
+| `DESIGN.md` | [dsd-silverbot.md](dsd-silverbot.md) sections 2 to 7 | generated |
 | `.claude/agents/*` | [sad-silverbot.md](sad-silverbot.md) section 3 | generated |
 
 The generator is `tools/materialize_docs.py`. Run `python tools/materialize_docs.py` to regenerate and `python tools/materialize_docs.py --check` to verify (also run by `tests/test_materialize_docs.py`). Never edit generated files directly; edit the source doc and re-materialize.
