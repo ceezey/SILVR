@@ -49,6 +49,7 @@ def test_run_writes_all_reports(tmp_path: Path) -> None:
         "trades",
         "equity_curve",
         "rejected_signals",
+        "daily_summary",
         "out_of_sample_validation_report",
         "backtest_run",
     }

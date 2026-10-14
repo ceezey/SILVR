@@ -1,9 +1,12 @@
-"""Basic backtest validation structure."""
+"""Backtest validation: chronological splits, walk-forward windows and Monte Carlo."""
 
 from __future__ import annotations
 
+import random
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from silver_bot.models import Candle
 
@@ -45,6 +48,23 @@ class BacktestValidationSuite:
             final_test=ordered[validation_end:],
         )
 
+    def walk_forward_windows(self, candles: list[Candle], *, windows: int) -> list[list[Candle]]:
+        """Split candles into consecutive, non-overlapping windows in time order.
+
+        Each window is evaluated on its own; nothing is fitted on one window and
+        applied to the next, so no window sees data from a later one.
+        """
+
+        if windows < 1:
+            raise ValueError("windows must be at least 1")
+        ordered = sorted(candles, key=lambda candle: candle.open_time)
+        size = len(ordered) // windows
+        if size == 0:
+            return []
+        result = [ordered[index * size : (index + 1) * size] for index in range(windows - 1)]
+        result.append(ordered[(windows - 1) * size :])
+        return result
+
     def validate_chronological_order(self, candles: list[Candle]) -> list[str]:
         """Return warnings for non-chronological input."""
 
@@ -56,3 +76,59 @@ class BacktestValidationSuite:
                 break
             previous = candle.open_time
         return warnings
+
+
+def monte_carlo_r(
+    r_multiples: Sequence[float],
+    *,
+    runs: int = 1000,
+    seed: int = 7,
+) -> dict[str, Any]:
+    """Resample trade R multiples with replacement and summarise the outcomes.
+
+    The seed is fixed, so the same trades always give the same summary. The
+    result describes how much the trade sequence alone could vary the final R
+    and the worst peak-to-trough drawdown in R; it predicts nothing.
+    """
+
+    if runs < 1:
+        raise ValueError("runs must be at least 1")
+    trades = list(r_multiples)
+    if not trades:
+        return {
+            "runs": runs,
+            "seed": seed,
+            "trades": 0,
+            "final_r": None,
+            "max_drawdown_r": None,
+            "probability_final_r_not_positive": None,
+        }
+
+    rng = random.Random(seed)
+    finals: list[float] = []
+    drawdowns: list[float] = []
+    for _ in range(runs):
+        equity = peak = worst = 0.0
+        for value in rng.choices(trades, k=len(trades)):
+            equity += value
+            peak = max(peak, equity)
+            worst = max(worst, peak - equity)
+        finals.append(equity)
+        drawdowns.append(worst)
+    return {
+        "runs": runs,
+        "seed": seed,
+        "trades": len(trades),
+        "final_r": _percentiles(finals),
+        "max_drawdown_r": _percentiles(drawdowns),
+        "probability_final_r_not_positive": sum(1 for value in finals if value <= 0) / runs,
+    }
+
+
+def _percentiles(values: list[float]) -> dict[str, float]:
+    ordered = sorted(values)
+
+    def pick(fraction: float) -> float:
+        return ordered[min(len(ordered) - 1, int(fraction * len(ordered)))]
+
+    return {"p5": pick(0.05), "p50": pick(0.5), "p95": pick(0.95)}

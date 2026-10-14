@@ -183,3 +183,62 @@ def test_backtest_cost_defaults_are_conservative() -> None:
 
     assert config.slippage_bps == 5.0
     assert config.spread_bps == 3.0
+
+
+def test_partial_take_profit_moves_stop_to_breakeven() -> None:
+    result = engine(
+        BacktestConfig(maker_fee=0.0, taker_fee=0.0, slippage_bps=0.0, spread_bps=0.0, enable_partial_tp=True)
+    ).run([*valid_long_setup(), candle(9, 112, 116, 105.5, 115), candle(10, 115, 116, 105, 106)])
+
+    assert len(result.trades) == 1
+    trade = result.trades[0]
+    # Half of 6.25 closes at 1R (114), then the rest stops out at the 106 entry.
+    assert trade.exit_reason == ExitReason.BREAKEVEN_STOP
+    assert trade.exit_price == 106
+    assert trade.realized_pnl == 25
+
+
+def test_same_candles_give_identical_results() -> None:
+    candles = [*valid_long_setup(), candle(9, 112, 141, 105, 140)]
+
+    first = engine().run(candles)
+    second = engine().run(list(reversed(candles)))
+
+    assert first.trades == second.trades
+    assert first.equity_curve == second.equity_curve
+    assert first.metrics == second.metrics
+
+
+def test_unfilled_order_is_cancelled_when_session_window_ends() -> None:
+    candles = [
+        *valid_long_setup(),
+        candle(9, 116, 125, 116, 120),
+        candle(60, 121, 130, 121, 128),
+    ]
+    backtest = engine()
+
+    result = backtest.run(candles)
+
+    assert result.trades == []
+    assert backtest.risk.state.open_positions == 0
+
+
+def test_metrics_include_win_and_loss_breakdown() -> None:
+    result = engine().run([*valid_long_setup(), candle(9, 112, 141, 105, 140)])
+
+    assert result.metrics["median_r"] == result.trades[0].realized_r
+    assert result.metrics["largest_win"] == 212.5
+    assert result.metrics["average_win"] == 212.5
+    assert result.metrics["largest_loss"] == 0.0
+    assert result.metrics["average_loss"] == 0.0
+
+
+def test_daily_summary_export(tmp_path: Path) -> None:
+    engine(
+        BacktestConfig(maker_fee=0.0, taker_fee=0.0, slippage_bps=0.0, spread_bps=0.0, export_dir=tmp_path)
+    ).run([*valid_long_setup(), candle(9, 112, 141, 105, 140)])
+
+    lines = (tmp_path / "daily_summary.csv").read_text(encoding="utf-8").splitlines()
+
+    assert lines[0] == "date,trades,winning_trades,losing_trades,net_pnl,net_r,fees"
+    assert lines[1].startswith("2026-01-02,1,1,0,212.5,")
