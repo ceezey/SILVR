@@ -9,26 +9,26 @@ This is the entry point for every working session. It lists each document, its v
 
 ## 1. Document Suite
 
-All suite docs were reconciled against code at commit `62037d1`, except the four marked N/A, which describe intent, not code. On 2026-10-09 the docs that describe the eight gaps fixed in the HIGH safety fixes batch 1 (merged to `dev` at `70ccaec`) were re-checked against `70ccaec`; "batch 1 items" in the Last Reconciled column means only those statements and the `file:line` citations into the eight changed source files were re-checked, and the rest still dates from `62037d1`. On 2026-10-09 the docs that describe the G-3 entrypoint batch 2 (code complete on `dev` at `099085b`) were re-checked against `099085b`; "batch 2 items" means the entrypoint, loader, runner, `build_risk_config`, deploy-file and test-count statements and their `file:line` citations. On 2026-10-09 the statements changed by the G-3 safety review fixes (`5c781fc`) were re-checked against `5c781fc`; "review-fix items" means the systemd exit 2, loader candle-duration, `bot_stopped` on a crash, run-record, `.env.example` `MODE` and test-count statements.
+All suite docs were reconciled against code at commit `62037d1`, except the four marked N/A, which describe intent, not code. On 2026-10-09 the docs that describe the eight gaps fixed in the HIGH safety fixes batch 1 (merged to `dev` at `70ccaec`) were re-checked against `70ccaec`; "batch 1 items" in the Last Reconciled column means only those statements and the `file:line` citations into the eight changed source files were re-checked, and the rest still dates from `62037d1`. On 2026-10-09 the docs that describe the G-3 entrypoint batch 2 (code complete on `dev` at `099085b`) were re-checked against `099085b`; "batch 2 items" means the entrypoint, loader, runner, `build_risk_config`, deploy-file and test-count statements and their `file:line` citations. On 2026-10-09 the statements changed by the G-3 safety review fixes (`5c781fc`) were re-checked against `5c781fc`; "review-fix items" means the systemd exit 2, loader candle-duration, `bot_stopped` on a crash, run-record, `.env.example` `MODE` and test-count statements. On 2026-10-14 the statements changed by the PRD-F2 to PRD-F5 batch (`78f8dca`, `cf8d41f`, `973cd82`, `40ea0b1`, on `feat/be-prd-f2-f5-d4g8sr`) were re-checked against `40ea0b1`; "PRD-F2 to F5 items" means the backtest evidence, kill-switch, paper and demo runtime, market-data, exit-code and test-count statements and the `file:line` citations into the 16 changed source files.
 
 | Document | File | Version | Status | Last Updated | Last Reconciled |
 |---|---|---|---|---|---|
-| Scrutiny Gate (SCRUTINY) | [scrutiny-silverbot.md](scrutiny-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items) |
+| Scrutiny Gate (SCRUTINY) | [scrutiny-silverbot.md](scrutiny-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, PRD-F2 to F5 items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items) |
 | Idea Brief (IDEA) | [idea-silverbot.md](idea-silverbot.md) | 0.1 | Draft | 2026-10-09 | N/A |
-| Validation Brief (VALIDATION) | [val-silverbot.md](val-silverbot.md) | 0.1 | Draft | 2026-10-09 | N/A |
+| Validation Brief (VALIDATION) | [val-silverbot.md](val-silverbot.md) | 0.1 | Draft | 2026-10-14 | N/A |
 | House Style & Voice (VOICE) | [voice-silverbot.md](voice-silverbot.md) | 0.1 | Draft | 2026-10-08 | N/A |
-| Business Requirements (BRD) | [brd-silverbot.md](brd-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
-| Unit Economics (UES) | [ues-silverbot.md](ues-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`, batch 1 items) |
-| Product Requirements (PRD) | [prd-silverbot.md](prd-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
+| Business Requirements (BRD) | [brd-silverbot.md](brd-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, BRD-V5, OI-8 and OI-11); 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
+| Unit Economics (UES) | [ues-silverbot.md](ues-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, market data row); 2026-10-09 (`70ccaec`, batch 1 items) |
+| Product Requirements (PRD) | [prd-silverbot.md](prd-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, PRD-F2 to F5 items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
 | Design System (DSD) | [dsd-silverbot.md](dsd-silverbot.md) | 0.1 | Draft (Silverbot brand and design system specified; mode A approved, built and reskinned per silverbot-cr-002) | 2026-10-14 | N/A |
-| System Design (SDD) | [sdd-silverbot.md](sdd-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
-| QA and Test Plan (QAD) | [qad-silverbot.md](qad-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`; `feat/operator-dashboard`, PRD-F13 items) |
-| Subagent Roster (SAD) | [sad-silverbot.md](sad-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
-| Project Build Guide (BUILD) | [build-silverbot.md](build-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
+| System Design (SDD) | [sdd-silverbot.md](sdd-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, PRD-F2 to F5 items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
+| QA and Test Plan (QAD) | [qad-silverbot.md](qad-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, PRD-F2 to F5 items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`; `feat/operator-dashboard`, PRD-F13 items) |
+| Subagent Roster (SAD) | [sad-silverbot.md](sad-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, SAD-A1 and SAD-A2 items); 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
+| Project Build Guide (BUILD) | [build-silverbot.md](build-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, D-4 and D-11 items); 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
 | Compliance & Legal Readiness Register (CLR) | [clr-silverbot.md](clr-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
-| AI Assurance Dossier (AIA) | [aia-silverbot.md](aia-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`; `099085b`, batch 2 items) |
-| Operations & Observability Runbook (OPS) | [ops-silverbot.md](ops-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`f83b3e1`, §5.6 dashboard items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
-| Build Session Log (LOG) | [log-silverbot.md](log-silverbot.md) | 0.1 | Draft (append-only) | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`; `feat/operator-dashboard`, PRD-F13 items) |
+| AI Assurance Dossier (AIA) | [aia-silverbot.md](aia-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, settings-wiring items); 2026-10-09 (`70ccaec`; `099085b`, batch 2 items) |
+| Operations & Observability Runbook (OPS) | [ops-silverbot.md](ops-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, PRD-F2 to F5 items; `f83b3e1`, §5.6 dashboard items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
+| Build Session Log (LOG) | [log-silverbot.md](log-silverbot.md) | 0.1 | Draft (append-only) | 2026-10-14 | 2026-10-14 (`40ea0b1`, PRD-F2 to F5 items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`; `feat/operator-dashboard`, PRD-F13 items) |
 
 ### Change Records
 
@@ -41,9 +41,9 @@ All suite docs were reconciled against code at commit `62037d1`, except the four
 
 | Runbook | File | Version | Status | Last Updated | Last Reconciled |
 |---|---|---|---|---|---|
-| Local Development | [runbook-local-dev.md](runbook-local-dev.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items) |
-| Backtest and Evidence | [runbook-backtest.md](runbook-backtest.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`) |
-| Demo / Testnet | [runbook-demo-testnet.md](runbook-demo-testnet.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items) |
+| Local Development | [runbook-local-dev.md](runbook-local-dev.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, PRD-F2 to F5 items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items) |
+| Backtest and Evidence | [runbook-backtest.md](runbook-backtest.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, PRD-F2 to F5 items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`) |
+| Demo / Testnet | [runbook-demo-testnet.md](runbook-demo-testnet.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`40ea0b1`, PRD-F2 to F5 items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items) |
 
 ### Audits
 
@@ -56,9 +56,9 @@ All suite docs were reconciled against code at commit `62037d1`, except the four
 | RFC ID | File | Feature | Status | Last Updated |
 |---|---|---|---|---|
 | `silverbot-rfc-001` | [rfc-silverbot-signal-engine.md](rfc-silverbot-signal-engine.md) | Signal engine (PRD-F1) | Draft | 2026-10-08 |
-| `silverbot-rfc-002` | [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) | Risk engine and kill switch (PRD-F3) | Draft | 2026-10-09 |
-| `silverbot-rfc-003` | [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) | ML filter gate (PRD-F6) | Draft | 2026-10-09 |
-| `silverbot-rfc-004` | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) | Readiness gates (PRD-F5, PRD-F8, PRD-F12) | Draft | 2026-10-09 |
+| `silverbot-rfc-002` | [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) | Risk engine and kill switch (PRD-F3) | Draft | 2026-10-14 |
+| `silverbot-rfc-003` | [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) | ML filter gate (PRD-F6) | Draft | 2026-10-14 |
+| `silverbot-rfc-004` | [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) | Readiness gates (PRD-F5, PRD-F8, PRD-F12) | Draft | 2026-10-14 |
 
 ### Root files
 
@@ -115,6 +115,7 @@ Change Records are listed in the table below and in section 1 under Change Recor
 
 | Date | Change | Reference |
 |---|---|---|
+| 2026-10-14 | PRD-F2 to PRD-F5 batch on `feat/be-prd-f2-f5-d4g8sr` from `dev` at `9677f0f` (`78f8dca` backtest evidence, `cf8d41f` kill switch, `973cd82` paper and demo runtime, `40ea0b1` host guard; 253 to 293 test functions, 304 to 356 passing tests). Backtests add walk-forward, Monte Carlo, BRD criteria and `daily_summary.csv`; the path-less kill switch is armed in memory and flattens paper exposure; paper and demo read public Binance klines with simulated fills, the risk engine built from settings with persisted state, and stale orders expiring (H-10 fixed); exit 78 is gone (exit 1 with `market_data_unavailable`). No order reaches any exchange; live stays blocked; no network run recorded. Docs reconciled: PRD, SCRUTINY, QAD (QAD-T280 to QAD-T311), SDD, RFC-002, RFC-004, OPS, the three runbooks, BUILD D-4 and D-11, SAD-A1 and SAD-A2 (and their materialized files), BRD, UES, VAL, AIA (and `MODEL_CARD.md`), RFC-003, LOG. | [prd-silverbot.md](prd-silverbot.md), [scrutiny-silverbot.md](scrutiny-silverbot.md), [qad-silverbot.md](qad-silverbot.md), [log-silverbot.md](log-silverbot.md) |
 | 2026-10-14 | Branch flow added to BUILD section 5.1 (and `AGENTS.md` regenerated): BE and FE branches from `dev`, merge to `dev`, QA on `dev`, then a PR to `main` with owner sign-off. Docs only. | [build-silverbot.md](build-silverbot.md) |
 | 2026-10-14 | `silverbot-cr-002` (dashboard reskin and SAD-B1 update) approved and built on `dev` (commits `af3e746` to `c9b410f`; 226 to 253 test functions, 272 to 304 passing tests). The dashboard shows the Silverbot header and the Sterling tokens, the evidence ladder and the Next strip, a 24-hour readiness stale rule, a degraded line and a branded 404, and serves vendored IBM Plex Mono from its own server under `font-src 'self'`. Docs reconciled: PRD AC-23.1 reworded and AC-23.8 to AC-23.13 added, QAD rows QAD-T253 to QAD-T279, DSD and OPS §5.6. | [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md), [prd-silverbot.md](prd-silverbot.md), [qad-silverbot.md](qad-silverbot.md), [dsd-silverbot.md](dsd-silverbot.md), [ops-silverbot.md](ops-silverbot.md) |
 | 2026-10-14 | Silverbot brand and Sterling design system specified in DSD sections 0 to 8; `silverbot-cr-002` (dashboard reskin and SAD-B1 update) proposed, not built. No bot code changed. | [dsd-silverbot.md](dsd-silverbot.md), [cr-silverbot-dashboard-reskin.md](cr-silverbot-dashboard-reskin.md), [brand spec](superpowers/specs/2026-10-14-silverbot-brand-design.md), [design-system spec](superpowers/specs/2026-10-14-silverbot-design-system-design.md), [plan](superpowers/plans/2026-10-14-silverbot-brand-design-system.md) |
@@ -129,26 +130,27 @@ Change Records are listed in the table below and in section 1 under Change Recor
 
 ## 3. Incident Log
 
-No incidents recorded. The bot has never run a paper, demo or live session, so there is nothing to log. Incident procedure is in [ops-silverbot.md](ops-silverbot.md) section 4.
+No incidents recorded. Since `973cd82` paper and demo sessions can run, but none against the real network has been recorded, and no live session can run, so there is nothing to log. Incident procedure is in [ops-silverbot.md](ops-silverbot.md) section 4.
 
 ## 4. Health Check
 
 - [~] All docs are Draft at 0.1; no doc is Locked yet, so the suite is reviewed but not frozen.
-- [ ] Evidence reports are empty: `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are 0 bytes (G-1). Since `099085b` the backtest CLI can write the first two ([runbook-backtest.md](runbook-backtest.md)); the owner has not run it on real data. `reports/` is git-ignored. No performance claim is made anywhere in the suite.
+- [ ] Evidence reports are empty: `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are 0 bytes (G-1). Since `099085b` the backtest CLI can write the first two ([runbook-backtest.md](runbook-backtest.md)) and since `973cd82` a paper or demo session writes the third; the owner has run neither on real data. `reports/` is git-ignored. No performance claim is made anywhere in the suite.
 - [x] Materialized artifacts match their sources: `python tools/materialize_docs.py --check` reports no changes, and `tests/test_materialize_docs.py` runs it in the suite. It checks generation only, not docs-vs-code semantics (see the process finding in [audit-docs-drift.md](audit-docs-drift.md)).
 - [x] The tables in section 1 list every file under `docs/` (27 files including this index).
 - [x] The SAD roster matches `.claude/agents/` (four reviewers, SAD-A1..A4, and one UI builder, SAD-B1).
 - [ ] Phase 9 live-readiness evidence is open: no backtest, out-of-sample, paper, kill-switch or Telegram evidence exists (see [prd-silverbot.md](prd-silverbot.md) section 9).
 - [ ] Code hazards still open; each is in [audit-docs-drift.md](audit-docs-drift.md) and [scrutiny-silverbot.md](scrutiny-silverbot.md):
-  - Partial: the entrypoint stub (G-3). Since `099085b` backtest mode runs from the CLI, and paper and demo exit 78 without a restart loop (H-4 fixed, `f6bc017`). No paper or demo runtime exists (G-13, G-17), so the batch 1 risk fixes reach backtests only (settings caps and a simulated per-run kill switch) and no paper bot.
-  - Settings risk limits reach CLI backtests through `build_risk_config`; `build_risk_engine` has no runtime caller; daily-loss and leverage bounds are checked in demo mode only (D-11, H-5, G-5 partial).
-  - The real kill switch is armed only through `build_risk_config` or `build_risk_engine`, which no paper runtime calls, and does not close positions; reset is deleting the file; backtests use a simulated switch per run (D-12, H-9, G-6 partial).
-  - Risk state persists only for an engine built with SQLite storage, and `open_positions` can outlive a paper position after a crash (H-11, G-7 partial).
+  - Partial: runtime and market data (G-3, G-13). Backtest mode runs from the CLI (`099085b`); paper and demo run on public Binance klines with simulated fills (`973cd82`), but no run against the real network is recorded, there is no testnet order path (G-17), and lost market data exits 1, which systemd restarts every 10 s.
+  - Settings risk limits reach CLI backtests through `build_risk_config` and the paper and demo runtime through `build_risk_engine` (`973cd82`); daily-loss and leverage bounds are checked in demo mode only (D-11, H-5, G-5 partial).
+  - The kill switch reads its file only with `KILL_SWITCH_ENABLED=true` (demo forces it, paper defaults to off) and is otherwise armed in memory only (`cf8d41f`); it flattens paper exposure but does not stop the process; reset is deleting the file; backtests use a simulated switch per run (D-12, H-9, G-6 partial).
+  - Risk state persists for the paper and demo runtime (`973cd82`), and `open_positions` can outlive a paper position after a crash or a restart (H-11, G-7 partial).
   - Readiness is consulted by nothing, and a live-ready result needs settings the app refuses to load (D-10, H-3).
   - Model and registry pickles are loaded without trust checks (H-8).
 - [x] Fixed in the HIGH safety fixes batch 1 (2026-10-09, `70ccaec`): NaN model probability approval (H-1, G-8, `8e66054`); testnet URL substring match (D-13, G-10, `0a76564`); `.env.example` failing to load (H-14, G-4, `c6d909d`); 0 bps backtest cost defaults (H-7, G-11, `59ed6d5`); 0-byte reports passing readiness (H-2, G-2, `88220e6`); 5% `RiskConfig` per-trade ceiling (H-5, `5e4acc5`); kill switch existence-only with no automatic trip (H-9, `08c81ad`); risk state lost on restart for a store-backed engine (H-11, `2d7f713`).
 - [x] Fixed in the G-3 entrypoint batch 2 (2026-10-09, `099085b`): supervisor restart loop (H-4, `f6bc017`); backtest runtime from the CLI (G-3 partial); chronological out-of-sample report (G-12 partial, `f84557e`); ML settings reach backtests (G-9 partial, `f84557e`).
 - [x] Fixed in the G-3 safety review (2026-10-09, `5c781fc`): a `.env` copied from `.env.example` no longer overrides `TRADING_MODE`, because `MODE` ships blank (G-24 partial; a non-blank `MODE` still overrides, D-42; [runbook-backtest.md](runbook-backtest.md) step 5); systemd stops on exit 2 as well as 78, and a crash (exit 1) still restarts (H-4); the loader rejects a candle whose duration differs from `TIMEFRAME`; `bot_stopped` is audited when a mode run raises; the run record reads costs and risk from the engine's config.
+- [x] Fixed in the PRD-F2 to PRD-F5 batch (2026-10-14, `40ea0b1`): stale pending orders holding risk capacity (H-10, `973cd82`); paper and demo exiting 78 with no runtime (G-3 and G-13 partial, `973cd82`); path-less kill switch inert and no paper flatten (G-6 partial, `cf8d41f`); ML settings reach paper and demo (D-4, G-9 partial, `973cd82`); walk-forward, Monte Carlo and BRD criteria in the out-of-sample report (G-12 partial, `78f8dca`); adapter limited to the exact Binance Futures hosts with redirects refused (`40ea0b1`).
 
 ## 5. Notes
 

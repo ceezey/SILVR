@@ -4,29 +4,29 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-09 against code at commit `099085b` (G-3 entrypoint batch 2); steps 4 to 6 and the Verify rows marked `5c781fc` re-run 2026-10-09 against `5c781fc` (G-3 review fixes)
+**Last updated:** 2026-10-14
+**Last reconciled:** 2026-10-09 against code at commit `099085b` (G-3 entrypoint batch 2); steps 4 to 6 and the Verify rows marked `5c781fc` re-run 2026-10-09 against `5c781fc` (G-3 review fixes); the opening notes and steps 6 and 7 re-checked 2026-10-14 against `40ea0b1` (PRD-F2 evidence `78f8dca`, paper and demo runtime `973cd82`); the Verify table was not re-run
 
-This runbook downloads Binance USD-M futures klines, runs the backtest from the command line, and reads the six reports it writes. It absorbs the "outputs" parts of the old `BACKTESTING.md`. Live trading is `Planned, blocked`; nothing here enables it or places an order.
+This runbook downloads Binance USD-M futures klines, runs the backtest from the command line, and reads the seven reports it writes. It absorbs the "outputs" parts of the old `BACKTESTING.md`. Live trading is `Planned, blocked`; nothing here enables it or places an order.
 
 **Read this first.**
 
-- The command line runs one backtest per call on local CSV files (`main.py:94-112`, `099085b`). The code downloads nothing (G-13): you fetch the files from data.binance.vision by hand (steps 1 to 4).
-- Each run backtests the full period, then a chronological 60/20/20 split (training, validation, final test), each segment in a fresh engine with fresh risk state; nothing is tuned (`backtest/runner.py:60-124`). There is no walk-forward, Monte Carlo, sensitivity run or pass or fail verdict (G-12).
-- Strategy settings are the code defaults (`SilverBulletStrategyEngine()`, `backtest/engine.py:39`; G-18). Costs and balance are the `BacktestConfig` defaults: maker fee 0.0002, taker fee 0.0005, slippage 5.0 bps, spread 3.0 bps, balance 10000 (`backtest/models.py:30-35`). Risk caps and the `ML_*` settings come from your configuration (`backtest/runner.py:48-55`).
+- The command line runs one backtest per call on local CSV files (`main.py:155-173`, `099085b`). The code downloads nothing (G-13): you fetch the files from data.binance.vision by hand (steps 1 to 4).
+- Each run backtests the full period, then a chronological 60/20/20 split (training, validation, final test), each segment in a fresh engine with fresh risk state; nothing is tuned (`backtest/runner.py:70-156`). Since `78f8dca` it also runs four walk-forward windows over the training and validation span only, a Monte Carlo resampling with replacement of the full-period trade R values (1000 runs, seed 7) and a criteria verdict against the BRD thresholds (`backtest/runner.py:25-27,93-128`, `backtest/validation.py:51-125`, `backtest/criteria.py:22-80`). There is no sensitivity run, and the drawdown and minimum-trade checks stay `Owner input required` until the owner sets them (OI-3, OI-9; G-12).
+- Strategy settings are the code defaults (`SilverBulletStrategyEngine()`, `backtest/engine.py:46`; G-18). Costs and balance are the `BacktestConfig` defaults: maker fee 0.0002, taker fee 0.0005, slippage 5.0 bps, spread 3.0 bps, balance 10000 (`backtest/models.py:31-36`). Risk caps and the `ML_*` settings come from your configuration (`backtest/runner.py:52-54`).
 - The reports are not committed. `reports/` and `data/` are git-ignored (`.gitignore:5,7`). No doc in this repository may quote a number from these reports as a performance claim; a report is evidence only for the owner's gate review (QAD §6.1).
-- Paper and demo modes exit 78 (`main.py:89-91`); only backtest mode runs.
+- Since `973cd82` paper and demo modes run a paper session on public klines with simulated fills ([runbook-demo-testnet.md](runbook-demo-testnet.md), [ops-silverbot.md](ops-silverbot.md) §0); this runbook covers backtest mode only.
 
 Related documents: [prd-silverbot.md](prd-silverbot.md) (PRD-F2), [sdd-silverbot.md](sdd-silverbot.md) (sections 3.3 and 4.6), [rfc-silverbot-risk-kill-switch.md](rfc-silverbot-risk-kill-switch.md) (simulated kill switch), [rfc-silverbot-readiness-gates.md](rfc-silverbot-readiness-gates.md) (readiness checkers), [runbook-local-dev.md](runbook-local-dev.md) (setup), [ops-silverbot.md](ops-silverbot.md) §5.5 (the same run in the container), [scrutiny-silverbot.md](scrutiny-silverbot.md) (G-1, G-12, G-13).
 
 ## Kill switch in backtests (simulated per run)
 
-A backtest never uses the real kill switch at `KILL_SWITCH_PATH`. Every engine run (the full period and each of the three segments) gets its own `KILL_SWITCH` file inside a fresh temporary directory (`backtest/runner.py:127-144`; decision ED-5 in the [G-3 entrypoint spec](superpowers/specs/2026-10-09-g3-entrypoint-design.md)).
+A backtest never uses the real kill switch at `KILL_SWITCH_PATH`. Every engine run (the full period and each of the three segments) gets its own `KILL_SWITCH` file inside a fresh temporary directory (`backtest/runner.py:159-176`; decision ED-5 in the [G-3 entrypoint spec](superpowers/specs/2026-10-09-g3-entrypoint-design.md)).
 
-- It is always on, even with `KILL_SWITCH_ENABLED=false` (`backtest/runner.py:49`).
+- It is always on, even with `KILL_SWITCH_ENABLED=false` (`backtest/runner.py:53`).
 - The risk engine trips it as it would the real one: on the max-daily-loss or max-consecutive-losses limit (`risk/engine.py:83,86,129`). After a trip every later entry in that simulated run is rejected with `Kill switch is active`.
 - A real kill file neither blocks a backtest nor is modified by one (`tests/test_backtest_runner.py:107`).
-- The trip is reported, then the temporary directory is deleted: `backtest_run.json` has `kill_switch: {mode: simulated_per_run, tripped, reason, tripped_at}` for the full period, and each segment of `out_of_sample_validation_report.json` has `kill_switch: {tripped, reason, tripped_at}` (`backtest/runner.py:116,145-169`).
+- The trip is reported, then the temporary directory is deleted: `backtest_run.json` has `kill_switch: {mode: simulated_per_run, tripped, reason, tripped_at}` for the full period, and each segment of `out_of_sample_validation_report.json` has `kill_switch: {tripped, reason, tripped_at}` (`backtest/runner.py:148,177-205`).
 
 ## Steps
 
@@ -84,7 +84,7 @@ Run every command from the repository root with the virtual environment active (
    python -m silver_bot --candles data/candles; echo $?
    ```
 
-   `--candles` may repeat and takes a file or a directory; `--output-dir DIR` writes the reports somewhere other than `reports/`. Expected: one log line `wrote <name>: reports/<file>` for each of six reports, then `backtest complete: N candles, G gaps`, then `0`. Other exit codes:
+   `--candles` may repeat and takes a file or a directory; `--output-dir DIR` writes the reports somewhere other than `reports/`. Expected: one log line `wrote <name>: reports/<file>` for each of seven reports, then `backtest complete: N candles, G gaps`, then `0`. Other exit codes:
 
    | Exit | Log line | Fix |
    |---|---|---|
@@ -94,22 +94,25 @@ Run every command from the repository root with the virtual environment active (
    | 2 | `candle data rejected: Candle spacing <step> before <time> is not a multiple of TIMEFRAME=<tf>` | Candles sit off the `TIMEFRAME` grid, usually files of different intervals in one folder. Missing intervals are allowed: they load and are counted in `inputs.gaps` |
    | 2 | `configuration rejected: <reason>` | Fix `.env` (step 5) |
    | 2 | `--candles only applies to backtest mode` | The mode is not backtest; check `MODE` and `TRADING_MODE` |
-   | 78 | `paper mode not available yet: needs market data (G-13)` | The mode is paper or demo; set backtest mode (step 5) |
+   | 2 | `--max-candles only applies to paper and demo modes` | Drop `--max-candles`; it is for paper and demo smoke runs |
 
-   The run also writes `data/silver_bot.sqlite3` and appends `bot_started` and `bot_stopped` (with `exit_code`) to `logs/audit.jsonl`. Runtime grows roughly quadratically with the candle count: the engine passes the growing candle prefix to the strategy on every bar (`backtest/engine.py:106`), and on each in-session bar `detect_swing_points` rescans that whole history (`strategy/structure.py:18`; G-33). Measured on the dev machine on 2026-10-09 with synthetic 1m candles, one engine pass took 0.27 s for 1,000 candles, 0.52 s for 2,000 and 1.78 s for 4,000; a run makes four passes (the full period and three out-of-sample segments). These are timings, not strategy results. Start with one month. To run the same thing in the container, see [ops-silverbot.md](ops-silverbot.md) §5.5.
+   If the mode is paper or demo instead, the command does not run a backtest: `--candles` makes it exit 2 as above, and without `--candles` it starts a paper session that runs until stopped (Ctrl+C exits 0). Exit 78 no longer exists (`973cd82`).
 
-7. **Read the six reports** in `reports/` (or `--output-dir`):
+   The run also writes `data/silver_bot.sqlite3` and appends `bot_started` and `bot_stopped` (with `exit_code`) to `logs/audit.jsonl`. Runtime grows roughly quadratically with the candle count: the engine passes the growing candle prefix to the strategy on every bar (`backtest/engine.py:122`), and on each in-session bar `detect_swing_points` rescans that whole history (`strategy/structure.py:18`; G-33). Measured on the dev machine on 2026-10-09 with synthetic 1m candles, one engine pass took 0.27 s for 1,000 candles, 0.52 s for 2,000 and 1.78 s for 4,000; a run makes eight passes (the full period, three out-of-sample segments and, since `78f8dca`, four walk-forward windows over the first 80 percent). These are timings, not strategy results. Start with one month. To run the same thing in the container, see [ops-silverbot.md](ops-silverbot.md) §5.5.
+
+7. **Read the seven reports** in `reports/` (or `--output-dir`):
 
    | File | Content |
    |------|---------|
-   | `backtest_report.json` | Full-period metrics dictionary only: trade counts, win rate, profit factor, expectancy, average R, drawdown, streaks, fees, net profit, return, per-session performance |
+   | `backtest_report.json` | Full-period metrics dictionary only: trade counts, win rate, profit factor, expectancy, average and median R, average and largest win and loss (`78f8dca`), drawdown, streaks, fees, net profit, return, per-session performance |
    | `trades.csv` | One row per closed trade: ids, direction, entry and exit times and prices, stop, target, size, `realized_pnl`, `realized_r`, `fees`, `slippage`, excursions, `exit_reason`, `setup_quality_score`, notes, ML fields. A zero-trade run writes a 0-byte file |
    | `equity_curve.csv` | `timestamp,equity,realized_pnl,drawdown` per candle (realized equity only; drawdown in currency) |
    | `rejected_signals.csv` | Every NO_TRADE, ML rejection and risk rejection with its reason, including `Risk rejected: Kill switch is active` after a simulated trip |
-   | `out_of_sample_validation_report.json` | `method` `chronological_split`, `fractions` 0.6 / 0.2 / 0.2, `parameters_tuned` false, and `segments.training`, `segments.validation`, `segments.final_test`, each with `candles`, `start`, `end`, `metrics` and `kill_switch`. An empty segment has 0 candles and nulls |
+   | `daily_summary.csv` | Since `78f8dca`: `date,trades,winning_trades,losing_trades,net_pnl,net_r,fees`, one row per UTC exit date (`backtest/reporting.py:40-57`) |
+   | `out_of_sample_validation_report.json` | `method` `chronological_split`, `fractions` 0.6 / 0.2 / 0.2, `parameters_tuned` false, and `segments.training`, `segments.validation`, `segments.final_test`, each with `candles`, `start`, `end`, `metrics`, `kill_switch` and `criteria`. An empty segment has 0 candles and nulls. Since `78f8dca` also `walk_forward` (`span` `training_and_validation`, four `windows` shaped like segments), `monte_carlo` (`source` `full_period_trades`, runs, seed, p5/p50/p95 of final R and max drawdown R, `probability_final_r_not_positive`) and `criteria` (`verdict` `pass`, `fail` or `pass_pending_owner_input`, with `full_period` and `final_test` checks) |
    | `backtest_run.json` | The run record: `inputs.files` and `inputs.gaps` from the loader, `symbol`, `timeframe`, `candles`, `first_open_time`, `last_open_time`, `slippage_bps`, `spread_bps`, `maker_fee`, `taker_fee`, `ml_filter_enabled`, `risk_per_trade`, `kill_switch` and `package_version` |
 
-   Check, in this order: `backtest_run.json` lists the files you meant and `inputs.gaps` is 0 (a gap is a missing interval; the loader counts it and fills nothing); the cost fields are non-zero (BRD-M3); `kill_switch.tripped` in the run record and in each segment (if true, the rest of that run after `tripped_at` took no trade, so read its metrics with that in mind); `trades.csv` has rows. Discipline: if you change strategy code or settings between runs, choose them on the training and validation segments only and look at `final_test` once at the end; no code enforces this (D-33).
+   Check, in this order: `backtest_run.json` lists the files you meant and `inputs.gaps` is 0 (a gap is a missing interval; the loader counts it and fills nothing); the cost fields are non-zero (BRD-M3); `kill_switch.tripped` in the run record and in each segment (if true, the rest of that run after `tripped_at` took no trade, so read its metrics with that in mind); `trades.csv` has rows; `criteria.verdict` and which checks report `Owner input required`. A `pass` or `pass_pending_owner_input` verdict is not a performance claim and is not a go-live signal. Discipline: if you change strategy code or settings between runs, choose them on the training and validation segments only and look at `final_test` once at the end; no code enforces this (D-33).
 
 8. **Run the live readiness checker on the reports** (it reads only process environment, and its defaults are `reports/backtest_report.json` and `reports/out_of_sample_validation_report.json`):
 
@@ -127,19 +130,19 @@ Run on 2026-10-09 at `099085b` (rows marked `5c781fc` re-run at that commit) wit
 |-------|---------|----------|
 | Backtest | `TRADING_MODE=backtest PAPER_TRADING=false python -m silver_bot --candles data/candles` | six `wrote` lines, `backtest complete: 120 candles, 0 gaps`, exit 0; six files in `reports/`; `backtest_run.json` `kill_switch` is `{"mode": "simulated_per_run", "reason": null, "tripped": false, "tripped_at": null}` |
 | No `--candles` | same environment, no flag | `backtest mode needs --candles`, exit 2 |
-| Paper | default environment | `paper mode not available yet: needs market data (G-13)`, exit 78 |
+| Paper | default environment | Observed at `099085b`: `paper mode not available yet: needs market data (G-13)`, exit 78. Since `973cd82` this starts a paper session instead; not re-run here |
 | Paper with `--candles` | default environment, `--candles data/candles` | `--candles only applies to backtest mode`, exit 2 |
 | Live flag | `LIVE_TRADING=true python -m silver_bot` | `configuration rejected: LIVE_TRADING=true is rejected in Phase 1`, exit 2 |
 | Copied `.env.example` (`5c781fc`) | `cp .env.example .env`, process `TRADING_MODE=backtest PAPER_TRADING=false` | six `wrote` lines, `backtest complete: 120 candles, 0 gaps`, exit 0; with `MODE=paper` in `.env` the same command logs `configuration rejected: PAPER_TRADING must be true when TRADING_MODE=paper` and exits 2 |
 | 5m file as `1m` (`5c781fc`) | a 3-row 5m file with a header, default `TIMEFRAME=1m` | `candle data rejected: five.csv:2: candle duration 0:05:00 does not match TIMEFRAME=1m`, exit 2; with `TIMEFRAME=5m` six `wrote` lines and exit 0 |
 | Download | `curl -fLO` of `BTCUSDT-1m-2026-01.zip` and its `.CHECKSUM` | both HTTP 200; `sha256sum -c` prints `OK`; the CSV starts with the header `open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore` and millisecond timestamps |
 
-Done means: step 6 exits 0, the six files exist, `backtest_run.json` lists the intended files, and nothing from `reports/` is committed or quoted. Live trading stays blocked whatever step 8 prints.
+Done means: step 6 exits 0, the seven files exist, `backtest_run.json` lists the intended files, and nothing from `reports/` is committed or quoted. Live trading stays blocked whatever step 8 prints.
 
 ## Self-Check
 
 - [x] Every command except the PowerShell variants was executed against the code at `099085b` in a scratch folder; nothing was written to the repository `reports/` directory.
-- [x] The absence of a network download (G-13), walk-forward and pass or fail criteria (G-12) is stated before the steps.
+- [x] The absence of a network download (G-13) and of a sensitivity run, and the walk-forward, Monte Carlo and criteria verdict added in `78f8dca` with its owner-input checks (G-12), are stated before the steps.
 - [x] The simulated per-run kill switch and where its trips are reported are stated (ED-5).
 - [x] The reports are git-ignored and no performance number appears in this runbook.
 - [x] The readiness checker's report checks (non-empty JSON object only, no metrics) are stated beside the command that uses it.

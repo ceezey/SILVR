@@ -6,8 +6,9 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
+from silver_bot.data.csv_loader import timeframe_interval
 from silver_bot.exchange import ExchangeAdapter
 from silver_bot.models import Candle
 
@@ -59,6 +60,7 @@ class ReconnectingMarketDataStream(MarketDataStream):
         while attempts <= self._policy.max_reconnects:
             try:
                 async for candle in self._stream_factory().candles():
+                    attempts = 0  # a delivered candle means the connection recovered
                     yield candle
                 return
             except ConnectionError:
@@ -70,11 +72,12 @@ class ReconnectingMarketDataStream(MarketDataStream):
 
 
 class BinancePollingMarketDataStream(MarketDataStream):
-    """Polling-based Binance Futures candle stream skeleton.
+    """Poll the exchange klines endpoint and yield each closed candle once.
 
-    The stream uses the exchange adapter's OHLCV fetch method. The current
-    Binance adapter remains non-networked until an explicit market-data phase
-    implements real fetching.
+    Only candles whose `close_time` has passed are yielded (a forming candle is
+    never used), in time order. The last yielded open time lives on the
+    instance, so a reconnecting wrapper that reuses this instance resumes after
+    it instead of replaying, and catches up on candles missed while down.
     """
 
     def __init__(
@@ -83,30 +86,37 @@ class BinancePollingMarketDataStream(MarketDataStream):
         *,
         symbol: str,
         timeframe: str,
-        poll_interval_seconds: float = 60.0,
-        limit: int = 2,
+        poll_interval_seconds: float = 10.0,
+        limit: int = 1000,
+        after: datetime | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.exchange = exchange
         self.symbol = symbol
         self.timeframe = timeframe
+        self.interval = timeframe_interval(timeframe)
         self.poll_interval_seconds = poll_interval_seconds
         self.limit = limit
+        self.after = after
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     async def candles(self) -> AsyncIterator[Candle]:
-        seen_open_times: set[datetime] = set()
         while True:
-            end = datetime.now(timezone.utc)
-            start = end - timedelta(minutes=max(self.limit, 2))
-            fetched = await self.exchange.fetch_ohlcv(
-                symbol=self.symbol,
-                timeframe=self.timeframe,
-                start=start,
-                end=end,
-                limit=self.limit,
-            )
-            for candle in fetched:
-                if candle.open_time in seen_open_times:
-                    continue
-                seen_open_times.add(candle.open_time)
-                yield candle
+            end = self._clock()
+            start = self.after + self.interval if self.after is not None else end - self.interval * self.limit
+            if start < end:
+                fetched = await self.exchange.fetch_ohlcv(
+                    symbol=self.symbol,
+                    timeframe=self.timeframe,
+                    start=start,
+                    end=end,
+                    limit=self.limit,
+                )
+                for candle in sorted(fetched, key=lambda item: item.open_time):
+                    if candle.close_time is None or candle.close_time > end:
+                        continue
+                    if self.after is not None and candle.open_time <= self.after:
+                        continue
+                    self.after = candle.open_time
+                    yield candle
             await asyncio.sleep(self.poll_interval_seconds)

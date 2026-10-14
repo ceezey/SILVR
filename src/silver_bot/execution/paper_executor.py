@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from silver_bot.backtest.models import ExitReason, TradeRecord
 from silver_bot.execution.models import (
     PaperEventType,
@@ -44,8 +46,13 @@ class PaperExecutionEngine:
         risk_decision: RiskDecision,
         ml_probability: float | None = None,
         ml_decision: str | None = None,
+        expires_at: datetime | None = None,
     ) -> PaperLifecycleEvent:
-        """Create a simulated pending limit order."""
+        """Create a simulated pending limit order.
+
+        An order still unfilled on a candle opening at or after `expires_at` is
+        cancelled (the Silver Bullet window it came from has ended).
+        """
 
         if not risk_decision.approved:
             raise ValueError("risk_decision must be approved before paper order submission")
@@ -57,6 +64,7 @@ class PaperExecutionEngine:
             created_at=signal.generated_at,
             ml_probability=ml_probability,
             ml_decision=ml_decision,
+            expires_at=expires_at,
         )
         return PaperLifecycleEvent(
             event_type=PaperEventType.PAPER_ORDER_CREATED,
@@ -82,6 +90,14 @@ class PaperExecutionEngine:
                 events.append(closed)
                 return events
 
+        if (
+            self.pending_order is not None
+            and self.pending_order.expires_at is not None
+            and candle.open_time >= self.pending_order.expires_at
+        ):
+            events.append(self._cancel_pending(candle, reason="session window ended unfilled"))
+            return events
+
         if self.pending_order is not None and self.open_position is None:
             opened = self._try_open_position(candle)
             if opened is not None:
@@ -106,6 +122,43 @@ class PaperExecutionEngine:
                     self.open_position = None
                     events.append(closed)
         return events
+
+    def flatten(self, candle: Candle, *, reason: str) -> list[PaperLifecycleEvent]:
+        """Cancel any pending order and close any open position at the candle close.
+
+        Used when the kill switch is active: no simulated exposure is left open.
+        """
+
+        events: list[PaperLifecycleEvent] = []
+        if self.pending_order is not None:
+            events.append(self._cancel_pending(candle, reason=reason))
+        if self.open_position is not None:
+            position = self.open_position
+            trade = self._close_position(position, candle, raw_exit=candle.close, reason=ExitReason.KILL_SWITCH)
+            self.open_position = None
+            events.append(
+                PaperLifecycleEvent(
+                    event_type=PaperEventType.PAPER_TRADE_CLOSED,
+                    symbol=trade.symbol,
+                    timestamp=trade.exit_time,
+                    message=f"Paper trade closed: {reason}",
+                    trade=trade,
+                    context={"exit_reason": ExitReason.KILL_SWITCH.value, "realized_pnl": trade.realized_pnl},
+                )
+            )
+        return events
+
+    def _cancel_pending(self, candle: Candle, *, reason: str) -> PaperLifecycleEvent:
+        assert self.pending_order is not None
+        signal = self.pending_order.signal
+        self.pending_order = None
+        return PaperLifecycleEvent(
+            event_type=PaperEventType.PAPER_ORDER_CANCELLED,
+            symbol=signal.symbol,
+            timestamp=candle.close_time or candle.open_time,
+            message=f"Paper limit order cancelled: {reason}",
+            context={"direction": signal.direction.value, "entry_price": signal.entry_price, "reason": reason},
+        )
 
     def _try_open_position(self, candle: Candle) -> PaperPosition | None:
         assert self.pending_order is not None

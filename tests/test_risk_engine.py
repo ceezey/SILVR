@@ -216,11 +216,28 @@ def test_kill_switch_second_trip_keeps_first_reason(tmp_path) -> None:
     assert payload["reason"] == "first"
 
 
-def test_kill_switch_without_path_trip_is_noop() -> None:
+def test_kill_switch_without_path_is_armed_in_memory() -> None:
     switch = KillSwitch(None)
-    switch.trip("anything")
-
     assert switch.is_active() is False
+
+    switch.trip("first")
+    switch.trip("second")
+
+    assert switch.is_active() is True
+    assert switch.tripped_reason == "first"
+
+
+def test_default_engine_kill_switch_is_armed() -> None:
+    engine = RiskManagementEngine()
+    day = date(2026, 1, 2)
+    for _ in range(3):
+        engine.reserve_trade(day)
+        engine.release_trade(realized_pnl=-10.0, day=day)
+
+    decision = engine.evaluate(request())
+
+    assert decision.approved is False
+    assert decision.reason == "Kill switch is active"
 
 
 def test_consecutive_losses_trip_kill_switch(tmp_path) -> None:

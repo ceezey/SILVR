@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
+from datetime import datetime
 
 from silver_bot.backtest.metrics import calculate_metrics
 from silver_bot.backtest.models import (
@@ -22,6 +23,12 @@ from silver_bot.models import Candle, SignalDirection
 from silver_bot.monitoring import StructuredAuditLogger
 from silver_bot.risk import RiskManagementEngine, RiskRequest
 from silver_bot.strategy import SilverBulletStrategyEngine
+
+
+def _expired(expires_at: datetime | None, candle: Candle) -> bool:
+    """Return true once a candle opens at or after a pending order's expiry."""
+
+    return expires_at is not None and candle.open_time >= expires_at
 
 
 class BacktestEngine:
@@ -74,6 +81,15 @@ class BacktestEngine:
                     open_position = None
                     pending = None
                     activity_this_candle = True
+
+            if open_position is None and pending is not None and _expired(pending.expires_at, candle):
+                self.risk.release_trade(realized_pnl=0.0, day=candle.open_time.date())
+                self.audit.log(
+                    "order_cancelled",
+                    "Backtest pending order cancelled: session window ended unfilled",
+                    context={"symbol": pending.signal.symbol, "expires_at": pending.expires_at},
+                )
+                pending = None
 
             if open_position is None and pending is not None:
                 filled = self._try_fill(pending, candle)
@@ -201,6 +217,7 @@ class BacktestEngine:
                 risk_decision=risk_decision,
                 ml_probability=ml_decision.probability,
                 ml_decision=ml_decision.decision.value,
+                expires_at=self.strategy.sessions.evaluate(candle.open_time).end_at,
             )
             self.risk.reserve_trade(signal.generated_at.date())
             self.audit.log(

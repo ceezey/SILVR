@@ -1,10 +1,13 @@
 import json
+import urllib.error
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from silver_bot.main import EXIT_MODE_UNAVAILABLE, main
+from silver_bot.exchange import binance_futures
+from silver_bot.main import main
 from silver_bot.readiness import evaluate_live_readiness
 
 MODE_KEYS = ("MODE", "TRADING_MODE", "PAPER_TRADING", "DEMO_TRADING", "LIVE_TRADING", "KILL_SWITCH_ENABLED")
@@ -39,29 +42,103 @@ def audit_events(root: Path) -> list[dict]:
     return [json.loads(line) for line in lines]
 
 
-def test_paper_mode_exits_78_and_audits(workdir: Path) -> None:
-    assert main([]) == EXIT_MODE_UNAVAILABLE == 78
+DEMO_ENV = {
+    "MODE": "demo",
+    "DEMO_TRADING": "true",
+    "PAPER_TRADING": "false",
+    "BINANCE_TESTNET": "true",
+    "BINANCE_API_KEY": "testnet-key",
+    "BINANCE_API_SECRET": "testnet-secret",
+    "KILL_SWITCH_ENABLED": "true",
+    "KILL_SWITCH_PATH": "KILL_SWITCH",
+}
 
+
+@pytest.fixture
+def klines(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Serve flat 1m klines around now; the first (warm-up) call withholds the two newest closed ones.
+
+    The newest kline is still forming, as on Binance. Returns the requested URLs.
+    """
+
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
+    forming_ms = now_ms - now_ms % 60_000
+    opens = [forming_ms - minutes * 60_000 for minutes in range(10, -1, -1)]
+    urls: list[str] = []
+
+    def http_get(url: str) -> bytes:
+        urls.append(url)
+        query = parse_qs(urlsplit(url).query)
+        start, end = int(query["startTime"][0]), int(query["endTime"][0])
+        cutoff = forming_ms - 3 * 60_000 if len(urls) == 1 else forming_ms
+        rows = [
+            [open_ms, "100", "101", "99", "100", "5", open_ms + 59_999, "0", 0, "0", "0", "0"]
+            for open_ms in opens
+            if start <= open_ms <= min(end, cutoff)
+        ]
+        return json.dumps(rows).encode()
+
+    monkeypatch.setattr(binance_futures, "_urllib_get", http_get)
+    return urls
+
+
+def test_paper_mode_runs_on_market_data_and_writes_report(workdir: Path, klines: list[str]) -> None:
+    assert main(["--max-candles", "2"]) == 0
+
+    assert {urlsplit(url).hostname for url in klines} == {"fapi.binance.com"}
+    assert all("signature" not in url and "key" not in url.lower() for url in klines)
+    report = json.loads((workdir / "reports" / "paper_trading_report.json").read_text(encoding="utf-8"))
+    assert report["mode"] == "paper"
+    assert report["fills"] == "simulated"
+    assert report["candles_processed"] == 2
+    readiness = evaluate_live_readiness(project_root=workdir, environ={})
+    assert "paper_trading_report_exists" not in {item.name for item in readiness.failed_checks}
     events = audit_events(workdir)
-    assert [event["event_type"] for event in events] == ["bot_started", "mode_unavailable", "bot_stopped"]
-    assert "G-13" in events[1]["message"]
-    assert events[2]["context"]["exit_code"] == 78
+    assert events[0]["event_type"] == "bot_started"
+    assert events[-1]["event_type"] == "bot_stopped"
+    assert events[-1]["context"]["exit_code"] == 0
 
 
-def test_demo_mode_exits_78(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    for key, value in {
-        "MODE": "demo",
-        "DEMO_TRADING": "true",
-        "PAPER_TRADING": "false",
-        "BINANCE_TESTNET": "true",
-        "BINANCE_API_KEY": "testnet-key",
-        "BINANCE_API_SECRET": "testnet-secret",
-        "KILL_SWITCH_ENABLED": "true",
-        "KILL_SWITCH_PATH": "KILL_SWITCH",
-    }.items():
+def test_demo_mode_reads_testnet_market_data(
+    workdir: Path, monkeypatch: pytest.MonkeyPatch, klines: list[str]
+) -> None:
+    for key, value in DEMO_ENV.items():
         monkeypatch.setenv(key, value)
 
-    assert main([]) == 78
+    assert main(["--max-candles", "1"]) == 0
+
+    assert {urlsplit(url).hostname for url in klines} == {"testnet.binancefuture.com"}
+    assert all("testnet-key" not in url and "testnet-secret" not in url for url in klines)
+    report = json.loads((workdir / "reports" / "paper_trading_report.json").read_text(encoding="utf-8"))
+    assert report["mode"] == "demo"
+    assert report["candles_processed"] == 1
+
+
+def test_market_data_failure_exits_1_and_audits(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def unreachable(url: str) -> bytes:
+        raise urllib.error.URLError("no route")
+
+    monkeypatch.setattr(binance_futures, "_urllib_get", unreachable)
+
+    assert main([]) == 1
+
+    events = audit_events(workdir)
+    assert [event["event_type"] for event in events] == ["bot_started", "market_data_unavailable", "bot_stopped"]
+    assert events[-1]["context"]["exit_code"] == 1
+
+
+def test_paper_mode_rejects_a_non_binance_base_url(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BINANCE_FUTURES_BASE_URL", "https://evil.example")
+
+    assert main([]) == 2
+
+
+def test_max_candles_is_rejected_in_backtest_and_when_below_one(
+    workdir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert main(["--max-candles", "0"]) == 2
+    backtest_env(monkeypatch)
+    assert main(["--max-candles", "5"]) == 2
 
 
 def test_candles_flag_outside_backtest_is_usage_error(workdir: Path) -> None:

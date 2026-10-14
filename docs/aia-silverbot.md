@@ -4,8 +4,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-09 against code at commit `70ccaec` (the G-8 fix `8e66054`; the rest of `ml/` is unchanged since `62037d1`); the settings-wiring statements in sections 0 and 1.3 re-checked 2026-10-09 against `099085b` (`f84557e`)
+**Last updated:** 2026-10-14
+**Last reconciled:** 2026-10-09 against code at commit `70ccaec` (the G-8 fix `8e66054`; the rest of `ml/` is unchanged since `62037d1`); the settings-wiring statements in sections 0 and 1.3 re-checked 2026-10-09 against `099085b` (`f84557e`) and 2026-10-14 against `40ea0b1` (paper and demo runtime `973cd82`)
 
 This dossier assures the one machine-learning component in Silver Bot: the optional ML probability filter (PRD-F6). It absorbs the assurance content of the old `ML_MODEL.md`. Architecture is in [sdd-silverbot.md](sdd-silverbot.md) §8 and §8.1; the decision record is [rfc-silverbot-ml-filter-gate.md](rfc-silverbot-ml-filter-gate.md) (RFC-003); the product requirement is PRD-F6 in [prd-silverbot.md](prd-silverbot.md). Test scenarios are `QAD-T#` in [qad-silverbot.md](qad-silverbot.md) §3.5; gaps are `G-#` in [scrutiny-silverbot.md](scrutiny-silverbot.md); drift and hazards (`D-#`, `H-#`) are in [audit-docs-drift.md](audit-docs-drift.md). Code wins over old documents. Live trading is `Planned, blocked` (PRD-F12) and nothing here enables it.
 
@@ -22,7 +22,7 @@ No performance claim is made anywhere in this dossier: no trained model exists i
 - Optional. Off by default: `MLFilterConfig.enabled=False` (`ml/filter.py:30`); the environment key `ML_FILTER_ENABLED` defaults to `false` (`config/settings.py:80,152`) and the Dockerfile and compose force it to `false` (`Dockerfile:11`; compose `research` forces it off).
 - Bounded. It receives an existing rule-based signal and may only approve it unchanged, reject it, or reduce its risk with a multiplier in (0, 1] (`ml/filter.py:43-44,148-159`). It cannot create a trade, place an order, raise risk, change a stop loss or bypass the kill switch (SDD §8.1).
 - Downstream of the rules and upstream of the risk engine. An approved or reduced signal still passes `risk.evaluate` (`backtest/engine.py:128-196`; `execution/paper_trading.py:176-267`).
-- Wired to settings in backtests only. The four `ML_*` settings are parsed and validated; since `f84557e` a CLI backtest converts them into `MLFilterConfig` (`backtest/runner.py:50-55`), while the paper loop builds `MLProbabilityFilter()` with defaults, which is disabled (`execution/paper_trading.py:53`, D-4, G-9 partial). Outside a backtest the filter is therefore always off unless a caller injects a configured filter in code; inside one it stays a pass-through while `ML_FILTER_ENABLED=false` (the default, and forced off in compose `research`).
+- Wired to settings in backtests and paper and demo sessions. The four `ML_*` settings are parsed and validated; since `f84557e` a CLI backtest converts them into `MLFilterConfig`, and since `973cd82` the paper and demo runtime does the same, both through `build_ml_filter_config` (`backtest/runner.py:54,59-67`, `execution/runtime.py:87`; D-4, G-9 partial). The filter stays a pass-through while `ML_FILTER_ENABLED=false` (the default, and forced off in compose `research`) or while no active model is registered.
 - Not exposed. No command runs the offline pipeline (`ml/__init__.py:7-46`, S-21, G-22).
 
 **Out of scope.** Strategy rules (RFC-001), the risk engine (RFC-002) and readiness gates (RFC-004). ML never replaces them.
@@ -107,7 +107,7 @@ scikit-learn is not a declared dependency (`pyproject.toml:10-15`, `dependencies
 ### 1.3 Limitations and performance caveats
 
 - **No model, no performance claim.** `models/` is empty. No accuracy, AUC, calibration or trading result exists to cite, and none may be inferred from the code. Test fixtures use stand-in probabilities (for example 0.72, 0.57, 0.40) that say nothing about real behaviour.
-- **Wired for backtests only.** The ML environment settings reach the filter in CLI backtests and nowhere else (D-4, G-9 partial). There is no command for the offline pipeline (G-22).
+- **Wired for backtests and paper and demo sessions.** The ML environment settings reach the filter in CLI backtests (`f84557e`) and in the paper and demo runtime (`973cd82`) (D-4, G-9 partial). There is no command for the offline pipeline (G-22).
 - **Invalid probability rejects (H-1, G-8 fixed in `8e66054`).** The raw `predict_proba` value is no longer clamped (`ml/filter.py:193`); NaN, infinite or out-of-[0, 1] output rejects the signal (`ml/filter.py:134-146`). Before the fix NaN became 1.0 and approved. Pinned by `tests/test_ml_probability_filter.py:197,210` (QAD-T145).
 - **Errors propagate.** A corrupt artifact, a feature-build error or a row-length mismatch is not caught by `evaluate` (`filter.py:126-133`). Only registry read errors fall back (`filter.py:112-124,174-178`).
 - **Fail-open when no model.** A missing registry silently returns the unchanged rule-based signal, so an enabled filter with no model is indistinguishable from a disabled one except by the reason string.

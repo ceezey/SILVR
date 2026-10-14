@@ -1,22 +1,72 @@
-"""Binance Futures adapter skeleton.
+"""Binance Futures adapter.
 
-This adapter defines the boundary for future Binance Futures integration. It
-does not place orders or make network calls in Phase 1.
+Market data only: `fetch_ohlcv` reads the public klines endpoint, which needs
+no API key, and no key is ever sent. Order placement and cancellation stay
+disabled (the base class raises `OrderPlacementDisabled`).
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import urllib.error
+import urllib.request
+from collections.abc import Callable
 from datetime import datetime
 from typing import Sequence
+from urllib.parse import urlencode, urlsplit
 
 from silver_bot.config import AppConfig
 from silver_bot.config.settings import is_binance_futures_testnet_url
+from silver_bot.data.csv_loader import parse_kline_row, timeframe_interval
 from silver_bot.exchange.base import ExchangeAdapter
 from silver_bot.models import Candle
 
 
 BINANCE_FUTURES_PRODUCTION_BASE_URL = "https://fapi.binance.com"
 BINANCE_FUTURES_TESTNET_BASE_URL = "https://testnet.binancefuture.com"
+KLINES_PATH = "/fapi/v1/klines"
+MAX_KLINES_LIMIT = 1500
+REQUEST_TIMEOUT_SECONDS = 10.0
+# Binance kline intervals; anything else is rejected before a request is made.
+BINANCE_INTERVALS = frozenset(
+    {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"}
+)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects, so a request never leaves the validated host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def _urllib_get(url: str) -> bytes:
+    """GET a URL with no credentials and return the body."""
+
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with _OPENER.open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        return response.read()
+
+
+def is_binance_futures_production_url(url: str) -> bool:
+    """Return true only for exactly https://fapi.binance.com (optional port 443)."""
+
+    try:
+        parts = urlsplit(url.strip())
+        port = parts.port
+    except ValueError:
+        return False
+    return (
+        parts.scheme == "https"
+        and (parts.hostname or "").lower() == "fapi.binance.com"
+        and parts.username is None
+        and parts.password is None
+        and port in (None, 443)
+    )
 
 
 class BinanceFuturesAdapter(ExchangeAdapter):
@@ -29,6 +79,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         api_secret: str | None = None,
         testnet: bool = False,
         base_url: str | None = None,
+        http_get: Callable[[str], bytes] | None = None,
     ) -> None:
         self.api_key = api_key
         self.api_secret = api_secret
@@ -38,6 +89,9 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         )
         if self.testnet and not is_binance_futures_testnet_url(self.base_url):
             raise ValueError("Demo/testnet mode requires the Binance Futures testnet endpoint")
+        if not (is_binance_futures_testnet_url(self.base_url) or is_binance_futures_production_url(self.base_url)):
+            raise ValueError("Binance Futures base URL must be the production or testnet endpoint")
+        self._http_get = http_get or _urllib_get
 
     @classmethod
     def from_config(cls, config: AppConfig) -> "BinanceFuturesAdapter":
@@ -59,14 +113,55 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         end: datetime,
         limit: int = 1000,
     ) -> Sequence[Candle]:
-        """Fetch historical OHLCV candles.
+        """Fetch candles opening in [start, end) from the public klines endpoint.
 
-        Network-backed fetching will be implemented after the safe scaffold and
-        test harness are in place.
+        Transport failures and HTTP 429 or 5xx raise `ConnectionError` so a
+        reconnecting stream can retry; other HTTP errors and malformed rows
+        raise `ValueError`. The newest candle may still be forming; callers
+        that need closed candles filter on `close_time`.
         """
 
         if start >= end:
             raise ValueError("start must be before end")
         if limit <= 0:
             raise ValueError("limit must be positive")
-        raise NotImplementedError("Binance Futures OHLCV network fetching is not implemented in Phase 1")
+        if timeframe not in BINANCE_INTERVALS:
+            raise ValueError(f"Unsupported Binance interval: {timeframe!r}")
+        query = urlencode(
+            {
+                "symbol": symbol,
+                "interval": timeframe,
+                "startTime": int(start.timestamp() * 1000),
+                "endTime": int(end.timestamp() * 1000) - 1,
+                "limit": min(limit, MAX_KLINES_LIMIT),
+            }
+        )
+        url = f"{self.base_url.rstrip('/')}{KLINES_PATH}?{query}"
+        try:
+            body = await asyncio.to_thread(self._http_get, url)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 or exc.code >= 500:
+                raise ConnectionError(f"Binance klines HTTP {exc.code}") from exc
+            raise ValueError(f"Binance klines request rejected: HTTP {exc.code}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise ConnectionError(f"Binance klines request failed: {exc}") from exc
+        return _parse_klines(body, symbol=symbol, timeframe=timeframe)
+
+
+def _parse_klines(body: bytes, *, symbol: str, timeframe: str) -> list[Candle]:
+    try:
+        rows = json.loads(body)
+    except ValueError as exc:
+        raise ValueError("Binance klines response is not JSON") from exc
+    if not isinstance(rows, list):
+        raise ValueError("Binance klines response is not a list")
+    interval = timeframe_interval(timeframe)
+    candles = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, list):
+            raise ValueError(f"Binance kline {index} is not a list")
+        candle = parse_kline_row([str(cell) for cell in row], where=f"kline {index}", symbol=symbol, timeframe=timeframe)
+        if candle.close_time - candle.open_time != interval:
+            raise ValueError(f"Binance kline {index} does not span one {timeframe} interval")
+        candles.append(candle)
+    return sorted(candles, key=lambda candle: candle.open_time)

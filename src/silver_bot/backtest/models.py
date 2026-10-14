@@ -21,6 +21,7 @@ class ExitReason(str, Enum):
     TAKE_PROFIT = "take_profit"
     BREAKEVEN_STOP = "breakeven_stop"
     END_OF_DATA = "end_of_data"
+    KILL_SWITCH = "kill_switch"
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,7 @@ class PendingOrder:
     risk_decision: RiskDecision
     ml_probability: float | None = None
     ml_decision: str | None = None
+    expires_at: datetime | None = None
 
 
 @dataclass(slots=True)

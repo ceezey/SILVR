@@ -4,10 +4,10 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; step 3, step 4 and the Tests and Example rows of Verify re-run 2026-10-09 against `70ccaec`; steps 4, 6 and 7 and the Tests, Entrypoint and Files written rows re-run 2026-10-09 against `099085b`; the step 3 block and `.env.example` history, step 4 and the Tests and Config loads rows re-run 2026-10-09 against `5c781fc`
+**Last updated:** 2026-10-14
+**Last reconciled:** 2026-10-08 against code at commit `62037d1`; step 3, step 4 and the Tests and Example rows of Verify re-run 2026-10-09 against `70ccaec`; steps 4, 6 and 7 and the Tests, Entrypoint and Files written rows re-run 2026-10-09 against `099085b`; the step 3 block and `.env.example` history, step 4 and the Tests and Config loads rows re-run 2026-10-09 against `5c781fc`; steps 4, 6 and 7 rewritten and the Tests row re-run 2026-10-14 against `40ea0b1` (paper and demo runtime `973cd82`); the Entrypoint and Files written rows were not re-run (they would contact Binance)
 
-This runbook takes a fresh checkout to a working local environment: virtual environment, install, a safe paper-mode `.env`, the test suite, and the entrypoints that exist. It absorbs the old README "Basic Setup" and the example blocks of the old `CONFIGURATION.md`. Every command below was run against the code as built, except `pip install` (it needs the network; see step 2). Nothing here enables live trading or places an order; the adapter performs no network I/O.
+This runbook takes a fresh checkout to a working local environment: virtual environment, install, a safe paper-mode `.env`, the test suite, and the entrypoints that exist. It absorbs the old README "Basic Setup" and the example blocks of the old `CONFIGURATION.md`. Every command below was run against the code as built, except `pip install` (it needs the network; see step 2). Nothing here enables live trading or places an order. Since `973cd82` the paper entrypoint reads public Binance klines over the network (step 6); the adapter sends no key, no signature and no order.
 
 Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configuration reference, section 2.3 modes), [prd-silverbot.md](prd-silverbot.md) (section 5.1 operator surface), [ops-silverbot.md](ops-silverbot.md) (Docker and VPS), [qad-silverbot.md](qad-silverbot.md) (tests), [scrutiny-silverbot.md](scrutiny-silverbot.md) (G-3, G-4), [audit-docs-drift.md](audit-docs-drift.md) (D-1, D-2). The other runbooks are [runbook-backtest.md](runbook-backtest.md) and [runbook-demo-testnet.md](runbook-demo-testnet.md).
 
@@ -84,9 +84,9 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
    | `BINANCE_API_KEY`, `BINANCE_API_SECRET` | blank | Keys must be both set or both blank. Blank is correct outside demo. |
    | `BINANCE_TESTNET`, `BINANCE_FUTURES_BASE_URL` | `false`, blank | Endpoint selection; only used in demo (see [runbook-demo-testnet.md](runbook-demo-testnet.md)). |
    | `TELEGRAM_ENABLED` | `false` | `true` requires a token and chat id, and there is no real transport yet (G-15). |
-   | `ML_FILTER_ENABLED` | `false` | The ML filter keys reach the filter in backtests only; the paper loop ignores them (G-9). |
+   | `ML_FILTER_ENABLED` | `false` | The ML filter keys reach the filter in backtests and paper and demo sessions (`973cd82`); with no active model the filter is a pass-through (G-9). |
    | `RISK_ENGINE_ENABLED`, `STOP_LOSS_REQUIRED` | `true` | Required `true` for demo; kept `true` everywhere. |
-   | `KILL_SWITCH_ENABLED`, `KILL_SWITCH_PATH` | `true`, `data/KILL_SWITCH` | Kill-switch file location. `load_config` rejects `KILL_SWITCH_ENABLED=true` with a blank path in every mode. Only `build_risk_config` and `build_risk_engine` pass the path to the risk engine, and no paper runtime calls them yet; a backtest uses its own simulated switch and never this file. It is not an effective emergency stop today (G-6). |
+   | `KILL_SWITCH_ENABLED`, `KILL_SWITCH_PATH` | `true`, `data/KILL_SWITCH` | Kill-switch file location. `load_config` rejects `KILL_SWITCH_ENABLED=true` with a blank path in every mode. The paper runtime passes the path to the risk engine through `build_risk_engine` (`973cd82`), so a running paper session rejects entries and flattens its simulated position while the file exists; with `KILL_SWITCH_ENABLED=false` the switch is armed in memory only. A backtest uses its own simulated switch and never this file. It does not stop the process (G-6). |
    | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` | `0.005`, `0.02`, `3` | The documented caps (0.5%, 2%, 3x). `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode; the other two are range-checked only in demo mode and by the readiness checkers (G-5). |
 
    **`.env.example` history.** Until `c6d909d` it set `MODE=paper` and `PAPER_TRADING=false` but also `DEMO_TRADING=true`. When `DEMO_TRADING` is true and the mode is `paper`, the loader promotes the mode to `demo`, and demo mode then requires API keys, so loading stopped with `ConfigError: BINANCE_API_KEY and BINANCE_API_SECRET are required for demo mode` (D-2, G-4). It now sets `PAPER_TRADING=true` and `DEMO_TRADING=false`, like the block above (`.env.example:6-7`; `tests/test_config.py::test_shipped_env_example_loads_as_paper`). Until `5c781fc` it also set `MODE=paper`, which overrides `TRADING_MODE`, so a copied `.env` made every backtest exit 2; it now leaves `MODE` blank (`.env.example:2-3`; `tests/test_config.py::test_shipped_env_example_lets_trading_mode_select_backtest`).
@@ -97,7 +97,7 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
    python -m pytest -q
    ```
 
-   Expected: `220 passed`. The tests use mocks and in-memory clients; they need no API keys and no network.
+   Expected: `356 passed`. The tests use mocks and in-memory clients; they need no API keys and no network (the klines tests inject a fake HTTP getter).
 
 5. **Check the configuration loads and live is off** (this is also what the container health check runs):
 
@@ -115,7 +115,7 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
    silver-bot
    ```
 
-   The last needs the editable install from step 2. The entrypoint loads the configuration, creates the SQLite file, appends `bot_started` to `logs/audit.jsonl`, runs the configured mode and appends `bot_stopped` with `exit_code` (`main.py:51-80`). With the step 3 `.env` (paper mode) it logs `paper mode not available yet: needs market data (G-13)`, appends `mode_unavailable` and exits 78; demo does the same. There is no paper or demo runtime yet (G-3, G-13). If the configuration is rejected it logs `configuration rejected: <reason>` and exits 2. Flags: `--candles PATH` and `--output-dir DIR`, for backtest mode only; `--candles` in paper or demo mode, or an unknown flag, exits 2.
+   The last needs the editable install from step 2. The entrypoint loads the configuration, creates the SQLite file, appends `bot_started` to `logs/audit.jsonl`, runs the configured mode and appends `bot_stopped` with `exit_code` (`main.py:62-91`). With the step 3 `.env` (paper mode) it starts a paper session (`973cd82`): it fetches up to 500 recent closed candles from the Binance Futures public klines endpoint (`https://fapi.binance.com` by default), then polls every 10 s and runs the paper engine on each new closed candle with simulated fills. It runs until Ctrl+C (exit 0); add `--max-candles 2` to stop after two new candles. It writes `reports/paper_trading_report.json` after each closed trade and at the end. Without network access it audits `market_data_unavailable` and exits 1. Demo mode does the same against the testnet ([runbook-demo-testnet.md](runbook-demo-testnet.md)). Exit 78 no longer exists. If the configuration or base URL is rejected it logs `configuration rejected: <reason>` and exits 2. Flags: `--candles PATH`, for backtest mode only; `--max-candles N`, for paper and demo only; `--output-dir DIR` for both. A flag in the wrong mode, `--max-candles` below 1, or an unknown flag exits 2.
 
    To run a backtest instead, set `MODE=` (blank), `TRADING_MODE=backtest` and `PAPER_TRADING=false` and pass `--candles`; the full steps, including downloading candle files, are in [runbook-backtest.md](runbook-backtest.md). A non-blank `MODE` overrides `TRADING_MODE` (D-42).
 
@@ -125,7 +125,7 @@ Related documents: [sdd-silverbot.md](sdd-silverbot.md) (section 3.4 configurati
    ls data logs
    ```
 
-   Expected: `data/silver_bot.sqlite3` and `logs/audit.jsonl` with three lines per run: `bot_started`, `mode_unavailable`, `bot_stopped` (`"exit_code": 78`). These paths are relative to the folder you ran from, so run every command from the same place.
+   Expected: `data/silver_bot.sqlite3` and `logs/audit.jsonl`. A paper run writes `bot_started` from `main()` and from the paper engine, then `strategy_decision` and other paper events per candle, and ends with `bot_stopped` (`"exit_code": 0` after Ctrl+C or `--max-candles`, or 1 after `market_data_unavailable`). With `--max-candles`, `reports/paper_trading_report.json` also exists. These paths are relative to the folder you ran from, so run every command from the same place.
 
 ## Verify
 
@@ -133,12 +133,12 @@ Each check below was run against a temporary working folder containing only the 
 
 | Check | Command | Observed result |
 |-------|---------|-----------------|
-| Tests | `python -m pytest -q` (repository root) | `220 passed` (2026-10-09, `dev` at `5c781fc`) |
+| Tests | `python -m pytest -q` (repository root) | `356 passed` (2026-10-14, `40ea0b1`) |
 | Config loads | `python -c "from silver_bot.config import load_config; c=load_config(); print(c.mode, c.live_trading, c.paper_trading, c.demo_trading)"` | `TradingMode.PAPER False True False` |
 | Example loads | load `.env.example` with `load_config(env_path=".env.example", yaml_path="none.yaml", environ={})` | `TradingMode.PAPER False True False` (mode, live, paper, demo; 2026-10-09) |
 | Health | `python -m silver_bot.health; echo $?` | no output, `0` |
-| Entrypoint | `python -m silver_bot; echo $?` | `ERROR silver_bot.main paper mode not available yet: needs market data (G-13)`, `78`; `python main.py` gave the same (2026-10-09, `099085b`) |
-| Files written | `ls data logs` | `silver_bot.sqlite3`, `audit.jsonl` (three JSON lines per run: `bot_started`, `mode_unavailable`, `bot_stopped` with `"exit_code": 78`, all `"mode": "paper"`) |
+| Entrypoint | `python -m silver_bot; echo $?` | Observed at `099085b` (2026-10-09): `ERROR silver_bot.main paper mode not available yet: needs market data (G-13)`, `78`. Since `973cd82` it starts a paper session on public klines; not re-run here. Covered offline by `tests/test_main.py::test_paper_mode_runs_on_market_data_and_writes_report` and `::test_market_data_failure_exits_1_and_audits` |
+| Files written | `ls data logs` | Observed at `099085b`: `silver_bot.sqlite3`, `audit.jsonl` (then three lines per run ending in `"exit_code": 78`). Not re-run since `973cd82` |
 
 Safety posture to confirm: `live_trading` prints `False`, and `LIVE_TRADING=true` in the environment makes both `python -m silver_bot` and `python -m silver_bot.health` exit 2.
 
@@ -153,9 +153,9 @@ Safety posture to confirm: `live_trading` prints `False`, and `LIVE_TRADING=true
 
 ## Self-Check
 
-- [x] Every command was executed against the code, except `pip install -e ".[dev]"`, which needs the network and is flagged as such in step 2.
+- [x] Every command was executed against the code, except `pip install -e ".[dev]"`, which needs the network and is flagged as such in step 2, and the step 6 paper run since `973cd82`, which contacts Binance.
 - [x] The `.env` block in step 3 was loaded with `load_config` from a temporary folder and returned mode paper, live false.
 - [x] The former `.env.example` failure and its fix are stated with the exact error message and cross-referenced to D-2 and G-4.
-- [x] The entrypoint is described as built at `099085b`: paper and demo exit 78; backtest needs `--candles` and is covered by [runbook-backtest.md](runbook-backtest.md); no step claims it runs a paper or demo session.
+- [x] The entrypoint is described as built at `40ea0b1`: paper and demo run a session on public klines with simulated fills (`973cd82`) and exit 0, 1 or 2; backtest needs `--candles` and is covered by [runbook-backtest.md](runbook-backtest.md); the paper run itself was not executed against the network.
 - [x] No real key, secret or personal path appears in the runbook.
 - [ ] The Linux and macOS venv commands were not executed (the verification host is Windows).
