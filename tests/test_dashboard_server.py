@@ -115,12 +115,83 @@ def call(server, method: str = "GET", path: str = "/", host: str | None = None):
     return response, body
 
 
+def call_raw(server, path: str):
+    port = server.server_address[1]
+    connection = http.client.HTTPConnection(BIND_HOST, port, timeout=5)
+    connection.request("GET", path, headers={"Host": f"127.0.0.1:{port}"})
+    response = connection.getresponse()
+    body = response.read()
+    connection.close()
+    return response, body
+
+
+CSP = "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'"
+FONT_SHA256 = {
+    "/fonts/IBMPlexMono-Regular.woff2": "49ce58b41a0e1cb921c0f58d9a5b8b96a2cc21437c7066f3ba4f24873076d131",
+    "/fonts/IBMPlexMono-Bold.woff2": "5788454f0ba4bd6300752c474215c4dd926682fa173ae1c6252d57828b6a235d",
+}
+
+
+def test_csp_literal_is_pinned():
+    assert SECURITY_HEADERS["Content-Security-Policy"] == CSP
+
+
+@pytest.mark.parametrize("path", sorted(FONT_SHA256))
+def test_fonts_are_served_with_headers_and_exact_bytes(server, path):
+    response, body = call_raw(server, path)
+
+    assert response.status == 200
+    assert response.getheader("Content-Type") == "font/woff2"
+    for name, value in SECURITY_HEADERS.items():
+        assert response.getheader(name) == value
+    assert hashlib.sha256(body).hexdigest() == FONT_SHA256[path]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/fonts/x.woff2",
+        "/fonts/../status.py",
+        "/fonts/%2e%2e/x",
+        "/fonts/",
+        "/fonts/IBMPlexMono-Regular.woff2?v=1",
+    ],
+)
+def test_font_lookalike_paths_get_404(server, path):
+    response, body = call_raw(server, path)
+
+    assert response.status == 404
+    assert body.startswith(b"<!doctype html>")
+
+
+def test_404_is_branded_html_without_status_data(server):
+    response, body = call(server, path="/nope")
+
+    assert response.status == 404
+    assert response.getheader("Content-Type") == "text/html; charset=utf-8"
+    assert 'href="/"' in body
+    assert "not found" in body
+    assert "MODE &amp; SAFETY" not in body
+    assert "generated " not in body
+
+
+def test_csp_is_exact_on_200_404_405_and_400(server):
+    port = server.server_address[1]
+    for response in (
+        call(server)[0],
+        call(server, path="/nope")[0],
+        call(server, "POST")[0],
+        call(server, host=f"evil.example:{port}")[0],
+    ):
+        assert response.getheader("Content-Security-Policy") == SECURITY_HEADERS["Content-Security-Policy"]
+
+
 def test_get_root_returns_page_with_security_headers(server):
     response, body = call(server)
 
     assert response.status == 200
     assert response.getheader("Content-Type") == "text/html; charset=utf-8"
-    assert response.getheader("Content-Security-Policy") == "default-src 'none'; style-src 'unsafe-inline'"
+    assert response.getheader("Content-Security-Policy") == SECURITY_HEADERS["Content-Security-Policy"]
     assert response.getheader("X-Content-Type-Options") == "nosniff"
     assert response.getheader("Cache-Control") == "no-store"
     assert response.getheader("Referrer-Policy") == "no-referrer"
@@ -133,7 +204,7 @@ def test_other_methods_get_405(server, method):
 
     assert response.status == 405
     assert response.getheader("Allow") == "GET"
-    assert response.getheader("Content-Security-Policy") == "default-src 'none'; style-src 'unsafe-inline'"
+    assert response.getheader("Content-Security-Policy") == SECURITY_HEADERS["Content-Security-Policy"]
 
 
 @pytest.mark.parametrize("path", ["/x", "/?a=1", "/favicon.ico"])

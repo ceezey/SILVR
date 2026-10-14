@@ -12,6 +12,7 @@ import string
 import sys
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +25,15 @@ TAGS = {"ok": "[ OK ]", "warn": "[ WRN ]", "err": "[ ERR ]", "off": "[ OFF ]", "
 # DSD section 3.2: banner; readiness | evidence; risk budget; positions | alerts.
 LAYOUT: tuple[tuple[int, ...], ...] = ((0,), (1, 2), (3,), (4, 5))
 SECURITY_HEADERS = {
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'",
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "no-store",
     "Referrer-Policy": "no-referrer",
+}
+HTML_TYPE = "text/html; charset=utf-8"
+FONTS = {
+    "/fonts/IBMPlexMono-Regular.woff2": "IBMPlexMono-Regular.woff2",
+    "/fonts/IBMPlexMono-Bold.woff2": "IBMPlexMono-Bold.woff2",
 }
 CSS = """
 :root{--canvas:#000000;--surface:#111827;--border:#374151;--ink:#F9FAFB;--muted:#9CA3AF;
@@ -48,6 +54,27 @@ td:last-child{overflow-wrap:anywhere}
 td.ok,td.warn,td.err,td.off{white-space:nowrap}
 .ok{color:var(--success)}.warn{color:var(--warning)}.err{color:var(--danger)}.off{color:var(--muted)}
 """
+# One header for every HTML page; the brand mark is added here later.
+HEADER = "<h1>Silverbot &middot; status &middot; read-only &middot; 127.0.0.1</h1>"
+NOT_FOUND_PAGE = string.Template(
+    """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Silverbot &middot; not found</title>
+<style>$css</style>
+</head>
+<body>
+<main>
+$header
+<p>not found</p>
+<p><a href="/">back to the status page</a></p>
+</main>
+</body>
+</html>
+"""
+)
 PAGE = string.Template(
     """<!doctype html>
 <html lang="en">
@@ -59,7 +86,7 @@ PAGE = string.Template(
 </head>
 <body>
 <main>
-<h1>silver-bot status &middot; read-only &middot; 127.0.0.1</h1>
+$header
 $panels
 <footer>generated $generated_at &middot; read-only; reading $root &middot; reload to refresh</footer>
 </main>
@@ -80,10 +107,17 @@ def render_page(status: dict[str, Any]) -> str:
         groups.append(f'<div class="{css_class}">{sections}</div>')
     return PAGE.substitute(
         css=CSS,
+        header=HEADER,
         panels="\n".join(groups),
         generated_at=html.escape(status["generated_at"]),
         root=html.escape(status["root"]),
     )
+
+
+def render_not_found() -> str:
+    """Render the branded 404 page: no status data and no collection."""
+
+    return NOT_FOUND_PAGE.substitute(css=CSS, header=HEADER)
 
 
 def _render_panel(panel: dict[str, Any]) -> str:
@@ -134,11 +168,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._host_allowed():
             self._send(400, "bad host\n")
             return
-        if self.path != "/":
-            self._send(404, "not found\n")
-            return
-        status = collect_status(self.server.root, load=self.server.load)
-        self._send(200, render_page(status), content_type="text/html; charset=utf-8")
+        if self.path == "/":
+            status = collect_status(self.server.root, load=self.server.load)
+            self._send(200, render_page(status), content_type=HTML_TYPE)
+        elif self.path in FONTS:
+            font = files("silver_bot.monitoring").joinpath("fonts", FONTS[self.path]).read_bytes()
+            self._send(200, font, content_type="font/woff2")
+        else:
+            self._send(404, render_not_found(), content_type=HTML_TYPE)
 
     def end_headers(self) -> None:
         # Every response, including send_error ones, carries the security headers.
@@ -155,12 +192,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _send(
         self,
         code: int,
-        body: str,
+        body: bytes | str,
         *,
         content_type: str = "text/plain; charset=utf-8",
         headers: dict[str, str] | None = None,
     ) -> None:
-        payload = body.encode("utf-8")
+        payload = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(code)
         for name, value in {
             "Content-Type": content_type,
