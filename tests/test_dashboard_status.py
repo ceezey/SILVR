@@ -2,7 +2,7 @@ import hashlib
 import json
 import os
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from silver_bot.config import AppConfig, ConfigError
@@ -149,33 +149,75 @@ def test_readiness_ready_not_ready_and_failing_checks(tmp_path):
         "live_readiness_report",
         readiness(
             False,
-            "2026-06-15T07:24:18.217178+00:00",
+            "2026-10-09T07:24:18.217178+00:00",
             [
                 {"name": "backtest_report_exists", "passed": True, "reason": "ok"},
                 {"name": "paper_report_non_empty", "passed": False, "reason": "file is empty"},
             ],
         ),
     )
-    write_report(tmp_path, "demo_readiness_report", readiness(True, "2026-06-15T14:31:00+00:00"))
+    write_report(tmp_path, "demo_readiness_report", readiness(True, "2026-10-09T10:31:00+00:00"))
 
     result = rows(collect(tmp_path), READINESS)
 
     assert result[0] == {"state": "err", "label": "live", "text": "NOT READY"}
-    assert result[1] == {"state": "plain", "label": "", "text": "generated 2026-06-15 07:24 UTC"}
+    assert result[1] == {"state": "plain", "label": "", "text": "generated 2026-10-09 07:24 UTC"}
     assert result[2] == {"state": "err", "label": "", "text": "paper_report_non_empty: file is empty"}
     assert result[3] == {"state": "ok", "label": "demo", "text": "READY"}
     assert len(result) == 5
 
 
 def test_readiness_is_stale_when_strategy_evidence_is_newer(tmp_path):
-    generated = datetime(2026, 6, 15, 7, 24, tzinfo=UTC)
+    generated = datetime(2026, 10, 9, 7, 24, tzinfo=UTC)
     write_report(tmp_path, "live_readiness_report", readiness(True, generated.isoformat()))
     write_report(tmp_path, "backtest_report", "{}", mtime=generated.timestamp() + 60)
 
     result = rows(collect(tmp_path), READINESS)
 
+    assert result[0] == {"state": "warn", "label": "live", "text": "READY · stale"}
     assert result[1]["state"] == "warn"
-    assert "stale" in result[1]["text"]
+    assert result[1]["text"].endswith("stale: evidence changed after this report")
+
+
+def test_readiness_ready_older_than_24_hours_is_stale(tmp_path):
+    generated = NOW - timedelta(hours=25)
+    write_report(tmp_path, "live_readiness_report", readiness(True, generated.isoformat()))
+
+    result = rows(collect(tmp_path), READINESS)
+
+    assert result[0] == {"state": "warn", "label": "live", "text": "READY · stale"}
+    assert result[1]["state"] == "warn"
+    assert "older than 24 hours" in result[1]["text"]
+
+
+def test_readiness_ready_within_24_hours_is_fresh(tmp_path):
+    generated = NOW - timedelta(hours=23)
+    write_report(tmp_path, "live_readiness_report", readiness(True, generated.isoformat()))
+
+    result = rows(collect(tmp_path), READINESS)
+
+    assert result[0] == {"state": "ok", "label": "live", "text": "READY"}
+    assert result[1] == {"state": "plain", "label": "", "text": "generated 2026-10-08 13:00 UTC"}
+
+
+def test_readiness_not_ready_older_than_24_hours_keeps_err_and_gains_stale(tmp_path):
+    generated = NOW - timedelta(hours=25)
+    write_report(tmp_path, "live_readiness_report", readiness(False, generated.isoformat()))
+
+    result = rows(collect(tmp_path), READINESS)
+
+    assert result[0] == {"state": "err", "label": "live", "text": "NOT READY · stale"}
+    assert "older than 24 hours" in result[1]["text"]
+
+
+def test_readiness_both_stale_reasons_are_listed_in_order(tmp_path):
+    generated = NOW - timedelta(hours=30)
+    write_report(tmp_path, "live_readiness_report", readiness(True, generated.isoformat()))
+    write_report(tmp_path, "backtest_report", "{}", mtime=generated.timestamp() + 60)
+
+    result = rows(collect(tmp_path), READINESS)
+
+    assert result[1]["text"].endswith("stale: evidence changed after this report; older than 24 hours")
 
 
 def test_readiness_tolerates_malformed_fields(tmp_path):
@@ -184,7 +226,7 @@ def test_readiness_tolerates_malformed_fields(tmp_path):
 
     result = rows(collect(tmp_path), READINESS)
 
-    assert result[0] == {"state": "ok", "label": "live", "text": "READY"}
+    assert result[0] == {"state": "warn", "label": "live", "text": "READY · stale"}
     assert result[1] == {"state": "warn", "label": "", "text": "generated_at unreadable"}
     assert result[2] == {"state": "err", "label": "demo", "text": "empty"}
 

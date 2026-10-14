@@ -6,7 +6,7 @@ import json
 import os
 import sqlite3
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -76,7 +76,7 @@ def collect_status(
         config_error = f"unreadable: {type(exc).__name__}"
     collectors: tuple[Callable[[], list[Row]], ...] = (
         lambda: _banner(config, config_error, root),
-        lambda: _readiness(root),
+        lambda: _readiness(root, now),
         lambda: _evidence(root),
         lambda: _risk_budget(config, root, now),
         lambda: _positions(config, root),
@@ -130,7 +130,7 @@ def _trip_detail(path: Path) -> str:
     return f": {data.get('reason', 'no reason')} at {data.get('tripped_at', 'unknown time')}"
 
 
-def _readiness(root: Path) -> list[Row]:
+def _readiness(root: Path, now: datetime) -> list[Row]:
     reports = root / "reports"
     newest_evidence = max(
         (path.stat().st_mtime for path in (reports / f"{stem}.json" for stem in STRATEGY_REPORTS) if path.is_file()),
@@ -143,8 +143,14 @@ def _readiness(root: Path) -> list[Row]:
             rows.append(row("err", name, problem))
             continue
         ready = data.get("ready") is True
-        rows.append(row("ok" if ready else "err", name, "READY" if ready else "NOT READY"))
-        rows.append(_generated_row(data.get("generated_at"), newest_evidence))
+        generated_row, stale = _generated_row(data.get("generated_at"), newest_evidence, now)
+        text = "READY" if ready else "NOT READY"
+        state = "ok" if ready else "err"
+        if stale:
+            text += " · stale"
+            state = "warn" if ready else "err"
+        rows.append(row(state, name, text))
+        rows.append(generated_row)
         checks = data.get("checks")
         for check in checks if isinstance(checks, list) else []:
             if isinstance(check, dict) and check.get("passed") is not True:
@@ -152,15 +158,20 @@ def _readiness(root: Path) -> list[Row]:
     return rows
 
 
-def _generated_row(value: Any, newest_evidence: float | None) -> Row:
+def _generated_row(value: Any, newest_evidence: float | None, now: datetime) -> tuple[Row, bool]:
     try:
         generated = _parse_time(value)
     except ValueError:
-        return row("warn", "", "generated_at unreadable")
+        return row("warn", "", "generated_at unreadable"), True
     text = f"generated {_format_time(generated)}"
+    reasons = []
     if newest_evidence is not None and newest_evidence > generated.timestamp():
-        return row("warn", "", f"{text}; stale: evidence changed after this report")
-    return row("plain", "", text)
+        reasons.append("evidence changed after this report")
+    if now - generated > timedelta(hours=24):
+        reasons.append("older than 24 hours")
+    if reasons:
+        return row("warn", "", f"{text}; stale: {'; '.join(reasons)}"), True
+    return row("plain", "", text), False
 
 
 def _evidence(root: Path) -> list[Row]:
