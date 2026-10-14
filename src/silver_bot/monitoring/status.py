@@ -34,6 +34,14 @@ READINESS_REPORTS: tuple[tuple[str, str], ...] = (
     ("live", "live_readiness_report"),
     ("demo", "demo_readiness_report"),
 )
+LADDER_STEPS: tuple[str, ...] = ("Backtest", "Out-of-sample", "Paper", "Demo", "Live")
+NEXT_TEXT: tuple[str, ...] = (
+    "Next: run a backtest (runbook-backtest.md steps 5 and 6)",
+    "Next: run a backtest (runbook-backtest.md steps 5 and 6)",
+    "Next: paper trading (not available yet, G-3)",
+    "Next: refresh demo readiness  python -m silver_bot.demo_readiness (runbook-demo-testnet.md steps 3 and 4)",
+)
+ALL_GATES_PASS = "All evidence gates pass. Live trading stays blocked (PRD-F12)."
 ALERT_STATES: dict[str, str] = {
     "risk_rejected": "warn",
     "signal_rejected": "warn",
@@ -83,13 +91,67 @@ def collect_status(
         lambda: _alerts(root),
     )
     panels = []
+    degraded = 0
     for title, collect in zip(PANEL_TITLES, collectors):
         try:
             rows = collect()
         except Exception as exc:  # one unreadable source must not blank the page (AC-23.7)
             rows = [row("err", "unreadable", type(exc).__name__)]
+            degraded += 1
         panels.append({"title": title, "rows": rows})
-    return {"generated_at": _format_time(now), "root": str(root), "panels": panels}
+    try:
+        ladder = _ladder(panels[2]["rows"], panels[1]["rows"])
+    except Exception as exc:  # a broken panel makes the ladder unreadable, never a guess (AC-23.7)
+        ladder = {"steps": [row("err", "unreadable", type(exc).__name__)], "next": None, "next_text": ""}
+        degraded += 1
+    return {
+        "generated_at": _format_time(now),
+        "root": str(root),
+        "panels": panels,
+        "ladder": ladder,
+        "degraded": degraded,
+    }
+
+
+def _ladder(evidence_rows: list[Row], readiness_rows: list[Row]) -> dict[str, Any]:
+    """Build the five-step evidence ladder from rows already collected."""
+
+    steps = [_strategy_step(label, stem, evidence_rows) for label, stem in zip(LADDER_STEPS, STRATEGY_REPORTS)]
+    steps.append(_demo_step(readiness_rows))
+    steps.append(row("off", LADDER_STEPS[4], "blocked (PRD-F12)"))
+    next_index = next((index for index, step in enumerate(steps[:4]) if step["state"] != "ok"), None)
+    next_text = ALL_GATES_PASS if next_index is None else NEXT_TEXT[next_index]
+    return {"steps": steps, "next": next_index, "next_text": next_text}
+
+
+def _find_row(rows: list[Row], label: str) -> Row:
+    for item in rows:
+        if item["label"] == label:
+            return item
+    raise KeyError(label)
+
+
+def _strategy_step(label: str, stem: str, evidence_rows: list[Row]) -> Row:
+    found = _find_row(evidence_rows, stem)
+    if found["state"] == "ok":
+        return row("ok", label, found["text"].split(",")[0])
+    if found["text"] == "missing":
+        return row("off", label, "missing")
+    return row("err", label, found["text"].split(",")[0])
+
+
+def _demo_step(readiness_rows: list[Row]) -> Row:
+    found = _find_row(readiness_rows, "demo")
+    state, text = found["state"], found["text"]
+    if state == "ok":
+        return row("ok", LADDER_STEPS[3], "READY")
+    if state == "warn":
+        return row("warn", LADDER_STEPS[3], "READY · stale")
+    if state == "err" and text.startswith("NOT READY"):
+        return row("err", LADDER_STEPS[3], "NOT READY")
+    if text == "missing":
+        return row("off", LADDER_STEPS[3], "missing")
+    return row("err", LADDER_STEPS[3], "unreadable")
 
 
 def _banner(config: AppConfig | None, config_error: str, root: Path) -> list[Row]:

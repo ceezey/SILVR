@@ -271,6 +271,137 @@ def test_alerts_missing_log_is_not_available(tmp_path):
     ]
 
 
+STEP_STEMS = ("backtest_report", "out_of_sample_validation_report", "paper_trading_report")
+STEP_LABELS = ("Backtest", "Out-of-sample", "Paper", "Demo", "Live")
+
+
+def steps(status: dict) -> list[dict]:
+    return status["ladder"]["steps"]
+
+
+def fresh_demo(root: Path, ready: bool = True, hours: float = 1) -> None:
+    generated = NOW - timedelta(hours=hours)
+    write_report(root, "demo_readiness_report", readiness(ready, generated.isoformat()))
+
+
+def old_mtime() -> float:
+    return (NOW - timedelta(hours=40)).timestamp()
+
+
+def test_ladder_has_five_labelled_steps_and_no_degraded_when_clean(tmp_path):
+    status = collect(tmp_path)
+
+    assert [item["label"] for item in steps(status)] == list(STEP_LABELS)
+    assert status["degraded"] == 0
+
+
+def test_ladder_strategy_steps_by_evidence_state(tmp_path):
+    for index, stem in enumerate(STEP_STEMS):
+        assert steps(collect(tmp_path))[index] == {"state": "off", "label": STEP_LABELS[index], "text": "missing"}
+        write_report(tmp_path, stem, b"")
+        assert steps(collect(tmp_path))[index] == {"state": "err", "label": STEP_LABELS[index], "text": "0 B"}
+        write_report(tmp_path, stem, "not json")
+        assert steps(collect(tmp_path))[index] == {"state": "err", "label": STEP_LABELS[index], "text": "8 B"}
+        write_report(tmp_path, stem, "[1]")
+        assert steps(collect(tmp_path))[index] == {"state": "err", "label": STEP_LABELS[index], "text": "3 B"}
+        write_report(tmp_path, stem, "{}")
+        assert steps(collect(tmp_path))[index] == {"state": "ok", "label": STEP_LABELS[index], "text": "2 B"}
+
+
+def test_ladder_demo_fresh_is_ready(tmp_path):
+    fresh_demo(tmp_path)
+
+    assert steps(collect(tmp_path))[3] == {"state": "ok", "label": "Demo", "text": "READY"}
+
+
+def test_ladder_demo_stale_is_ready_stale(tmp_path):
+    fresh_demo(tmp_path, hours=25)
+
+    assert steps(collect(tmp_path))[3] == {"state": "warn", "label": "Demo", "text": "READY · stale"}
+
+
+def test_ladder_demo_not_ready_drops_the_stale_suffix(tmp_path):
+    fresh_demo(tmp_path, ready=False)
+    assert steps(collect(tmp_path))[3] == {"state": "err", "label": "Demo", "text": "NOT READY"}
+    fresh_demo(tmp_path, ready=False, hours=30)
+    assert steps(collect(tmp_path))[3] == {"state": "err", "label": "Demo", "text": "NOT READY"}
+
+
+def test_ladder_demo_missing_is_off_and_bad_files_are_unreadable(tmp_path):
+    assert steps(collect(tmp_path))[3] == {"state": "off", "label": "Demo", "text": "missing"}
+    for content in (b"", "not json", "[]"):
+        write_report(tmp_path, "demo_readiness_report", content)
+        assert steps(collect(tmp_path))[3] == {"state": "err", "label": "Demo", "text": "unreadable"}
+
+
+def test_ladder_live_is_blocked_even_when_live_report_says_ready(tmp_path):
+    write_report(tmp_path, "live_readiness_report", readiness(True, (NOW - timedelta(hours=1)).isoformat()))
+
+    assert steps(collect(tmp_path))[4] == {"state": "off", "label": "Live", "text": "blocked (PRD-F12)"}
+
+
+def test_next_is_first_non_ok_step_with_exact_strip_text(tmp_path):
+    from silver_bot.monitoring.status import ALL_GATES_PASS, NEXT_TEXT
+
+    backtest = "Next: run a backtest (runbook-backtest.md steps 5 and 6)"
+    paper = "Next: paper trading (not available yet, G-3)"
+    demo = "Next: refresh demo readiness  python -m silver_bot.demo_readiness (runbook-demo-testnet.md steps 3 and 4)"
+    assert NEXT_TEXT == (backtest, backtest, paper, demo)
+    assert ALL_GATES_PASS == "All evidence gates pass. Live trading stays blocked (PRD-F12)."
+
+    assert collect(tmp_path)["ladder"]["next"] == 0
+    assert collect(tmp_path)["ladder"]["next_text"] == backtest
+
+    write_report(tmp_path, STEP_STEMS[0], "{}", mtime=old_mtime())
+    ladder = collect(tmp_path)["ladder"]
+    assert (ladder["next"], ladder["next_text"]) == (1, backtest)
+
+    write_report(tmp_path, STEP_STEMS[1], "{}", mtime=old_mtime())
+    ladder = collect(tmp_path)["ladder"]
+    assert (ladder["next"], ladder["next_text"]) == (2, paper)
+
+    write_report(tmp_path, STEP_STEMS[2], "{}", mtime=old_mtime())
+    ladder = collect(tmp_path)["ladder"]
+    assert (ladder["next"], ladder["next_text"]) == (3, demo)
+
+    fresh_demo(tmp_path, hours=25)
+    assert collect(tmp_path)["ladder"]["next"] == 3
+
+    fresh_demo(tmp_path)
+    ladder = collect(tmp_path)["ladder"]
+    assert (ladder["next"], ladder["next_text"]) == (None, ALL_GATES_PASS)
+
+
+def test_next_skips_an_ok_step_after_a_failing_one(tmp_path):
+    write_report(tmp_path, STEP_STEMS[2], "{}", mtime=old_mtime())
+    fresh_demo(tmp_path)
+
+    assert collect(tmp_path)["ladder"]["next"] == 0
+
+
+def test_raising_collector_counts_as_degraded(tmp_path):
+    (tmp_path / "logs" / "audit.jsonl").mkdir(parents=True)
+
+    status = collect(tmp_path)
+
+    assert status["degraded"] == 1
+    assert len(steps(status)) == 5
+
+
+def test_broken_panel_makes_ladder_unreadable_and_counts_both(tmp_path):
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "reports" / "backtest_report.json").mkdir()
+
+    status = collect(tmp_path)
+
+    assert status["ladder"] == {
+        "steps": [{"state": "err", "label": "unreadable", "text": "KeyError"}],
+        "next": None,
+        "next_text": "",
+    }
+    assert status["degraded"] == 2
+
+
 def test_one_unreadable_source_only_breaks_its_panel(tmp_path):
     (tmp_path / "logs" / "audit.jsonl").mkdir(parents=True)
 
