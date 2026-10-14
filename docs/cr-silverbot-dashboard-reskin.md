@@ -74,7 +74,7 @@ As specified in [dsd-silverbot.md](dsd-silverbot.md) §4.5 (from the design spec
 | 1 Backtest | `reports/backtest_report.json` | non-empty JSON object `[ OK ]`; 0 bytes or not a JSON object `[ ERR ]`; missing `[ OFF ]` |
 | 2 Out-of-sample | `reports/out_of_sample_validation_report.json` | as step 1 |
 | 3 Paper | `reports/paper_trading_report.json` | as step 1 |
-| 4 Demo | `reports/demo_readiness_report.json` | READY and fresh `[ OK ]`; READY and stale `[ WRN ]`; NOT READY `[ ERR ]`; missing `[ OFF ]`; unreadable `[ ERR ]` |
+| 4 Demo | `reports/demo_readiness_report.json` | READY and fresh `[ OK ]`; READY and stale `[ WRN ]`; NOT READY `[ ERR ]` (with `· stale` when stale); missing `[ OFF ]`; unreadable `[ ERR ]` |
 | 5 Live | none | always `[ OFF ] blocked (PRD-F12)` |
 
 Next strip text: steps 1 or 2, `Next: run a backtest (runbook-backtest.md steps 5 and 6)` (the backtest command needs the step 5 environment, so the strip points at the runbook); step 3, `Next: paper trading (not available yet, G-3)`; step 4, `Next: refresh demo readiness  python -m silver_bot.demo_readiness (runbook-demo-testnet.md steps 3 and 4)` (its default output, `reports/demo_readiness_report.json`, is the file the step reads); none, `All evidence gates pass. Live trading stays blocked (PRD-F12).` No other text is possible.
@@ -113,7 +113,10 @@ Per [sad-silverbot.md](sad-silverbot.md) §4: `restraint-guardian` (SAD-A4) on t
 
 | Reviewer | Result | Notes |
 |---|---|---|
-| restraint-guardian (SAD-A4) | Not run on code | Runs on the build diff after approval. A scope review of this record (2026-10-14) found no safety check or `cr-001` test cut and suggested trims, now applied (font hashes in the test only, ladder reuses collected rows, one parametrized 404 test, only used CSS tokens). It also suggested dropping the branded 404 page and the `degraded` line; both are kept because the owner approved them in the design review, and the owner may still cut them before approval. |
+| restraint-guardian (SAD-A4), scope review | PASS with trims | A scope review of this record (2026-10-14) found no safety check or `cr-001` test cut and suggested trims, applied before approval (font hashes in the test only, ladder reuses collected rows, one parametrized 404 test, only used CSS tokens). It also suggested dropping the branded 404 page and the `degraded` line; the owner kept both (2026-10-14). |
+| restraint-guardian (SAD-A4), build diff `e685bd7..c9b410f` | FAIL (one minor) | Dead `.detail` CSS selector in `monitoring/dashboard_server.py`. No live-gate surface touched (checked with `git diff --stat`); no safety check or `cr-001` test weakened. |
+| Whole-branch review, `e685bd7..d31449b` | Ready with fixes | No critical finding. Fixed in `f83b3e1` and the doc commit after it: the Demo ladder step keeps `· stale` when NOT READY (AC-23.10), the dead selector is removed, step labels use the `Label` style, and the PRD, QAD, DSD, OPS and index wording was reconciled. |
+| restraint-guardian (SAD-A4), re-run after `f83b3e1` | PASS | `.detail` finding resolved; every CSS selector matches emitted markup; no new scope, configuration or dependency. |
 
 ## 6. Deferred
 

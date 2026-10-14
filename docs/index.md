@@ -27,7 +27,7 @@ All suite docs were reconciled against code at commit `62037d1`, except the four
 | Project Build Guide (BUILD) | [build-silverbot.md](build-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
 | Compliance & Legal Readiness Register (CLR) | [clr-silverbot.md](clr-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`099085b`, batch 2 items; `70ccaec`, batch 1 items) |
 | AI Assurance Dossier (AIA) | [aia-silverbot.md](aia-silverbot.md) | 0.1 | Draft | 2026-10-09 | 2026-10-09 (`70ccaec`; `099085b`, batch 2 items) |
-| Operations & Observability Runbook (OPS) | [ops-silverbot.md](ops-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
+| Operations & Observability Runbook (OPS) | [ops-silverbot.md](ops-silverbot.md) | 0.1 | Draft | 2026-10-14 | 2026-10-14 (`f83b3e1`, §5.6 dashboard items); 2026-10-09 (`5c781fc`, review-fix items; `099085b`, batch 2 items; `70ccaec`, batch 1 items; `feat/operator-dashboard`, PRD-F13 items) |
 | Build Session Log (LOG) | [log-silverbot.md](log-silverbot.md) | 0.1 | Draft (append-only) | 2026-10-14 | 2026-10-09 (`5c781fc`, review-fix items; `099085b`; `feat/operator-dashboard`, PRD-F13 items) |
 
 ### Change Records

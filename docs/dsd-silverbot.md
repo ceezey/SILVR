@@ -339,7 +339,7 @@ The app shell and breakpoints of §3.1, as a Figma template and as this text.
 | 1 Backtest | `reports/backtest_report.json` | non-empty JSON `[ OK ]`; 0 B or not JSON `[ ERR ]`; missing `[ OFF ]` |
 | 2 Out-of-sample | `reports/out_of_sample_validation_report.json` | as step 1 |
 | 3 Paper | `reports/paper_trading_report.json` | as step 1 |
-| 4 Demo | `reports/demo_readiness_report.json` (`ready`, `generated_at`) | `ready` true and fresh `[ OK ] READY`; `ready` true and stale (older than 24 h, or an evidence report modified after `generated_at`) `[ WRN ] READY · stale`; `ready` false `[ ERR ] NOT READY`; missing `[ OFF ]`; unreadable `[ ERR ] unreadable` |
+| 4 Demo | `reports/demo_readiness_report.json` (`ready`, `generated_at`) | `ready` true and fresh `[ OK ] READY`; `ready` true and stale (older than 24 h, or an evidence report modified after `generated_at`) `[ WRN ] READY · stale`; `ready` false `[ ERR ] NOT READY` (`[ ERR ] NOT READY · stale` when either stale condition holds); missing `[ OFF ]`; unreadable `[ ERR ] unreadable` |
 | 5 Live | none | always `[ OFF ] blocked (PRD-F12)`, whatever the live readiness report says |
 
 - NEXT is the first of steps 1 to 4 whose state is not `[ OK ]`. Its card takes the `next` variant (accent outline and a `NEXT` label).
@@ -358,7 +358,7 @@ The strip never suggests editing configuration, enabling live trading or removin
 
 **Source states** (every panel row): `ok`; `empty` (0 B, `[ ERR ]`); `unavailable` (missing, `[ OFF ]`); `unreadable` (bad JSON or permission denied, `[ ERR ]`); `stale` (`[ WRN ]`, readiness only, either stale condition of §2.2; an `[ ERR ]` row keeps `[ ERR ]` and adds `stale` to its detail). Each shows the reason and, where one exists, the next step.
 
-**Page states:** `nominal`; `degraded` (at least one source unreadable; one summary line under the banner); a branded `404` page in the same shell (header, message, link to `/`, no data). There is no 500 page, because collector failures are isolated per panel. Error pages carry no status data, so they carry no banner.
+**Page states:** `nominal`; `degraded` (at least one panel's collector, or the ladder, failed; one summary line under the banner); a branded `404` page in the same shell (header, message, link to `/`, no data). There is no 500 page, because collector failures are isolated per panel. Error pages carry no status data, so they carry no banner.
 
 **Overlays:** native disclosure (`<details>`) and native tooltip (`title`) are allowed in mode A now. Toast and dialog are specified for the future: they need a script and a Change Record, have no motion, and a dialog is never used to confirm a risky action (the system has none). No loading spinners: pages are server-rendered and motion stays none (§5).
 
