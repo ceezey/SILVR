@@ -13,7 +13,7 @@ import silver_bot
 from silver_bot.backtest.engine import BacktestEngine
 from silver_bot.backtest.criteria import combine_verdicts, evaluate_evidence
 from silver_bot.backtest.models import BacktestConfig, BacktestResult
-from silver_bot.backtest.reporting import _json_safe
+from silver_bot.backtest.reporting import json_safe
 from silver_bot.backtest.validation import BacktestValidationSuite, monte_carlo_r
 from silver_bot.config import AppConfig
 from silver_bot.ml import MLFilterConfig
@@ -215,4 +215,4 @@ def _criteria(metrics: Mapping[str, Any], backtest_config: BacktestConfig) -> di
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_json_safe(dict(payload)), indent=2, sort_keys=True), encoding="utf-8")
+    path.write_text(json.dumps(json_safe(dict(payload)), indent=2, sort_keys=True), encoding="utf-8")

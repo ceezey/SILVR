@@ -53,7 +53,10 @@ class KillSwitch:
         return False
 
     def trip(self, reason: str) -> None:
-        """Write the kill-switch file; the first trip's reason is kept."""
+        """Trip the switch: write the file, or with no path record the reason in memory.
+
+        The first trip's reason is kept.
+        """
 
         if self.is_active():
             return

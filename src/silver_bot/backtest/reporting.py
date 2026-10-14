@@ -31,7 +31,7 @@ def export_backtest_result(result: BacktestResult, output_dir: str | Path) -> di
     _write_csv(paths["rejected_signals"], result.rejected_signals)
     _write_csv(paths["daily_summary"], daily_summary(result.trades))
     paths["backtest_report"].write_text(
-        json.dumps(_json_safe(result.metrics), indent=2, sort_keys=True),
+        json.dumps(json_safe(result.metrics), indent=2, sort_keys=True),
         encoding="utf-8",
     )
     return paths
@@ -80,11 +80,13 @@ def _csv_safe(value: Any) -> Any:
     return value
 
 
-def _json_safe(value: Any) -> Any:
+def json_safe(value: Any) -> Any:
+    """Return a JSON-serialisable copy: datetimes as ISO text, inf as \"inf\", enums as values."""
+
     if isinstance(value, dict):
-        return {key: _json_safe(item) for key, item in value.items()}
+        return {key: json_safe(item) for key, item in value.items()}
     if isinstance(value, list):
-        return [_json_safe(item) for item in value]
+        return [json_safe(item) for item in value]
     if isinstance(value, datetime):
         return value.isoformat()
     if value == float("inf"):

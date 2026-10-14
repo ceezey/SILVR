@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 import urllib.error
+import urllib.request
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
@@ -199,3 +200,25 @@ def test_reconnect_gives_up_when_nothing_is_delivered() -> None:
 
     with pytest.raises(ConnectionError):
         asyncio.run(take(stream, 1))
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://evil.example", "http://fapi.binance.com", "https://fapi.binance.com.evil.com", "https://user@fapi.binance.com"],
+)
+def test_adapter_rejects_hosts_other_than_binance_futures(url: str) -> None:
+    with pytest.raises(ValueError, match="production or testnet endpoint"):
+        BinanceFuturesAdapter(base_url=url)
+
+
+def test_adapter_accepts_production_and_testnet_hosts() -> None:
+    assert BinanceFuturesAdapter(base_url="https://fapi.binance.com:443").base_url
+    assert BinanceFuturesAdapter(base_url="https://testnet.binancefuture.com").base_url
+
+
+def test_redirects_are_refused() -> None:
+    from silver_bot.exchange.binance_futures import _NoRedirect
+
+    request = urllib.request.Request("https://fapi.binance.com/fapi/v1/klines")
+    with pytest.raises(urllib.error.HTTPError, match="redirect refused"):
+        _NoRedirect().redirect_request(request, None, 302, "Found", {}, "https://elsewhere.example/")

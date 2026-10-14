@@ -119,12 +119,17 @@ def _run_market_mode(
 ) -> int:
     """Run paper or demo mode until stopped; SIGTERM stops it like Ctrl+C."""
 
+    try:
+        adapter = BinanceFuturesAdapter.from_config(config)
+    except ValueError as exc:
+        logger.error("configuration rejected: %s", exc)
+        return EXIT_USAGE
     previous_handler = signal.signal(signal.SIGTERM, _interrupt)
     try:
         asyncio.run(
             run_paper_session(
                 config,
-                adapter=BinanceFuturesAdapter.from_config(config),
+                adapter=adapter,
                 storage=storage,
                 audit=audit,
                 output_dir=Path(args.output_dir),

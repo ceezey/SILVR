@@ -127,6 +127,12 @@ def test_market_data_failure_exits_1_and_audits(workdir: Path, monkeypatch: pyte
     assert events[-1]["context"]["exit_code"] == 1
 
 
+def test_paper_mode_rejects_a_non_binance_base_url(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BINANCE_FUTURES_BASE_URL", "https://evil.example")
+
+    assert main([]) == 2
+
+
 def test_max_candles_is_rejected_in_backtest_and_when_below_one(
     workdir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

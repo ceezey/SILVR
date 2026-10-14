@@ -247,7 +247,7 @@ def test_on_trade_closed_and_report_writer(tmp_path) -> None:
     result = asyncio.run(engine.run())
     path = tmp_path / "reports" / "paper_trading_report.json"
 
-    write_paper_report(path, result, config=AppConfig(), started_at=datetime(2026, 1, 2, tzinfo=UTC))
+    write_paper_report(path, result, config=AppConfig(), started_at=datetime(2026, 1, 2, tzinfo=UTC), initial_equity=10_000.0)
 
     report = json.loads(path.read_text(encoding="utf-8"))
     assert seen == [1]

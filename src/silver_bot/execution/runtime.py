@@ -16,7 +16,7 @@ from typing import Any
 from silver_bot.backtest.metrics import calculate_metrics
 from silver_bot.backtest.models import BacktestConfig, EquityPoint
 from silver_bot.backtest.runner import build_ml_filter_config
-from silver_bot.backtest.reporting import _json_safe
+from silver_bot.backtest.reporting import json_safe
 from silver_bot.config import AppConfig
 from silver_bot.data import (
     BinancePollingMarketDataStream,
@@ -67,7 +67,9 @@ async def run_paper_session(
     report_path = output_dir / PAPER_REPORT_FILENAME
 
     def write_report(result: PaperTradingResult) -> None:
-        write_paper_report(report_path, result, config=config, started_at=started_at)
+        write_paper_report(
+            report_path, result, config=config, started_at=started_at, initial_equity=defaults.initial_balance
+        )
 
     engine = PaperTradingEngine(
         stream=ReconnectingMarketDataStream(lambda: polling, policy=RECONNECT_POLICY),
@@ -84,6 +86,7 @@ async def run_paper_session(
         storage=storage,
         ml_filter=MLProbabilityFilter(build_ml_filter_config(config)),
         audit_logger=audit,
+        initial_equity=defaults.initial_balance,
         history=history,
         on_trade_closed=write_report,
     )
@@ -113,7 +116,7 @@ def write_paper_report(
     *,
     config: AppConfig,
     started_at: datetime,
-    initial_equity: float = 10_000.0,
+    initial_equity: float,
 ) -> None:
     """Write the paper evidence report atomically (a reader never sees half a file)."""
 
@@ -145,5 +148,5 @@ def write_paper_report(
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(_json_safe(payload), indent=2, sort_keys=True), encoding="utf-8")
+    temporary.write_text(json.dumps(json_safe(payload), indent=2, sort_keys=True), encoding="utf-8")
     os.replace(temporary, path)

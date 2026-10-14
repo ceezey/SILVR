@@ -14,7 +14,7 @@ import urllib.request
 from collections.abc import Callable
 from datetime import datetime
 from typing import Sequence
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from silver_bot.config import AppConfig
 from silver_bot.config.settings import is_binance_futures_testnet_url
@@ -34,12 +34,39 @@ BINANCE_INTERVALS = frozenset(
 )
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects, so a request never leaves the validated host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _urllib_get(url: str) -> bytes:
     """GET a URL with no credentials and return the body."""
 
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+    with _OPENER.open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
         return response.read()
+
+
+def is_binance_futures_production_url(url: str) -> bool:
+    """Return true only for exactly https://fapi.binance.com (optional port 443)."""
+
+    try:
+        parts = urlsplit(url.strip())
+        port = parts.port
+    except ValueError:
+        return False
+    return (
+        parts.scheme == "https"
+        and (parts.hostname or "").lower() == "fapi.binance.com"
+        and parts.username is None
+        and parts.password is None
+        and port in (None, 443)
+    )
 
 
 class BinanceFuturesAdapter(ExchangeAdapter):
@@ -62,6 +89,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         )
         if self.testnet and not is_binance_futures_testnet_url(self.base_url):
             raise ValueError("Demo/testnet mode requires the Binance Futures testnet endpoint")
+        if not (is_binance_futures_testnet_url(self.base_url) or is_binance_futures_production_url(self.base_url)):
+            raise ValueError("Binance Futures base URL must be the production or testnet endpoint")
         self._http_get = http_get or _urllib_get
 
     @classmethod
