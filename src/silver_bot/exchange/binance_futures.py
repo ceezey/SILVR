@@ -117,7 +117,9 @@ class BinanceFuturesAdapter(ExchangeAdapter):
     def _client_options(self) -> dict[str, Any]:
         """Build the ccxt client options; credentials and testnet URLs only for the testnet host."""
 
-        options: dict[str, Any] = {"enableRateLimit": True}
+        # fetchCurrencies off: public candles need no currency list, and with an API key ccxt
+        # would send a signed sapi request that the testnet does not support.
+        options: dict[str, Any] = {"enableRateLimit": True, "options": {"fetchCurrencies": False}}
         if self._credentials_allowed():
             if self.api_key:
                 options["apiKey"] = self.api_key

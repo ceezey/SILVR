@@ -394,3 +394,19 @@ def test_order_methods_still_disabled_with_injected_client() -> None:
         asyncio.run(adapter.cancel_order(symbol="BTCUSDT", order_id="x"))
 
     assert "client" not in holder
+
+
+@pytest.mark.parametrize("credentialed", [True, False])
+def test_real_ccxt_client_does_not_fetch_currencies(credentialed: bool) -> None:
+    # ccxt load_markets would otherwise send a signed sapi request (unsupported on the testnet).
+    kwargs = (
+        {"api_key": "k", "api_secret": "s", "testnet": True, "base_url": BINANCE_FUTURES_TESTNET_BASE_URL}
+        if credentialed
+        else {}
+    )
+    client = BinanceFuturesAdapter(**kwargs)._build_client()
+    try:
+        assert client.options["fetchCurrencies"] is False
+        assert len(client.options) > 1  # ccxt default options were merged, not replaced
+    finally:
+        asyncio.run(client.close())
