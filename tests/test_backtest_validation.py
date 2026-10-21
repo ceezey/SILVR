@@ -171,6 +171,8 @@ def test_out_of_sample_report_has_walk_forward_monte_carlo_and_criteria(tmp_path
     assert windows[-1]["end"] < oos["segments"]["final_test"]["start"]
     assert oos["monte_carlo"]["source"] == "full_period_trades"
     assert oos["monte_carlo"]["seed"] == 7
+    assert oos["monte_carlo"]["note"] == "includes final-test trades; do not tune on it"
+    assert oos["criteria"]["note"] == "not promotion evidence; see promotion_gate"
     # These synthetic candles never trade, so both criteria sets fail.
     assert oos["criteria"]["verdict"] == FAIL
     assert oos["criteria"]["final_test"]["verdict"] == FAIL

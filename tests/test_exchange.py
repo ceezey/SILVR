@@ -271,16 +271,7 @@ def test_no_credentials_for_production_host() -> None:
     assert "urls" not in options
 
 
-def test_credentials_ignored_with_warning_for_non_testnet_host(caplog) -> None:
-    with caplog.at_level("WARNING"):
-        adapter, holder = _adapter([[_row(0)]], api_key="k", api_secret="s")
-    _fetch(adapter)
-
-    assert any("credentials" in r.getMessage().lower() for r in caplog.records)
-    assert "apiKey" not in holder["client"].options
-
-
-def test_credentials_and_testnet_urls_for_testnet() -> None:
+def test_testnet_client_has_testnet_urls_and_never_credentials() -> None:
     adapter, holder = _adapter(
         [[_row(0)]],
         api_key="k",
@@ -292,15 +283,14 @@ def test_credentials_and_testnet_urls_for_testnet() -> None:
     _fetch(adapter)
 
     options = holder["client"].options
-    assert options["apiKey"] == "k"
-    assert options["secret"] == "s"
+    assert "apiKey" not in options
+    assert "secret" not in options
     api_urls = options["urls"]["api"]
     assert api_urls
     assert {urlsplit(url).hostname for url in api_urls.values()} == {"testnet.binancefuture.com"}
 
 
-def test_testnet_host_without_testnet_flag_still_overrides_urls() -> None:
-    # Credentials are attached whenever the host is the testnet, so URLs must follow.
+def test_testnet_host_without_testnet_flag_still_overrides_urls_without_credentials() -> None:
     adapter, holder = _adapter(
         [[_row(0)]], api_key="k", api_secret="s", base_url=BINANCE_FUTURES_TESTNET_BASE_URL
     )
@@ -308,13 +298,13 @@ def test_testnet_host_without_testnet_flag_still_overrides_urls() -> None:
     _fetch(adapter)
 
     options = holder["client"].options
-    assert options["apiKey"] == "k"
+    assert "apiKey" not in options and "secret" not in options
     assert {urlsplit(u).hostname for u in options["urls"]["api"].values()} == {
         "testnet.binancefuture.com"
     }
 
 
-def test_real_ccxt_client_has_only_testnet_urls_when_credentialed() -> None:
+def test_real_ccxt_testnet_client_has_only_testnet_urls_and_no_credentials() -> None:
     adapter = BinanceFuturesAdapter(
         api_key="k", api_secret="s", testnet=True, base_url=BINANCE_FUTURES_TESTNET_BASE_URL
     )
@@ -322,7 +312,8 @@ def test_real_ccxt_client_has_only_testnet_urls_when_credentialed() -> None:
     client = adapter._build_client()
     try:
         hosts = {urlsplit(url).hostname for url in client.urls["api"].values()}
-        assert client.apiKey == "k"
+        assert not client.apiKey
+        assert not client.secret
     finally:
         asyncio.run(client.close())
 

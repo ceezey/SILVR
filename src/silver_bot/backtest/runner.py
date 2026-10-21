@@ -134,6 +134,7 @@ def run_backtest(
             "walk_forward": {"span": "training_and_validation", "windows": walk_forward},
             "monte_carlo": {
                 "source": "full_period_trades",
+                "note": "includes final-test trades; do not tune on it",
                 **monte_carlo_r(
                     [trade.realized_r for trade in full.trades],
                     runs=MONTE_CARLO_RUNS,
@@ -141,6 +142,7 @@ def run_backtest(
                 ),
             },
             "criteria": {
+                "note": "not promotion evidence; see promotion_gate",
                 "verdict": combine_verdicts(full_criteria["verdict"], final_test["criteria"]["verdict"]),
                 "full_period": full_criteria,
                 "final_test": final_test["criteria"],

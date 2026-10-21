@@ -34,7 +34,6 @@ from silver_bot.data.csv_loader import parse_kline_row, timeframe_interval
 from silver_bot.data.funding import FundingRate
 from silver_bot.exchange.base import ExchangeAdapter
 from silver_bot.models import Candle
-from silver_bot.utils.logging import get_logger
 
 
 BINANCE_FUTURES_PRODUCTION_BASE_URL = "https://fapi.binance.com"
@@ -114,8 +113,6 @@ _TESTNET_API_PATHS = {
     "papiV2": "/papi/v2",
 }
 
-_logger = get_logger(__name__)
-
 
 async def _backoff_sleep(seconds: float) -> None:
     await asyncio.sleep(seconds)
@@ -135,8 +132,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         client_factory: Callable[[dict[str, Any]], Any] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        self.api_key = api_key
-        self.api_secret = api_secret
+        # api_key/api_secret are accepted for config compatibility but never stored or sent:
+        # every request here is public market data.
         self.testnet = testnet
         self.base_url = base_url or (
             BINANCE_FUTURES_TESTNET_BASE_URL if testnet else BINANCE_FUTURES_PRODUCTION_BASE_URL
@@ -147,12 +144,6 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         self._http_get = http_get or _urllib_get
         self._client_factory = client_factory or ccxt_async.binanceusdm
         self._clock = clock or (lambda: datetime.now(UTC))
-        if (api_key or api_secret) and not self._credentials_allowed():
-            _logger.warning(
-                "API credentials were supplied for a non-testnet host; ignoring them. "
-                "Credentials are only ever sent to %s.",
-                BINANCE_FUTURES_TESTNET_HOST,
-            )
 
     @classmethod
     def from_config(cls, config: AppConfig) -> "BinanceFuturesAdapter":
@@ -192,8 +183,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             {
                 "symbol": symbol,
                 "interval": timeframe,
-                "startTime": int(start.timestamp() * 1000),
-                "endTime": int(end.timestamp() * 1000) - 1,
+                "startTime": _to_ms(start),
+                "endTime": _to_ms(end) - 1,
                 "limit": min(limit, MAX_KLINES_LIMIT),
             }
         )
@@ -208,21 +199,12 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             raise ConnectionError(f"Binance klines request failed: {exc}") from exc
         return _parse_klines(body, symbol=symbol, timeframe=timeframe)
 
-
-    def _credentials_allowed(self) -> bool:
-        return is_binance_futures_testnet_url(self.base_url)
-
     def _client_options(self) -> dict[str, Any]:
-        """Build the ccxt client options; credentials and testnet URLs only for the testnet host."""
+        """Build the ccxt client options: never any credentials; testnet URLs only for the testnet host."""
 
-        # fetchCurrencies off: public candles need no currency list, and with an API key ccxt
-        # would send a signed sapi request that the testnet does not support.
+        # fetchCurrencies off: public candles need no currency list (that call is signed sapi).
         options: dict[str, Any] = {"enableRateLimit": True, "options": {"fetchCurrencies": False}}
-        if self._credentials_allowed():
-            if self.api_key:
-                options["apiKey"] = self.api_key
-            if self.api_secret:
-                options["secret"] = self.api_secret
+        if is_binance_futures_testnet_url(self.base_url):
             # CD-10: do not rely on set_sandbox_mode; point every endpoint at the testnet host.
             base = BINANCE_FUTURES_TESTNET_BASE_URL
             options["urls"] = {
@@ -234,7 +216,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         _require_binance_futures_host(self.base_url)
         options = self._client_options()
         client = self._client_factory(options)
-        if "apiKey" in options or "secret" in options:
+        if "urls" in options:
             _require_testnet_only_urls(client)
         return client
 
@@ -386,12 +368,12 @@ async def _fetch_funding_page_with_retry(
 
 
 def _require_testnet_only_urls(client: Any) -> None:
-    """Fail closed if a credentialed client could reach any host except the testnet."""
+    """Fail closed if a testnet-pinned client could reach any host except the testnet."""
 
     api_urls = (getattr(client, "urls", None) or {}).get("api", {})
     for name, url in api_urls.items():
         if isinstance(url, str) and urlsplit(url).hostname != BINANCE_FUTURES_TESTNET_HOST:
-            raise ValueError(f"Refusing to attach credentials: endpoint {name!r} is not the testnet host")
+            raise ValueError(f"Refusing client: endpoint {name!r} is not the testnet host")
 
 
 def _parse_klines(body: bytes, *, symbol: str, timeframe: str) -> list[Candle]:

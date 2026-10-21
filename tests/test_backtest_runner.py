@@ -312,16 +312,34 @@ def test_warmup_never_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     run_backtest(backtest_settings(), data, tmp_path / "reports", inputs={}, strategy="top_down_ob", funding=FUNDING)
 
     assert len(built) == 4 + WALK_FORWARD_WINDOWS  # a fresh strategy per run
-    for strategy, (run_candles, warmup, result) in zip(built[2:4], runs[2:4]):  # validation and final_test
-        assert warmup
-        # Warm-up candles were fed with trading=False; only the segment's own candles trade.
+    final_first_open = runs[3][0][0].open_time
+    for index, (strategy, (run_candles, warmup, result)) in enumerate(zip(built[2:], runs[2:]), start=2):
+        # every segment and walk-forward window: validation, final_test, then the windows
+        if index < 4:
+            assert warmup
+        first_open, first_close = run_candles[0].open_time, run_candles[0].close_time
+        assert all(c.open_time < first_open for c in warmup)
+        # Warm-up candles were fed with trading=False; only the run's own candles trade.
         assert strategy.calls == [(c.open_time, False) for c in warmup] + [(c.open_time, True) for c in run_candles]
-        first_close = run_candles[0].close_time
-        assert result.trades or result.rejected_signals  # the scripted strategy did act on the segment itself
+        assert result.trades or result.rejected_signals  # the scripted strategy did act on the run itself
         assert all(trade.entry_time >= first_close for trade in result.trades)
         assert all(record.timestamp >= first_close for record in result.rejected_signals)
         assert result.equity_curve[0].timestamp == first_close
         assert len(result.equity_curve) in (len(run_candles), len(run_candles) + 1)  # +1 for an END_OF_DATA close
+        if index >= 4:  # walk-forward windows (and their warm-up) all precede the final test set
+            assert all(c.open_time < final_first_open for c in [*run_candles, *warmup])
+
+
+@pytest.mark.parametrize("strategy", ["silver_bullet", "top_down_ob"])
+def test_walk_forward_windows_report_simulated_kill_switch(tmp_path: Path, strategy: str) -> None:
+    summary = run_backtest(
+        backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy=strategy, funding=FUNDING
+    )
+
+    windows = read_report(summary, "out_of_sample_validation_report")["walk_forward"]["windows"]
+    assert len(windows) == WALK_FORWARD_WINDOWS
+    for window in windows:
+        assert window["kill_switch"]["mode"] == "simulated_per_run_daily_reset"
 
 
 def test_open_position_closed_at_segment_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

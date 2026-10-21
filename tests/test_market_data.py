@@ -57,6 +57,18 @@ def test_fetch_ohlcv_parses_klines_into_sorted_candles() -> None:
     assert query["limit"] == ["5"]
 
 
+def test_fetch_ohlcv_treats_naive_datetimes_as_utc() -> None:
+    urls: list[str] = []
+    adapter = adapter_returning([], urls=urls)
+    naive = T0.replace(tzinfo=None)
+
+    asyncio.run(adapter.fetch_ohlcv(symbol="BTCUSDT", timeframe="1m", start=naive, end=naive + timedelta(minutes=1)))
+
+    query = parse_qs(urlsplit(urls[0]).query)
+    assert query["startTime"] == [str(int(T0.timestamp() * 1000))]
+    assert query["endTime"] == [str(int((T0 + timedelta(minutes=1)).timestamp() * 1000) - 1)]
+
+
 def test_fetch_ohlcv_never_sends_api_credentials() -> None:
     urls: list[str] = []
 

@@ -21,7 +21,6 @@ from pathlib import Path
 from silver_bot.config import ConfigError, load_config
 from silver_bot.data.csv_loader import timeframe_interval
 from silver_bot.data.funding import FundingDataError, FundingSchedule, write_funding_csv
-from silver_bot.exchange.base import ExchangeAdapter
 from silver_bot.exchange.binance_futures import BinanceFuturesAdapter
 from silver_bot.models import Candle
 
@@ -113,7 +112,7 @@ async def download(
     start: date,
     end: datetime,
     out_dir: Path,
-    adapter: ExchangeAdapter,
+    adapter: BinanceFuturesAdapter,
 ) -> DownloadSummary:
     """Download ``[start, end)`` as one CSV file per UTC month into ``out_dir``."""
 
