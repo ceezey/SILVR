@@ -17,6 +17,7 @@ from silver_bot.backtest.models import (
     TradeRecord,
 )
 from silver_bot.backtest.reporting import export_backtest_result
+from silver_bot.backtest.sim_kill_switch import SimulatedKillSwitch
 from silver_bot.ml import MLDecision, MLFilterResult, MLProbabilityFilter
 from silver_bot.models import Candle, SignalDirection
 from silver_bot.monitoring import StructuredAuditLogger
@@ -61,6 +62,12 @@ class BacktestEngine:
         )
 
         for index, candle in enumerate(ordered):
+            kill_switch = self.risk.kill_switch
+            if isinstance(kill_switch, SimulatedKillSwitch):
+                # Backtest-only: a simulated trip clears at the first candle of a new UTC day.
+                kill_switch.now = candle.open_time
+                if kill_switch.reset_if_new_day(candle.open_time):
+                    self.risk.state.consecutive_losses = 0
             activity_this_candle = False
 
             if open_position is not None:

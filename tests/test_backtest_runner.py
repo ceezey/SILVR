@@ -6,10 +6,13 @@ import pytest
 
 import silver_bot
 from silver_bot.backtest import build_backtest_config, run_backtest
-from silver_bot.backtest.runner import _read_trip
 from silver_bot.config import AppConfig, TradingMode
-from silver_bot.models import Candle
+from silver_bot.models import Candle, SignalDirection
 from silver_bot.readiness import evaluate_live_readiness
+from silver_bot.strategy.models import SilverBulletSignal
+
+
+NO_TRIPS = {"mode": "simulated_per_run_daily_reset", "trips": 0, "trip_log": []}
 
 
 def candles(count: int = 50) -> list[Candle]:
@@ -85,7 +88,7 @@ def test_out_of_sample_report_structure(tmp_path: Path) -> None:
     assert oos["segments"]["validation"]["end"] < oos["segments"]["final_test"]["start"]
     assert isinstance(oos["segments"]["final_test"]["metrics"], dict)
     for name in ("training", "validation", "final_test"):
-        assert oos["segments"][name]["kill_switch"] == {"tripped": False, "reason": None, "tripped_at": None}
+        assert oos["segments"][name]["kill_switch"] == NO_TRIPS
 
 
 def test_run_record_lists_inputs_costs_and_kill_switch_mode(tmp_path: Path) -> None:
@@ -103,7 +106,7 @@ def test_run_record_lists_inputs_costs_and_kill_switch_mode(tmp_path: Path) -> N
     assert run["ml_filter_enabled"] is False
     assert run["package_version"] == silver_bot.__version__
     assert run["first_open_time"] == "2026-01-02T14:00:00+00:00"
-    assert run["kill_switch"] == {"mode": "simulated_per_run", "tripped": False, "reason": None, "tripped_at": None}
+    assert run["kill_switch"] == NO_TRIPS
 
 
 def test_backtest_never_uses_real_kill_switch(tmp_path: Path) -> None:
@@ -127,19 +130,54 @@ def test_simulated_kill_switch_is_on_even_when_settings_disable_it(tmp_path: Pat
     assert config.risk.kill_switch_path == sim
 
 
-def test_read_trip_reports_trip_record(tmp_path: Path) -> None:
-    path = tmp_path / "KILL_SWITCH"
-    assert _read_trip(path) == {"tripped": False, "reason": None, "tripped_at": None}
+def test_tripping_run_reports_trip_count_and_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class AlwaysLosingStrategy:
+        def evaluate(self, history):
+            last = history[-1]
+            return SilverBulletSignal(
+                direction=SignalDirection.LONG,
+                symbol=last.symbol,
+                timeframe=last.timeframe,
+                generated_at=last.open_time,
+                reason=None,
+                explanation="scripted",
+                entry_price=100.0,
+                stop_loss=98.0,
+                take_profit=104.0,
+                risk_reward_ratio=2.0,
+                session_name="scripted",
+                setup_quality_score=90,
+            )
 
-    path.write_text('{"reason": "Max daily loss limit reached", "tripped_at": "2026-01-02T15:00:00+00:00"}', encoding="utf-8")
-    assert _read_trip(path) == {
-        "tripped": True,
-        "reason": "Max daily loss limit reached",
-        "tripped_at": "2026-01-02T15:00:00+00:00",
-    }
+    monkeypatch.setattr("silver_bot.backtest.engine.SilverBulletStrategyEngine", AlwaysLosingStrategy)
+    start = datetime(2026, 1, 2, 14, 0, tzinfo=UTC)
+    stopped_out = [
+        Candle(
+            symbol="BTCUSDT",
+            timeframe="1m",
+            open_time=start + timedelta(minutes=index),
+            close_time=start + timedelta(minutes=index + 1),
+            open=100,
+            high=101,
+            low=97,
+            close=100,
+            volume=1000,
+        )
+        for index in range(20)
+    ]
 
-    path.write_text("not json", encoding="utf-8")
-    assert _read_trip(path) == {"tripped": True, "reason": None, "tripped_at": None}
+    summary = run_backtest(backtest_settings(), stopped_out, tmp_path / "reports", inputs={})
+
+    run = json.loads(summary.report_paths["backtest_run"].read_text(encoding="utf-8"))
+    assert run["kill_switch"]["mode"] == "simulated_per_run_daily_reset"
+    assert run["kill_switch"]["trips"] >= 1
+    assert len(run["kill_switch"]["trip_log"]) == run["kill_switch"]["trips"]
+    first = run["kill_switch"]["trip_log"][0]
+    assert first["reason"] == "Max consecutive losses limit reached"
+    assert first["tripped_at"].startswith("2026-01-02T")
+    assert first["reset_at"] is None
+    oos = json.loads(summary.report_paths["out_of_sample_validation_report"].read_text(encoding="utf-8"))
+    assert oos["segments"]["training"]["kill_switch"]["trips"] >= 1
 
 
 def test_settings_reach_backtest_config(tmp_path: Path) -> None:
