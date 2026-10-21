@@ -149,6 +149,30 @@ def test_gaps_are_reported_and_files_still_load(tmp_path):
     assert len(loaded.candles) == 44_635
 
 
+def test_gaps_at_month_edges_are_counted(tmp_path):
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    last = base + MINUTE * (44_640 - 1)
+    omit = {base, base + MINUTE, base + MINUTE * 2} | {last - MINUTE * n for n in range(4)}
+    summary = run(FakeAdapter(omit=omit), tmp_path, end=datetime(2024, 2, 1, tzinfo=UTC))
+
+    assert summary.gaps == 7
+    assert summary.candles == 44_640 - 7
+
+
+def test_entirely_empty_month_window_counts_all_intervals_as_gaps(tmp_path):
+    class NoFebruary(FakeAdapter):
+        async def fetch_ohlcv(self, *, symbol, timeframe, start, end, limit=1000):
+            if start.month == 2:
+                return []
+            return await super().fetch_ohlcv(symbol=symbol, timeframe=timeframe, start=start, end=end, limit=limit)
+
+    summary = run(NoFebruary(), tmp_path)
+
+    assert summary.gaps == 41_760
+    assert summary.candles == 44_640
+    assert [p.name for p in summary.files] == ["BTCUSDT-1m-2024-01.csv"]
+
+
 def test_download_never_passes_credentials(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("BINANCE_API_KEY", "secret-key-value")
     monkeypatch.setenv("BINANCE_API_SECRET", "secret-secret-value")

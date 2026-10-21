@@ -78,11 +78,14 @@ def _is_complete(path: Path, *, first_ms: int, last_ms: int, month_end: datetime
     return _edge_open_times(path) == (first_ms, last_ms)
 
 
-def _count_missing(candles: list[Candle], interval: timedelta) -> int:
-    missing = 0
-    for previous, current in zip(candles, candles[1:]):
-        missing += max(0, (current.open_time - previous.open_time) // interval - 1)
-    return missing
+def _count_missing(candles: list[Candle], interval: timedelta, window_start: datetime, window_end: datetime) -> int:
+    """Count intervals missing from the expected window: every interval from window_start that
+    closes by window_end, including holes at the window edges and a wholly empty window."""
+
+    expected = max(0, (window_end - window_start) // interval)
+    limit = window_start + interval * expected
+    present = {c.open_time for c in candles if window_start <= c.open_time < limit}
+    return expected - len(present)
 
 
 def _write_atomic(path: Path, candles: list[Candle], interval_ms: int) -> None:
@@ -137,24 +140,25 @@ async def download(
             print(f"{path.name}: complete, skipped")
             skipped.append(path)
         else:
+            window_start = max(month_begin, start_dt)
             candles = list(
                 await adapter.fetch_ohlcv(
                     symbol=symbol,
                     timeframe=timeframe,
-                    start=max(month_begin, start_dt),
+                    start=window_start,
                     end=min(month_end, end),
                     limit=FETCH_LIMIT,
                 )
             )
+            month_gaps = _count_missing(candles, interval, window_start, min(month_end, end, now))
+            gaps += month_gaps
             if not candles:
-                print(f"{path.name}: no candles returned, no file written")
+                print(f"{path.name}: no candles returned, no file written, {month_gaps} gaps")
             else:
                 _write_atomic(path, candles, interval_ms)
-                month_gaps = _count_missing(candles, interval)
                 print(f"{path.name}: {len(candles)} candles, {month_gaps} gaps")
                 files.append(path)
                 total += len(candles)
-                gaps += month_gaps
         year, month = _next_month(year, month)
     return DownloadSummary(candles=total, files=files, skipped=skipped, gaps=gaps)
 
