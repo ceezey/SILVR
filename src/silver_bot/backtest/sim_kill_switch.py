@@ -17,6 +17,7 @@ from silver_bot.risk.kill_switch import KillSwitch
 
 KILL_SWITCH_FILENAME = "KILL_SWITCH"
 REPORT_MODE = "simulated_per_run_daily_reset"
+OUTSIDE_WITH_MESSAGE = "SimulatedKillSwitch used outside its with-block"
 
 
 class SimulatedKillSwitch(KillSwitch):
@@ -29,6 +30,8 @@ class SimulatedKillSwitch(KillSwitch):
         self._scratch: tempfile.TemporaryDirectory[str] | None = None
 
     def __enter__(self) -> SimulatedKillSwitch:
+        if self._scratch is not None:
+            raise RuntimeError("SimulatedKillSwitch already entered")
         self._scratch = tempfile.TemporaryDirectory()
         self.path = Path(self._scratch.name) / KILL_SWITCH_FILENAME
         return self
@@ -38,9 +41,19 @@ class SimulatedKillSwitch(KillSwitch):
             self._scratch.cleanup()
             self._scratch = None
 
+    def is_active(self) -> bool:
+        """Halt unless inside the with-block: a switch with no path must not read as clear."""
+
+        return self._scratch is None or super().is_active()
+
+    def _require_entered(self) -> None:
+        if self._scratch is None:
+            raise RuntimeError(OUTSIDE_WITH_MESSAGE)
+
     def trip(self, reason: str) -> None:
         """Trip like `KillSwitch.trip`, and log the simulated time of a new trip."""
 
+        self._require_entered()
         was_active = self.is_active()
         super().trip(reason)
         if not was_active and self.is_active():
@@ -49,6 +62,7 @@ class SimulatedKillSwitch(KillSwitch):
     def reset_if_new_day(self, at: datetime) -> bool:
         """Clear the trip when `at` falls on a later UTC day than the trip."""
 
+        self._require_entered()
         if self.path is None or not self.trips or not self.is_active():
             return False
         last = self.trips[-1]

@@ -2,6 +2,8 @@ import inspect
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from silver_bot.backtest import BacktestConfig, BacktestEngine
 from silver_bot.backtest.sim_kill_switch import SimulatedKillSwitch
 from silver_bot.models import Candle, SignalDirection
@@ -213,3 +215,36 @@ def test_risk_and_execution_packages_do_not_import_sim_kill_switch() -> None:
         text = path.read_text(encoding="utf-8")
         assert "sim_kill_switch" not in text, path
         assert "reset_if_new_day" not in text, path
+
+
+def test_not_entered_fails_closed() -> None:
+    ks = SimulatedKillSwitch()
+
+    assert ks.is_active()
+    with pytest.raises(RuntimeError, match="outside its with-block"):
+        ks.trip(REASON)
+    with pytest.raises(RuntimeError, match="outside its with-block"):
+        ks.reset_if_new_day(datetime(2024, 3, 5, tzinfo=UTC))
+    assert ks.trips == []
+
+
+def test_after_exit_fails_closed() -> None:
+    with SimulatedKillSwitch() as ks:
+        assert not ks.is_active()
+
+    assert ks.is_active()
+    with pytest.raises(RuntimeError, match="outside its with-block"):
+        ks.trip(REASON)
+    with pytest.raises(RuntimeError, match="outside its with-block"):
+        ks.reset_if_new_day(datetime(2024, 3, 5, tzinfo=UTC))
+
+
+def test_double_enter_raises_without_leaking_scratch() -> None:
+    with SimulatedKillSwitch() as ks:
+        scratch = ks.path.parent
+        with pytest.raises(RuntimeError, match="already entered"):
+            ks.__enter__()
+        assert scratch.is_dir()
+        assert ks.path.parent == scratch
+
+    assert not scratch.exists()
