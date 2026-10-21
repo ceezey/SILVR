@@ -150,6 +150,7 @@ class TradeRecord:
     notes: str = ""
     ml_probability: float | None = None
     ml_decision: str | None = None
+    funding: float = 0.0  # net funding paid; negative when received
 
 
 @dataclass(frozen=True, slots=True)

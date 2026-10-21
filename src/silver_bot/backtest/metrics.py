@@ -25,6 +25,7 @@ def calculate_metrics(
     gross_loss = abs(sum(trade.realized_pnl for trade in losing))
     net_profit = sum(trade.realized_pnl for trade in trades)
     total_fees = sum(trade.fees for trade in trades)
+    total_funding = sum(trade.funding for trade in trades)
     average_r = sum(trade.realized_r for trade in trades) / total_trades if trades else 0.0
     expectancy = net_profit / total_trades if trades else 0.0
     max_drawdown = max((point.drawdown for point in equity_curve), default=0.0)
@@ -58,6 +59,7 @@ def calculate_metrics(
         "max_consecutive_wins": _max_consecutive(trades, winning=True),
         "max_consecutive_losses": _max_consecutive(trades, winning=False),
         "total_fees": total_fees,
+        "total_funding": total_funding,
         "net_profit": net_profit,
         "return_percent": return_percent,
         "average_win_r": average_win_r,

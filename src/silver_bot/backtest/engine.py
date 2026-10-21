@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import replace
 
+from silver_bot.backtest import costs
 from silver_bot.backtest.metrics import calculate_metrics
 from silver_bot.backtest.models import (
     BacktestConfig,
@@ -281,9 +282,9 @@ class BacktestEngine:
             return None
 
         direction = signal.direction
-        entry_price = self._apply_entry_cost(signal.entry_price, direction)
+        entry_price = costs.entry_price(signal.entry_price, direction, **self._cost_bps())
         position_size = pending.risk_decision.position_size
-        entry_fee = abs(entry_price * position_size * self.config.maker_fee)
+        entry_fee = costs.fee(entry_price, position_size, self.config.maker_fee)
         risk_amount = abs(entry_price - signal.stop_loss) * position_size
         return OpenPosition(
             signal=signal,
@@ -354,14 +355,14 @@ class BacktestEngine:
             return
 
         partial_quantity = position.quantity * self.config.partial_tp_fraction
-        exit_price = self._apply_exit_cost(partial_price, position.direction)
+        exit_price = costs.market_exit_price(partial_price, position.direction, **self._cost_bps())
         gross = self._gross_pnl(
             direction=position.direction,
             entry_price=position.entry_price,
             exit_price=exit_price,
             quantity=partial_quantity,
         )
-        fee = abs(exit_price * partial_quantity * self.config.taker_fee)
+        fee = costs.fee(exit_price, partial_quantity, self.config.taker_fee)
         position.partial_realized_pnl += gross - fee
         position.partial_fees += fee
         position.remaining_quantity -= partial_quantity
@@ -378,14 +379,14 @@ class BacktestEngine:
         exit_price: float,
         exit_reason: ExitReason,
     ) -> TradeRecord:
-        adjusted_exit = self._apply_exit_cost(exit_price, position.direction)
+        adjusted_exit = costs.market_exit_price(exit_price, position.direction, **self._cost_bps())
         gross = self._gross_pnl(
             direction=position.direction,
             entry_price=position.entry_price,
             exit_price=adjusted_exit,
             quantity=position.remaining_quantity,
         )
-        exit_fee = abs(adjusted_exit * position.remaining_quantity * self.config.taker_fee)
+        exit_fee = costs.fee(adjusted_exit, position.remaining_quantity, self.config.taker_fee)
         total_fees = position.entry_fee + position.partial_fees + exit_fee
         realized_pnl = position.partial_realized_pnl + gross - position.entry_fee - exit_fee
         realized_r = realized_pnl / position.risk_amount if position.risk_amount else 0.0
@@ -406,7 +407,8 @@ class BacktestEngine:
             realized_pnl=realized_pnl,
             realized_r=realized_r,
             fees=total_fees,
-            slippage=self._slippage_value(position.entry_price) + self._slippage_value(exit_price),
+            slippage=costs.slippage_value(position.entry_price, self.config.slippage_bps)
+            + costs.slippage_value(exit_price, self.config.slippage_bps),
             max_favorable_excursion=position.max_favorable_excursion,
             max_adverse_excursion=position.max_adverse_excursion,
             exit_reason=exit_reason,
@@ -435,21 +437,8 @@ class BacktestEngine:
         position.max_favorable_excursion = max(position.max_favorable_excursion, favorable)
         position.max_adverse_excursion = max(position.max_adverse_excursion, adverse)
 
-    def _apply_entry_cost(self, price: float, direction: SignalDirection) -> float:
-        spread = self._half_spread_value(price)
-        slippage = self._slippage_value(price)
-        return price + spread + slippage if direction == SignalDirection.LONG else price - spread - slippage
-
-    def _apply_exit_cost(self, price: float, direction: SignalDirection) -> float:
-        spread = self._half_spread_value(price)
-        slippage = self._slippage_value(price)
-        return price - spread - slippage if direction == SignalDirection.LONG else price + spread + slippage
-
-    def _half_spread_value(self, price: float) -> float:
-        return price * (self.config.spread_bps / 10_000) / 2
-
-    def _slippage_value(self, price: float) -> float:
-        return price * self.config.slippage_bps / 10_000
+    def _cost_bps(self) -> dict[str, float]:
+        return {"spread_bps": self.config.spread_bps, "slippage_bps": self.config.slippage_bps}
 
     def _log_strategy_decision(self, signal) -> None:
         self.audit.log(

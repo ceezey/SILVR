@@ -1,4 +1,5 @@
 import statistics
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -99,3 +100,10 @@ def test_positive_return_without_drawdown_is_infinite_and_loss_is_zero() -> None
     assert profit["return_to_drawdown"] == float("inf")
     loss = calculate_metrics(trades_with_pnl([-100.0]), curve(dd=100.0), initial_balance=10_000.0)
     assert loss["return_to_drawdown"] == 0.0
+
+
+def test_total_funding_metric() -> None:
+    # Funding paid is positive, received is negative; the metric is the net sum (0.5 - 0.2 = 0.3).
+    trades = [replace(t, funding=f) for t, f in zip(trades_with_pnl([10.0, -5.0]), [0.5, -0.2])]
+    assert calculate_metrics(trades, curve(dd=5.0), initial_balance=10_000.0)["total_funding"] == pytest.approx(0.3)
+    assert calculate_metrics([], [], initial_balance=10_000.0)["total_funding"] == 0.0
