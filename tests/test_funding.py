@@ -73,27 +73,60 @@ def test_coverage_gap_raises():
 
     with pytest.raises(FundingDataError, match="gap"):
         schedule.check_coverage(T0, T0 + EIGHT_HOURS * 9)
-    # The same data is fine for a window that does not include the hole.
+    # The same data is fine for windows that do not touch the hole.
     schedule.check_coverage(T0, T0 + EIGHT_HOURS * 3)
-    schedule.check_coverage(T0 + EIGHT_HOURS * 6, T0 + EIGHT_HOURS * 9)
+    schedule.check_coverage(T0 + EIGHT_HOURS * 7, T0 + EIGHT_HOURS * 9)
+
+
+def test_coverage_edge_hole_inside_short_window_raises():
+    # Rates at +8h and +19h; the +16h rate is missing, so a position open 14h-20h owes an unknown payment.
+    schedule = FundingSchedule([FundingRate(T0 + timedelta(hours=8), 0.0001), FundingRate(T0 + timedelta(hours=19), 0.0001)])
+
+    with pytest.raises(FundingDataError, match="gap"):
+        schedule.check_coverage(T0 + timedelta(hours=14), T0 + timedelta(hours=20))
+
+
+def test_coverage_short_window_with_distant_neighbours_raises():
+    schedule = FundingSchedule(rates(2))  # rates at +7ms and +8h, nothing for days after
+    start = T0 + timedelta(days=3)
+
+    with pytest.raises(FundingDataError, match="gap"):
+        schedule.check_coverage(start, start + timedelta(hours=2))
+
+
+def test_coverage_hole_spanning_a_boundary_raises():
+    data = rates(10)
+    del data[4]  # hole of 16h between rate 3 (+24h) and rate 5 (+40h)
+    schedule = FundingSchedule(data)
+
+    with pytest.raises(FundingDataError, match="gap"):
+        schedule.check_coverage(T0 + timedelta(hours=30), T0 + timedelta(hours=60))  # hole spans start
+    with pytest.raises(FundingDataError, match="gap"):
+        schedule.check_coverage(T0, T0 + timedelta(hours=30))  # hole spans end
 
 
 def test_coverage_requires_both_ends_and_some_rates():
     schedule = FundingSchedule(rates(4))
 
-    with pytest.raises(FundingDataError):
+    with pytest.raises(FundingDataError, match="no funding rates"):
         FundingSchedule([]).check_coverage(T0, T0 + EIGHT_HOURS)
-    with pytest.raises(FundingDataError, match="too late"):
-        schedule.check_coverage(T0 - timedelta(hours=9), T0 + EIGHT_HOURS)
-    with pytest.raises(FundingDataError, match="too early"):
-        schedule.check_coverage(T0, T0 + EIGHT_HOURS * 3 + timedelta(hours=9))
+    with pytest.raises(FundingDataError, match="gap"):
+        schedule.check_coverage(T0 - timedelta(hours=9), T0 + EIGHT_HOURS)  # starts too late
+    with pytest.raises(FundingDataError, match="gap"):
+        schedule.check_coverage(T0, T0 + EIGHT_HOURS * 3 + timedelta(hours=9))  # ends too early
     schedule.check_coverage(T0 - timedelta(hours=8), T0 + EIGHT_HOURS * 3 + timedelta(hours=8))
 
 
-def test_coverage_with_no_rate_inside_the_window():
+def test_coverage_short_window_between_rates_is_fine():
     schedule = FundingSchedule(rates(4))
     inside = T0 + timedelta(hours=1)
 
     schedule.check_coverage(inside, inside + timedelta(hours=2))  # nothing due, nothing missing
-    with pytest.raises(FundingDataError, match="no funding rates between"):
-        schedule.check_coverage(T0 + timedelta(days=30), T0 + timedelta(days=31))
+
+
+def test_load_rejects_non_finite_rates(tmp_path):
+    for value in ("nan", "inf", "-inf"):
+        path = tmp_path / f"{value}.csv"
+        path.write_text(f"time_ms,rate\n1000,{value}\n")
+        with pytest.raises(FundingDataError, match="line 2"):
+            load_funding_csv(path)

@@ -8,6 +8,7 @@ assumes a zero rate.
 from __future__ import annotations
 
 import csv
+import math
 import os
 from bisect import bisect_left, bisect_right
 from collections.abc import Iterable
@@ -69,7 +70,10 @@ def load_funding_csv(path: Path) -> list[FundingRate]:
                 if not row:
                     continue
                 try:
-                    rates.append(FundingRate(_EPOCH + int(row[0]) * _MS, float(row[1])))
+                    rate = float(row[1])
+                    if not math.isfinite(rate):
+                        raise ValueError("non-finite rate")
+                    rates.append(FundingRate(_EPOCH + int(row[0]) * _MS, rate))
                 except (ValueError, IndexError):
                     raise FundingDataError(f"{path}: bad funding row on line {line}: {row!r}") from None
     except OSError as exc:
@@ -92,26 +96,26 @@ class FundingSchedule:
         return self._rates[low:high]
 
     def check_coverage(self, start: datetime, end: datetime) -> None:
-        """Raise ``FundingDataError`` unless the rates cover ``[start, end]`` with no gap over 8h + 1 min.
+        """Raise ``FundingDataError`` unless ``[start, end]`` is covered with no gap over 8h + 1 min.
 
-        ``start`` and ``end`` are boundary points: the first rate may follow ``start`` (and the last
-        precede ``end``) by at most the gap limit, which absorbs the exchange's millisecond offsets.
+        ``start`` and ``end`` are boundary points. The chain is the last rate at or before ``start``,
+        the rates inside the window and the first rate at or after ``end``; ``start`` / ``end`` stand
+        in for a missing neighbour. Every consecutive gap in the chain must be within the limit, which
+        also absorbs the exchange's millisecond offsets.
         """
 
         if not self._rates:
             raise FundingDataError("no funding rates loaded")
-        # Only rates inside [start, end] matter: funding is charged on times after a position opens.
-        window = self._rates[bisect_left(self._times, start) : bisect_right(self._times, end)]
-        if not window:
-            if end - start > MAX_FUNDING_GAP:
-                raise FundingDataError(f"no funding rates between {start.isoformat()} and {end.isoformat()}")
-            return
-        if window[0].time - start > MAX_FUNDING_GAP:
-            raise FundingDataError(f"funding data starts {window[0].time.isoformat()}, too late for {start.isoformat()}")
-        if end - window[-1].time > MAX_FUNDING_GAP:
-            raise FundingDataError(f"funding data ends {window[-1].time.isoformat()}, too early for {end.isoformat()}")
-        for before, after in zip(window, window[1:]):
-            if after.time - before.time > MAX_FUNDING_GAP:
+        before = bisect_right(self._times, start) - 1
+        after = bisect_left(self._times, end)
+        chain = self._times[max(before, 0) : after + 1]
+        if before < 0:
+            chain.insert(0, start)
+        if after >= len(self._times):
+            chain.append(end)
+        for earlier, later in zip(chain, chain[1:]):
+            if later - earlier > MAX_FUNDING_GAP:
                 raise FundingDataError(
-                    f"funding gap between {before.time.isoformat()} and {after.time.isoformat()}"
+                    f"funding gap between {earlier.isoformat()} and {later.isoformat()} "
+                    f"(checking {start.isoformat()} to {end.isoformat()})"
                 )
