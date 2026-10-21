@@ -89,11 +89,14 @@ def run_recording(candles: list[Candle], window: int | None):
     return result, strategy.signals
 
 
-def test_window_matches_full_history_on_synthetic_days() -> None:
+# 1440 is the production default and is smaller than the 4320-candle series, so it
+# genuinely truncates history; 64 is the minimum allowed window.
+@pytest.mark.parametrize("window", [64, 200, 1440])
+def test_window_matches_full_history_on_synthetic_days(window: int) -> None:
     candles = synthetic_candles()
 
     full, full_signals = run_recording(candles, None)
-    windowed, windowed_signals = run_recording(candles, 200)
+    windowed, windowed_signals = run_recording(candles, window)
 
     assert len(full.trades) >= 3
     # Every signal the strategy returned (direction, time, entry, stop, target, reason,
@@ -102,6 +105,44 @@ def test_window_matches_full_history_on_synthetic_days() -> None:
     assert windowed_signals == full_signals
     assert windowed.trades == full.trades
     assert windowed.rejected_signals == full.rejected_signals
+
+
+class WindowCheckingStrategy(SilverBulletStrategyEngine):
+    """Asserts on every evaluate() that the visible slice ends at the candle being processed."""
+
+    def __init__(self, ordered: list[Candle], window: int) -> None:
+        super().__init__()
+        self.index_by_time = {candle.open_time: index for index, candle in enumerate(ordered)}
+        self.ordered = ordered
+        self.window = window
+        self.last_index = -1
+        self.calls = 0
+
+    def evaluate(self, candles):
+        assert len(candles) <= self.window
+        index = self.index_by_time[candles[-1].open_time]
+        # Engine walks the ordered input forward: the slice must end at a candle after
+        # the previous evaluation, never at a later (future) candle.
+        assert index > self.last_index
+        self.last_index = index
+        # The slice is exactly the last min(window, index + 1) candles up to that candle.
+        start = max(0, index + 1 - self.window)
+        assert candles == self.ordered[start : index + 1]
+        assert len(candles) == min(self.window, index + 1)
+        self.calls += 1
+        return super().evaluate(candles)
+
+
+@pytest.mark.parametrize("window", [64, 200, 1440])
+def test_windowed_run_never_shows_future_or_oversized_history(window: int) -> None:
+    candles = synthetic_candles()
+    config = BacktestConfig(strategy_window=window)
+    strategy = WindowCheckingStrategy(sorted(candles, key=lambda c: c.open_time), window)
+    with SimulatedKillSwitch() as kill_switch:
+        risk_engine = RiskManagementEngine(config.risk, kill_switch=kill_switch)
+        BacktestEngine(strategy=strategy, config=config, risk_engine=risk_engine).run(candles)
+
+    assert strategy.calls > 100
 
 
 def test_window_default_is_1440() -> None:
