@@ -34,13 +34,13 @@ flowchart LR
 ```
 
 1. [scrutiny-silverbot.md](<C:/AI Agentic Memory/01_Projects/SilverBot/Planning/scrutiny-silverbot.md>): gaps (`G-#`) and what is known to be wrong.
-2. [brd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/brd-silverbot.md>): business goals, metrics, owner-input register.
-3. [prd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/prd-silverbot.md>): features `PRD-F1`..`PRD-F12`, stories, status, task checkboxes (section 9).
-4. [sdd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/sdd-silverbot.md>): architecture and module design.
-5. RFCs: [signal engine](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-signal-engine.md>), [risk and kill switch](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-risk-kill-switch.md>), [ML filter gate](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-ml-filter-gate.md>), [readiness gates](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-readiness-gates.md>).
-6. [qad-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/qad-silverbot.md>): test scenarios `QAD-T#`.
-7. [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/aia-silverbot.md>), [clr-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/clr-silverbot.md>), [ops-silverbot.md](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/ops-silverbot.md>): AI risks, compliance rows, runbooks.
-8. This guide. Supporting: [idea-silverbot.md](<C:/AI Agentic Memory/01_Projects/SilverBot/Planning/idea-silverbot.md>), [val-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/val-silverbot.md>), [ues-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/ues-silverbot.md>), [sad-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/sad-silverbot.md>), [voice-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/voice-silverbot.md>), [audit-docs-drift.md](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>), [README.md](README.md).
+2. [brd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/brd-silverbot.md>): business goals, metrics, owner-input register.
+3. [prd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/prd-silverbot.md>): features `PRD-F1`..`PRD-F12`, stories, status, task checkboxes (section 9).
+4. [sdd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/sdd-silverbot.md>): architecture and module design.
+5. RFCs: [signal engine](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-signal-engine.md>), [risk and kill switch](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-risk-kill-switch.md>), [ML filter gate](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-ml-filter-gate.md>), [readiness gates](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-readiness-gates.md>).
+6. [qad-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SilverBot/qad-silverbot.md>): test scenarios `QAD-T#`.
+7. [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SilverBot/aia-silverbot.md>), [clr-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SilverBot/clr-silverbot.md>), [ops-silverbot.md](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/ops-silverbot.md>): AI risks, compliance rows, runbooks.
+8. This guide. Supporting: [idea-silverbot.md](<C:/AI Agentic Memory/01_Projects/SilverBot/Planning/idea-silverbot.md>), [val-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SilverBot/val-silverbot.md>), [ues-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SilverBot/ues-silverbot.md>), [sad-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/sad-silverbot.md>), [voice-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SilverBot/voice-silverbot.md>), [audit-docs-drift.md](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>), [README.md](README.md).
 
 Draft docs are the best current knowledge and the code wins over them. Flag a doc/code disagreement or an `Open` / `Owner input required` item to the owner instead of guessing. Once a doc is Locked, changes to it need a Change Record. A disagreement is recorded in [audit-docs-drift.md](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>).
 
@@ -55,18 +55,18 @@ Re-ground (re-read the relevant doc and the code) when:
 
 | To build | Read | Verify against |
 |----------|------|----------------|
-| Signal engine (PRD-F1) | [rfc-silverbot-signal-engine.md](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-signal-engine.md>), SDD strategy section | `tests/` strategy tests, QAD strategy scenarios |
-| Backtester and validation (PRD-F2) | SDD backtest section, [qad-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/qad-silverbot.md>) | backtest tests; evidence reports must be non-empty before any performance claim |
-| Risk engine and kill switch (PRD-F3) | [rfc-silverbot-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-risk-kill-switch.md>) | risk tests, [clr-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/clr-silverbot.md>), subagent SAD-A2 |
+| Signal engine (PRD-F1) | [rfc-silverbot-signal-engine.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-signal-engine.md>), SDD strategy section | `tests/` strategy tests, QAD strategy scenarios |
+| Backtester and validation (PRD-F2) | SDD backtest section, [qad-silverbot.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SilverBot/qad-silverbot.md>) | backtest tests; evidence reports must be non-empty before any performance claim |
+| Risk engine and kill switch (PRD-F3) | [rfc-silverbot-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-risk-kill-switch.md>) | risk tests, [clr-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SilverBot/clr-silverbot.md>), subagent SAD-A2 |
 | Paper trading (PRD-F4) | SDD execution section | paper trading tests with mocked exchange |
-| Demo mode (PRD-F5) and readiness (PRD-F8) | [rfc-silverbot-readiness-gates.md](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-readiness-gates.md>) | readiness tests, subagent SAD-A1 |
-| ML filter (PRD-F6) | [rfc-silverbot-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-ml-filter-gate.md>), [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/aia-silverbot.md>) | ML tests, subagent SAD-A3 |
-| Monitoring (PRD-F7), deployment (PRD-F11) | [ops-silverbot.md](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/ops-silverbot.md>) | monitoring tests, runbook steps |
+| Demo mode (PRD-F5) and readiness (PRD-F8) | [rfc-silverbot-readiness-gates.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-readiness-gates.md>) | readiness tests, subagent SAD-A1 |
+| ML filter (PRD-F6) | [rfc-silverbot-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-ml-filter-gate.md>), [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SilverBot/aia-silverbot.md>) | ML tests, subagent SAD-A3 |
+| Monitoring (PRD-F7), deployment (PRD-F11) | [ops-silverbot.md](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/ops-silverbot.md>) | monitoring tests, runbook steps |
 | Config (PRD-F9), data and storage (PRD-F10) | SDD config and data sections | config tests, the runbook-local-dev step 3 env block loads; `.env.example` loads as paper mode since `c6d909d` (G-4 closed, `tests/test_config.py:258`) |
 
 ## 2. Subagents
 
-Four safety reviewers run before merge on the paths each guards, and one standard-library-only builder (`psl-purist`, SAD-B1) writes operator UI and Telegram code on request. The roster, trigger rules and orchestration are in [sad-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/sad-silverbot.md>) sections 3 and 4. The agent cards live in `.claude/agents/`, are hand-maintained and canonical. The SAD section 3 holds a snapshot: after editing a card, copy the change into the SAD.
+Four safety reviewers run before merge on the paths each guards, and one standard-library-only builder (`psl-purist`, SAD-B1) writes operator UI and Telegram code on request. The roster, trigger rules and orchestration are in [sad-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/sad-silverbot.md>) sections 3 and 4. The agent cards live in `.claude/agents/`, are hand-maintained and canonical. The SAD section 3 holds a snapshot: after editing a card, copy the change into the SAD.
 
 ## 3. Stack Currency & Deprecations
 
@@ -79,7 +79,7 @@ Four safety reviewers run before merge on the paths each guards, and one standar
 | ccxt | `>=4.5,<5`; 4.5.89 installed and verified 2026-10-21. Used for public candle history through `ccxt.async_support.binanceusdm`; an API key is attached only on the Binance Futures testnet host | `pyproject.toml`; `src/silver_bot/exchange/binance_futures.py` |
 | Dev dependency | `pytest>=8.0` (optional extra `dev`) | `pyproject.toml` |
 | Build backend | `setuptools>=68` | `pyproject.toml` |
-| scikit-learn | Optional and undeclared; used only for the RandomForest and GradientBoosting models if it imports | [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/aia-silverbot.md>) section 1.2 |
+| scikit-learn | Optional and undeclared; used only for the RandomForest and GradientBoosting models if it imports | [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SilverBot/aia-silverbot.md>) section 1.2 |
 | Docker base image | `python:3.11-slim` | `Dockerfile` line 1 |
 | Binance Futures REST and WebSocket | Versionless public API; no pinned version | https://binance-docs.github.io/apidocs/futures/en/ |
 
@@ -89,9 +89,9 @@ No version in this table is invented. If `pyproject.toml` or the `Dockerfile` ch
 
 | ID | Old convention (in old docs) | Current code | Use instead |
 |----|------------------------------|--------------|-------------|
-| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Partly resolved (`f84557e`): the keys reach the filter in CLI backtests only (`src/silver_bot/backtest/runner.py:50-55`); the paper loop ignores them | Treat ML as not wired outside backtests; see [rfc-silverbot-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-ml-filter-gate.md>) |
-| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into `RiskConfig` (`4726cb5`) and CLI backtests use it with a simulated per-run kill switch; nothing calls `build_risk_engine` at runtime yet (G-3), and the daily-loss and leverage bounds are checked in demo mode only | Build a runtime engine with `build_risk_engine(config, storage)` (`src/silver_bot/risk/factory.py:26-33`); a backtest takes `build_risk_config` through `build_backtest_config` (`src/silver_bot/backtest/runner.py:35-57`) and never the real kill-switch path; never hand-build a `RiskConfig` for a running bot; see [rfc-silverbot-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-risk-kill-switch.md>) |
-| D-10 | Live trading is gated by `LIVE_TRADING` plus readiness | `LIVE_TRADING=true` is rejected at load; readiness is never consulted by the entrypoint | Live is `Planned, blocked`; see [rfc-silverbot-readiness-gates.md](<C:/AI Agentic Memory/03_Resources/RFCs/rfc-silverbot-readiness-gates.md>) |
+| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Partly resolved (`f84557e`): the keys reach the filter in CLI backtests only (`src/silver_bot/backtest/runner.py:50-55`); the paper loop ignores them | Treat ML as not wired outside backtests; see [rfc-silverbot-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-ml-filter-gate.md>) |
+| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into `RiskConfig` (`4726cb5`) and CLI backtests use it with a simulated per-run kill switch; nothing calls `build_risk_engine` at runtime yet (G-3), and the daily-loss and leverage bounds are checked in demo mode only | Build a runtime engine with `build_risk_engine(config, storage)` (`src/silver_bot/risk/factory.py:26-33`); a backtest takes `build_risk_config` through `build_backtest_config` (`src/silver_bot/backtest/runner.py:35-57`) and never the real kill-switch path; never hand-build a `RiskConfig` for a running bot; see [rfc-silverbot-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-risk-kill-switch.md>) |
+| D-10 | Live trading is gated by `LIVE_TRADING` plus readiness | `LIVE_TRADING=true` is rejected at load; readiness is never consulted by the entrypoint | Live is `Planned, blocked`; see [rfc-silverbot-readiness-gates.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-readiness-gates.md>) |
 
 The full list is in [audit-docs-drift.md](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>).
 
@@ -358,7 +358,7 @@ Do not require real API keys for tests.
 When completing a task:
 
 - update the vault project index (`C:\AI Agentic Memory\01_Projects\SilverBot\00_Project_Index.md`) and the LOG ([log-silverbot](<C:/AI Agentic Memory/01_Projects/SilverBot/Logs/log-silverbot.md>)) every task;
-- update the PRD section 9 checkboxes ([prd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/prd-silverbot.md>));
+- update the PRD section 9 checkboxes ([prd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/prd-silverbot.md>));
 - if architecture, strategy, risk or ML changes, update the SDD, RFC-001 (signal engine), RFC-002 (risk and kill switch) or the AIA respectively;
 - a change to a Locked doc requires a Change Record (section 5.1);
 - doc edits happen in the vault, follow its frontmatter and wikilink rules (vault `AGENTS.md` sections 3 and 4), and never rename a note (repo code cites `runbook-backtest.md` and `runbook-demo-testnet.md` by basename).
@@ -431,9 +431,9 @@ Nothing is generated. `tools/materialize_docs.py` was retired on 2026-10-19 when
 | `CLAUDE.md` | repo root; pointer to `AGENTS.md` | hand |
 | `README.md` | repo root | hand |
 | `docs/index.md` | repo; pointer to the vault project index | hand |
-| `.claude/agents/*` | repo; canonical agent cards (snapshot in [sad-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/sad-silverbot.md>) section 3) | hand |
-| Model card | [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/aia-silverbot.md>) section 1 (was `MODEL_CARD.md`) | vault |
-| Brand and design system | [dsd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/dsd-silverbot.md>) sections 0 to 7 (were `BRAND.md`, `DESIGN.md`) | vault |
+| `.claude/agents/*` | repo; canonical agent cards (snapshot in [sad-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/sad-silverbot.md>) section 3) | hand |
+| Model card | [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SilverBot/aia-silverbot.md>) section 1 (was `MODEL_CARD.md`) | vault |
+| Brand and design system | [dsd-silverbot.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/dsd-silverbot.md>) sections 0 to 7 (were `BRAND.md`, `DESIGN.md`) | vault |
 | Every other doc | the vault; locations listed in the project index | vault |
 
 ## 8. Self-Check

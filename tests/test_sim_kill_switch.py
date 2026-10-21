@@ -209,8 +209,12 @@ def test_risk_and_execution_packages_do_not_import_sim_kill_switch() -> None:
         *(SRC / "execution").rglob("*.py"),
         *(SRC / "exchange").rglob("*.py"),
         SRC / "main.py",
+        SRC / "__main__.py",
+        SRC / "readiness.py",
+        SRC / "demo_readiness.py",
     ]
     assert len(files) > 4
+    assert all(path.is_file() for path in files)
     for path in files:
         text = path.read_text(encoding="utf-8")
         assert "sim_kill_switch" not in text, path
