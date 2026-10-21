@@ -1,4 +1,18 @@
-"""Backtest domain models."""
+"""Backtest domain models.
+
+Strategy window (CD-8): every strategy component reads a bounded tail of the
+candles (liquidity lookback 30 plus swing lookback 3, ATR 5, bias 5, ML recent
+window 5), so the engine hands the strategy and the ML filter only the last
+`strategy_window` candles, which keeps a multi-year 1m run linear in time.
+
+The one exception is `detect_market_structure_shift`
+(`silver_bot/strategy/structure.py`), which uses the most recent opposite-side
+swing anywhere in the history. On 1m data a swing (a high above the previous 3
+highs) older than one day is not expected, but it is possible in theory. The
+equivalence tests in `tests/test_backtest_window.py` are the evidence, and a
+real-data check repeats them. If either finds a difference, report it to the
+owner (spec 3.7); do not change strategy code to fit the window.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +28,10 @@ from silver_bot.risk import RiskConfig, RiskDecision
 from silver_bot.strategy import SilverBulletSignal
 
 
+DEFAULT_STRATEGY_WINDOW = 1440
+MIN_STRATEGY_WINDOW = 64
+
+
 class ExitReason(str, Enum):
     """Supported simulated trade exit reasons."""
 
@@ -25,7 +43,13 @@ class ExitReason(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class BacktestConfig:
-    """Configuration for historical simulation only."""
+    """Configuration for historical simulation only.
+
+    `strategy_window` is how many of the most recent candles the strategy and the ML
+    filter see at each step: `None` is the whole history, the default is 1440 (one
+    day of 1m candles), and values below 64 are rejected. See the module docstring
+    for why 1440 is safe and where its limit is.
+    """
 
     initial_balance: float = 10_000.0
     risk: RiskConfig = field(default_factory=RiskConfig)
@@ -39,6 +63,7 @@ class BacktestConfig:
     move_stop_to_breakeven_after_partial: bool = True
     export_dir: Path | None = None
     ml_filter: MLFilterConfig = field(default_factory=MLFilterConfig)
+    strategy_window: int | None = DEFAULT_STRATEGY_WINDOW
 
     def __post_init__(self) -> None:
         if self.initial_balance <= 0:
@@ -51,6 +76,8 @@ class BacktestConfig:
             raise ValueError("partial_tp_fraction must be greater than 0 and no more than 1")
         if self.partial_tp_r <= 0:
             raise ValueError("partial_tp_r must be positive")
+        if self.strategy_window is not None and self.strategy_window < MIN_STRATEGY_WINDOW:
+            raise ValueError(f"strategy_window must be None or at least {MIN_STRATEGY_WINDOW}")
 
 
 @dataclass(slots=True)

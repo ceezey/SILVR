@@ -17,6 +17,7 @@ from silver_bot.backtest.validation import BacktestValidationSuite
 from silver_bot.config import AppConfig
 from silver_bot.ml import MLFilterConfig
 from silver_bot.models import Candle
+from silver_bot.monitoring import StructuredAuditLogger
 from silver_bot.risk import RiskManagementEngine, build_risk_config
 
 TRAINING_FRACTION = 0.6
@@ -138,7 +139,12 @@ def _simulate(
     with SimulatedKillSwitch() as kill_switch:
         backtest_config = build_backtest_config(config, export_dir=export_dir, kill_switch_path=kill_switch.path)
         risk_engine = RiskManagementEngine(backtest_config.risk, kill_switch=kill_switch)
-        result = BacktestEngine(config=backtest_config, risk_engine=risk_engine).run(candles)
+        engine = BacktestEngine(
+            config=backtest_config,
+            risk_engine=risk_engine,
+            audit_logger=StructuredAuditLogger(retain_events=False),
+        )
+        result = engine.run(candles)
         return result, kill_switch.report(), backtest_config
 
 

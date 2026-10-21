@@ -110,7 +110,8 @@ class BacktestEngine:
             if activity_this_candle or pending is not None or open_position is not None:
                 continue
 
-            signal = self.strategy.evaluate(ordered[: index + 1])
+            visible = ordered[self._window_start(index) : index + 1]
+            signal = self.strategy.evaluate(visible)
             self._log_strategy_decision(signal)
             if signal.direction == SignalDirection.NO_TRADE:
                 rejected.append(
@@ -134,7 +135,7 @@ class BacktestEngine:
 
             ml_decision = self.ml_filter.evaluate(
                 signal=signal,
-                candles_at_signal=ordered[: index + 1],
+                candles_at_signal=visible,
             )
             self._log_ml_decision(signal, ml_decision)
             if ml_decision.decision == MLDecision.REJECT:
@@ -267,6 +268,10 @@ class BacktestEngine:
             },
         )
         return result
+
+    def _window_start(self, index: int) -> int:
+        window = self.config.strategy_window
+        return 0 if window is None else max(0, index + 1 - window)
 
     def _try_fill(self, pending: PendingOrder, candle: Candle) -> OpenPosition | None:
         signal = pending.signal
