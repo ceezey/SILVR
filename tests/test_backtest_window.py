@@ -11,6 +11,7 @@ from silver_bot.config import AppConfig, TradingMode
 from silver_bot.models import Candle
 from silver_bot.monitoring import StructuredAuditLogger
 from silver_bot.risk import RiskManagementEngine
+from silver_bot.strategy import SilverBulletSignal, SilverBulletStrategyEngine
 
 # Deterministic synthetic series for the equivalence test. SYNTHETIC_SEED was chosen
 # by scanning seeds until the 3-day series produced several trades, so the window is
@@ -61,20 +62,44 @@ def synthetic_candles(
     return result
 
 
+class RecordingStrategy(SilverBulletStrategyEngine):
+    """Strategy engine that records every signal it returns, approved or not."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.signals: list[SilverBulletSignal] = []
+
+    def evaluate(self, candles):
+        signal = super().evaluate(candles)
+        self.signals.append(signal)
+        return signal
+
+
 def run_with_window(candles: list[Candle], window: int | None):
+    result, _ = run_recording(candles, window)
+    return result
+
+
+def run_recording(candles: list[Candle], window: int | None):
     config = BacktestConfig(strategy_window=window)
+    strategy = RecordingStrategy()
     with SimulatedKillSwitch() as kill_switch:
         risk_engine = RiskManagementEngine(config.risk, kill_switch=kill_switch)
-        return BacktestEngine(config=config, risk_engine=risk_engine).run(candles)
+        result = BacktestEngine(strategy=strategy, config=config, risk_engine=risk_engine).run(candles)
+    return result, strategy.signals
 
 
 def test_window_matches_full_history_on_synthetic_days() -> None:
     candles = synthetic_candles()
 
-    full = run_with_window(candles, None)
-    windowed = run_with_window(candles, 200)
+    full, full_signals = run_recording(candles, None)
+    windowed, windowed_signals = run_recording(candles, 200)
 
     assert len(full.trades) >= 3
+    # Every signal the strategy returned (direction, time, entry, stop, target, reason,
+    # score), including approved signals whose order never fills, must be identical.
+    assert any(signal.entry_price is not None for signal in full_signals)
+    assert windowed_signals == full_signals
     assert windowed.trades == full.trades
     assert windowed.rejected_signals == full.rejected_signals
 

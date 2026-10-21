@@ -4,6 +4,14 @@ Strategy window (CD-8): every strategy component reads a bounded tail of the
 candles (liquidity lookback 30 plus swing lookback 3, ATR 5, bias 5, ML recent
 window 5), so the engine hands the strategy and the ML filter only the last
 `strategy_window` candles, which keeps a multi-year 1m run linear in time.
+`MIN_STRATEGY_WINDOW = 64` is the smallest window that still covers the largest
+fixed look-back: liquidity 30 plus swing 3 plus ATR 5 is 38, plus a margin.
+
+The FVG step, `latest_unmitigated_fvg`, scans the whole slice it is given, but it is
+equivalence-safe: a signal requires `fvg.candle_index > sweep.candle_index`, and the
+search is newest-first, so a gap older than the window cannot be the one that
+produces a signal. If such a gap were the only match, both the windowed and the
+full-history run reject with the same reason.
 
 The one exception is `detect_market_structure_shift`
 (`silver_bot/strategy/structure.py`), which uses the most recent opposite-side
