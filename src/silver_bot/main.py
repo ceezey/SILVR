@@ -10,9 +10,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from silver_bot.backtest.runner import run_backtest
+from silver_bot.backtest.runner import STRATEGIES, run_backtest
 from silver_bot.config import AppConfig, ConfigError, TradingMode, load_config
 from silver_bot.data.csv_loader import CandleDataError, load_binance_kline_csv
+from silver_bot.data.funding import FundingDataError, FundingSchedule, load_funding_csv
 from silver_bot.monitoring import StructuredAuditLogger
 from silver_bot.storage import SQLiteStorage
 from silver_bot.utils.logging import get_logger
@@ -44,6 +45,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-dir",
         default="reports",
         help="Directory for backtest reports (default: reports).",
+    )
+    parser.add_argument(
+        "--strategy",
+        choices=STRATEGIES,
+        default="silver_bullet",
+        help="Backtest strategy (default: silver_bullet).",
+    )
+    parser.add_argument(
+        "--funding",
+        metavar="PATH",
+        help="Funding-rate CSV; required with --strategy top_down_ob, ignored by silver_bullet.",
     )
     return parser
 
@@ -95,17 +107,27 @@ def _run_backtest(config: AppConfig, args: argparse.Namespace) -> int:
     if not args.candles:
         logger.error("backtest mode needs --candles")
         return EXIT_USAGE
+    top_down = args.strategy == "top_down_ob"
+    if top_down and not args.funding:
+        logger.error("--strategy top_down_ob needs --funding PATH")
+        return EXIT_USAGE
     try:
         loaded = load_binance_kline_csv(args.candles, symbol=config.symbol, timeframe=config.timeframe)
     except CandleDataError as exc:
         logger.error("candle data rejected: %s", exc)
         return EXIT_USAGE
-    summary = run_backtest(
-        config,
-        loaded.candles,
-        Path(args.output_dir),
-        inputs={"files": [str(path) for path in loaded.files], "gaps": loaded.gaps},
-    )
+    inputs = {"files": [str(path) for path in loaded.files], "gaps": loaded.gaps}
+    funding = None
+    try:
+        if top_down:
+            funding = FundingSchedule(load_funding_csv(Path(args.funding)))
+            inputs["funding_file"] = args.funding
+        summary = run_backtest(
+            config, loaded.candles, Path(args.output_dir), inputs=inputs, strategy=args.strategy, funding=funding
+        )
+    except FundingDataError as exc:
+        logger.error("funding data rejected: %s", exc)
+        return EXIT_USAGE
     for name, path in sorted(summary.report_paths.items()):
         logger.info("wrote %s: %s", name, path)
     logger.info("backtest complete: %d candles, %d gaps", summary.candles, loaded.gaps)

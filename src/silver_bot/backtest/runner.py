@@ -13,8 +13,10 @@ from silver_bot.backtest.engine import BacktestEngine
 from silver_bot.backtest.models import BacktestConfig, BacktestResult
 from silver_bot.backtest.reporting import _json_safe
 from silver_bot.backtest.sim_kill_switch import SimulatedKillSwitch
+from silver_bot.backtest.top_down_engine import TopDownBacktestEngine
 from silver_bot.backtest.validation import BacktestValidationSuite
 from silver_bot.config import AppConfig
+from silver_bot.data.funding import FundingSchedule
 from silver_bot.ml import MLFilterConfig
 from silver_bot.models import Candle
 from silver_bot.monitoring import StructuredAuditLogger
@@ -22,6 +24,7 @@ from silver_bot.risk import RiskManagementEngine, build_risk_config
 
 TRAINING_FRACTION = 0.6
 VALIDATION_FRACTION = 0.2
+STRATEGIES = ("silver_bullet", "top_down_ob")
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,15 +66,28 @@ def run_backtest(
     output_dir: str | Path,
     *,
     inputs: Mapping[str, Any],
+    strategy: str = "silver_bullet",
+    funding: FundingSchedule | None = None,
 ) -> BacktestRunSummary:
-    """Run the full-period backtest and a chronological out-of-sample split."""
+    """Run the full-period backtest and a chronological out-of-sample split.
 
+    `top_down_ob` needs `funding`. Its full run has no warm-up; each segment is warmed up on every
+    candle before it, so the strategy has history without trading on it. `silver_bullet` ignores
+    `funding` and keeps its cold start per segment.
+    """
+
+    if strategy not in STRATEGIES:
+        raise ValueError(f"unknown strategy {strategy!r}; expected one of {', '.join(STRATEGIES)}")
+    if strategy == "top_down_ob" and funding is None:
+        raise ValueError("strategy top_down_ob needs funding data")
+    if strategy == "silver_bullet":
+        funding = None
     if not candles:
         raise ValueError("run_backtest needs at least one candle")
     directory = Path(output_dir)
     ordered = sorted(candles, key=lambda candle: candle.open_time)
 
-    full, full_kill_switch, full_config = _simulate(config, ordered, export_dir=directory)
+    full, full_kill_switch, full_config = _simulate(config, ordered, export_dir=directory, funding=funding)
 
     split = BacktestValidationSuite().chronological_split(
         ordered,
@@ -89,10 +105,11 @@ def run_backtest(
                 "final_test": round(1 - TRAINING_FRACTION - VALIDATION_FRACTION, 10),
             },
             "parameters_tuned": False,
+            "strategy": strategy,
             "segments": {
-                "training": _segment(config, split.training),
-                "validation": _segment(config, split.validation),
-                "final_test": _segment(config, split.final_test),
+                "training": _segment(config, split.training, funding, ordered),
+                "validation": _segment(config, split.validation, funding, ordered),
+                "final_test": _segment(config, split.final_test, funding, ordered),
             },
         },
     )
@@ -102,6 +119,8 @@ def run_backtest(
         run_path,
         {
             "inputs": dict(inputs),
+            "strategy": strategy,
+            "funding_file": inputs.get("funding_file") if funding is not None else None,
             "symbol": config.symbol,
             "timeframe": config.timeframe,
             "candles": len(ordered),
@@ -129,8 +148,10 @@ def _simulate(
     candles: list[Candle],
     *,
     export_dir: Path | None,
+    funding: FundingSchedule | None,
+    warmup: Sequence[Candle] = (),
 ) -> tuple[BacktestResult, dict[str, Any], BacktestConfig]:
-    """Run one engine with its own simulated kill switch.
+    """Run one engine with its own simulated kill switch (and, for top-down, its own fresh strategy).
 
     Returns the result, the kill-switch report (trip count and log) and the
     config the engine ran with.
@@ -139,19 +160,27 @@ def _simulate(
     with SimulatedKillSwitch() as kill_switch:
         backtest_config = build_backtest_config(config, export_dir=export_dir, kill_switch_path=kill_switch.path)
         risk_engine = RiskManagementEngine(backtest_config.risk, kill_switch=kill_switch)
-        engine = BacktestEngine(
-            config=backtest_config,
-            risk_engine=risk_engine,
-            audit_logger=StructuredAuditLogger(retain_events=False),
-        )
-        result = engine.run(candles)
+        if funding is None:
+            result = BacktestEngine(
+                config=backtest_config,
+                risk_engine=risk_engine,
+                audit_logger=StructuredAuditLogger(retain_events=False),
+            ).run(candles)
+        else:
+            result = TopDownBacktestEngine(
+                config=backtest_config, risk_engine=risk_engine, funding=funding
+            ).run(candles, warmup=warmup)
         return result, kill_switch.report(), backtest_config
 
 
-def _segment(config: AppConfig, candles: list[Candle]) -> dict[str, Any]:
+def _segment(
+    config: AppConfig, candles: list[Candle], funding: FundingSchedule | None, ordered: list[Candle]
+) -> dict[str, Any]:
     if not candles:
         return {"candles": 0, "start": None, "end": None, "metrics": None, "kill_switch": None}
-    result, kill_switch, _ = _simulate(config, candles, export_dir=None)
+    # `candles` is a slice of `ordered`; everything before its first candle is warm-up history.
+    warmup = ordered[: ordered.index(candles[0])] if funding is not None else ()
+    result, kill_switch, _ = _simulate(config, candles, export_dir=None, funding=funding, warmup=warmup)
     return {
         "candles": len(candles),
         "start": candles[0].open_time.isoformat(),

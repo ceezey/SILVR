@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from silver_bot.data.funding import FundingRate, write_funding_csv
 from silver_bot.main import EXIT_MODE_UNAVAILABLE, main
 from silver_bot.readiness import evaluate_live_readiness
 
@@ -147,3 +148,52 @@ def test_crash_during_backtest_still_audits_bot_stopped(workdir: Path, monkeypat
     last = audit_events(workdir)[-1]
     assert last["event_type"] == "bot_stopped"
     assert last["context"]["exit_code"] == 1
+
+
+def write_funding(path: Path, *times: datetime) -> Path:
+    write_funding_csv(path, [FundingRate(time, 0.0001) for time in times])
+    return path
+
+
+def test_cli_strategy_flag_and_funding_errors(
+    workdir: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    backtest_env(monkeypatch)
+    csv_path = write_klines(workdir / "a.csv")
+    good = write_funding(
+        workdir / "funding.csv",
+        datetime(2026, 1, 2, 8, tzinfo=UTC),
+        datetime(2026, 1, 2, 16, tzinfo=UTC),
+        datetime(2026, 1, 3, tzinfo=UTC),
+    )
+    gap = write_funding(workdir / "gap.csv", datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 3, tzinfo=UTC))
+    empty = write_funding(workdir / "empty.csv")
+    base = ["--candles", str(csv_path), "--strategy", "top_down_ob"]
+
+    assert main(base) == 2
+    assert "--funding" in caplog.text
+    caplog.clear()
+    assert main([*base, "--funding", str(workdir / "missing.csv")]) == 2
+    assert "missing.csv" in caplog.text
+    caplog.clear()
+    assert main([*base, "--funding", str(gap)]) == 2
+    assert "funding gap" in caplog.text
+    assert main([*base, "--funding", str(empty)]) == 2
+    assert not (workdir / "reports" / "backtest_run.json").exists()
+    with pytest.raises(SystemExit) as info:
+        main(["--candles", str(csv_path), "--strategy", "nope"])
+    assert info.value.code == 2
+
+    assert main([*base, "--funding", str(good)]) == 0
+    run = json.loads((workdir / "reports" / "backtest_run.json").read_text(encoding="utf-8"))
+    assert (run["strategy"], run["funding_file"]) == ("top_down_ob", str(good))
+
+
+def test_cli_default_strategy_is_silver_bullet_and_ignores_funding(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    backtest_env(monkeypatch)
+    csv_path = write_klines(workdir / "a.csv")
+
+    assert main(["--candles", str(csv_path), "--funding", str(workdir / "missing.csv")]) == 0
+
+    run = json.loads((workdir / "reports" / "backtest_run.json").read_text(encoding="utf-8"))
+    assert (run["strategy"], run["funding_file"]) == ("silver_bullet", None)
