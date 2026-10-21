@@ -38,6 +38,7 @@ from silver_bot.strategy.top_down import EntryPlan, TopDownOBStrategy
 
 STAGE1_FRACTION = 0.2
 STAGE2_FRACTION = 0.3  # stage 3 closes whatever remains (TD-9)
+MIN_REWARD_R = 3.0  # spec 3.4.6, held on the cost-adjusted entry (3.4.3)
 _MS = timedelta(milliseconds=1)
 
 
@@ -87,6 +88,8 @@ class TopDownBacktestEngine:
 
     def run(self, candles: Sequence[Candle], *, warmup: Sequence[Candle] = ()) -> BacktestResult:
         ordered = sorted(candles, key=lambda candle: candle.open_time)
+        if ordered and warmup and max(candle.open_time for candle in warmup) >= ordered[0].open_time:
+            raise ValueError("warm-up candles must all open before the first trading candle")
         if ordered:
             self.funding.check_coverage(ordered[0].open_time, ordered[-1].open_time)  # fail closed (spec 3.6)
         for candle in sorted(warmup, key=lambda candle: candle.open_time):
@@ -208,6 +211,12 @@ class TopDownBacktestEngine:
             raise ValueError(f"unknown plan side {plan.side!r}")
         direction = SignalDirection.LONG if plan.side == "long" else SignalDirection.SHORT
         entry = costs.entry_price(plan.raw_entry, direction, **self._bps)
+        long = direction == SignalDirection.LONG
+        reward = plan.final_target - entry if long else entry - plan.final_target
+        risk = entry - plan.stop if long else plan.stop - entry
+        if reward < MIN_REWARD_R * risk:  # the strategy's 3R filter used the raw close
+            self._reject(rejected, plan.signal_time, candle.symbol, "reward below 3R after entry costs")
+            return None
         decision = self.risk.evaluate(
             RiskRequest(
                 equity=equity,
@@ -242,7 +251,9 @@ class TopDownBacktestEngine:
             remaining=qty,
             fees=costs.fee(entry, qty, self.config.taker_fee),  # TD-24: entries pay taker
             slippage=costs.slippage_value(plan.raw_entry, self.config.slippage_bps),
-            funded_until=candle.open_time,  # so a stamp at the entry candle's close is charged
+            # 1m candles are minute-aligned and stamps have ms offsets, so this charges every stamp at or after
+            # the entry instant (the signal candle's close) and none before it.
+            funded_until=plan.signal_time - _MS,
         )
 
     @staticmethod

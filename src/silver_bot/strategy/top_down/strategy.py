@@ -82,10 +82,10 @@ class TopDownOBStrategy:
         self._touched: list[OrderBlock] = []  # OBs touched in the current session window
 
     def step(self, candle_1m: Candle, *, trading: bool = True) -> StepResult:
+        """With trading=False (warm-up, TD-20) the touch and MSS bookkeeping still runs and an MSS still consumes
+        its OB (TD-22), but no plan or skip is ever returned."""
         events_15m = self._apply_htf(candle_1m)
         mss = self._m1.update(candle_1m)
-        if not trading:
-            return StepResult(None, None, events_15m)
 
         best = self._book.best_touched(candle_1m)
         if best is None and not self._touched:
@@ -107,6 +107,8 @@ class TopDownOBStrategy:
         ob = max(candidates, key=lambda c: (c.rank, c.formed_at))
         self._book.consume(ob)  # TD-22: used up at its first MSS, whether or not a plan follows
         self._touched.remove(ob)
+        if not trading:
+            return StepResult(None, None, events_15m)
         plan = self._plan(ob, candle_1m, mss, session.name)
         if isinstance(plan, str):
             return StepResult(None, plan, events_15m)

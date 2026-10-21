@@ -291,3 +291,20 @@ def test_4h_level_recorded_at_a_close_is_only_taken_by_later_15m_candles() -> No
     run(third[1:] + [one_minute(DAY0 + timedelta(hours=8, minutes=15), 111.2, 111.2, 111.2, 111.2)], strategy=strategy)
 
     assert strategy._h4.untaken_levels("high") == []
+
+
+def test_ob_consumed_by_mss_during_warmup_is_not_tradeable_after() -> None:
+    # The touch and the first MSS happen during warm-up (TD-20): the OB is used up there (TD-22), so the second
+    # MSS in the same session, now trading, plans nothing.
+    ones, _ = day_rows()
+    warm = ones + minutes(NY_AM, DESCENT + [MSS])
+    second_try = [(o, o + 0.1, o - 0.6, o - 0.5) for o in (110.5 - 0.5 * j for j in range(12))]  # back into the zone
+    live = minutes(NY_AM + (len(DESCENT) + 1) * M1, second_try + [(104.5, 105.8, 104.4, 105.7)])
+    strategy = TopDownOBStrategy()
+
+    assert all(r.entry is None and r.skipped is None for r in run(warm, trading=False, strategy=strategy))
+    results = run(live, strategy=strategy)
+
+    assert len(warm) + len(live) - 1 in bullish_1m_breaks(warm + live)  # the second MSS is real
+    assert entries(results) == []
+    assert all(r.skipped is None for r in results)

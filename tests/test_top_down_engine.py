@@ -314,8 +314,8 @@ def test_funding_stamp_at_entry_candle_close_is_charged() -> None:
 
 
 def test_risk_rejection_recorded_and_no_trade() -> None:
-    # Final 1010 is (1010 - 1000.65) / 10 = 0.935R, below the risk engine's 2R minimum.
-    tdob = engine({0: enter(final=1010.0, stage2=None)})
+    # The base plan is (1040 - 1000.65) / 10 = 3.935R after costs, below a risk engine minimum of 5R.
+    tdob = engine({0: enter()}, risk_engine=RiskManagementEngine(RiskConfig(minimum_reward_to_risk=5.0)))
     result = tdob.run([bar(0, 1000, 1001, 999, 1000), bar(1, 1000, 1001, 999, 1000)])
 
     assert result.trades == []
@@ -371,3 +371,48 @@ def test_phase1_costs_unchanged() -> None:
         [*valid_long_setup(), candle(9, 112, 141, 105, 140)]).trades[0]
     assert (partial.exit_reason, partial.exit_price, partial.realized_pnl, partial.fees) == (
         ExitReason.BREAKEVEN_STOP, 105.999955215, 24.29158219430468, 0.47643544632031243)
+
+
+def test_reward_below_3r_after_entry_costs_is_rejected() -> None:
+    # Long: raw (1030.5 - 1000) / (1000 - 990) = 3.05R; after costs (1030.5 - 1000.65) / (1000.65 - 990) = 2.80R.
+    # Short mirror: raw 1000 -> 999.35, (999.35 - 969.5) / (1010 - 999.35) = 2.80R. The risk engine's own minimum
+    # is 2R, so only the engine's 3R check can reject these.
+    for kwargs in ({"stop": 990.0, "final": 1030.5}, {"side": "short", "stop": 1010.0, "final": 969.5}):
+        tdob = engine({0: enter(stage2=None, **kwargs)})
+        evaluated = []
+        evaluate = tdob.risk.evaluate
+        tdob.risk.evaluate = lambda request: evaluated.append(request) or evaluate(request)
+        result = tdob.run([bar(0, 1000, 1001, 999, 1000), bar(1, 1000, 1001, 999, 1000)])
+
+        assert result.trades == []
+        assert [r.reason for r in result.rejected_signals] == ["reward below 3R after entry costs"]
+        assert result.rejected_signals[0].timestamp == START + timedelta(minutes=1)
+        assert evaluated == []  # no risk call
+        assert tdob.risk.state.trades_today == 0
+
+    # The base plan, 3.935R after costs, still opens.
+    assert len(engine({0: enter()}).run([bar(0, 1000, 1001, 999, 1000)]).trades) == 1
+
+
+def test_funding_stamp_inside_entry_candle_is_not_charged() -> None:
+    # Binance stamps carry millisecond offsets: 00:00:00.006 falls inside the 00:00 candle, before the entry at
+    # its close (00:01), so the position never held through it.
+    midnight = datetime(2024, 1, 3, tzinfo=UTC)
+    funding = FundingSchedule([FundingRate(datetime(2024, 1, 2, 16, tzinfo=UTC), 0.0),
+                               FundingRate(midnight + 6 * MS, 0.0001),
+                               FundingRate(datetime(2024, 1, 3, 8, tzinfo=UTC), 0.0)])
+    entry_minute = int((midnight - START) / timedelta(minutes=1))
+    candles = [bar(m, 1000, 1001, 999, 1000) for m in range(entry_minute, entry_minute + 3)]
+    trade = only_trade(engine({entry_minute: enter(entry_minute)}, funding=funding).run(candles))
+
+    assert trade.entry_time == midnight + timedelta(minutes=1)
+    assert trade.funding == 0.0
+
+
+def test_warmup_must_end_before_trading_candles() -> None:
+    first = bar(0, 1000, 1001, 999, 1000)
+    for warm in (first, bar(1, 1000, 1001, 999, 1000)):  # same open as the first trading candle, then later
+        tdob = engine({})
+        with pytest.raises(ValueError, match="warm-up"):
+            tdob.run([first, bar(2, 1000, 1001, 999, 1000)], warmup=[bar(-1, 1000, 1001, 999, 1000), warm])
+        assert tdob.strategy.calls == []
