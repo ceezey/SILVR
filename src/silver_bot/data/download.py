@@ -1,4 +1,5 @@
 """Download Binance Futures candle history into monthly CSV files for backtests.
+With ``--funding`` it downloads funding-rate history into one CSV file instead.
 
 Only public market data is requested: ``main`` always builds the adapter for the
 production public API with no credentials and never reads ``.env`` keys or
@@ -19,6 +20,7 @@ from pathlib import Path
 
 from silver_bot.config import ConfigError, load_config
 from silver_bot.data.csv_loader import timeframe_interval
+from silver_bot.data.funding import FundingDataError, FundingSchedule, write_funding_csv
 from silver_bot.exchange.base import ExchangeAdapter
 from silver_bot.exchange.binance_futures import BinanceFuturesAdapter
 from silver_bot.models import Candle
@@ -163,6 +165,32 @@ async def download(
     return DownloadSummary(candles=total, files=files, skipped=skipped, gaps=gaps)
 
 
+async def download_funding(
+    *, symbol: str, start: date, end: datetime, out_dir: Path, adapter: BinanceFuturesAdapter
+) -> Path | None:
+    """Download funding rates for ``[start, end)`` into ``<out_dir>/<symbol>-funding.csv``."""
+
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=UTC)
+    start_dt = datetime(start.year, start.month, start.day, tzinfo=UTC)
+    if start_dt >= end:
+        raise ValueError("start must be before end")
+    rates = await adapter.fetch_funding_rates(symbol=symbol, start=start_dt, end=end)
+    if not rates:
+        print(f"{symbol}-funding.csv: no funding rates returned, no file written")
+        return None
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{symbol}-funding.csv"
+    write_funding_csv(path, rates)
+    try:
+        FundingSchedule(rates).check_coverage(start_dt, end)
+        note = "no gaps"
+    except FundingDataError as exc:
+        note = f"WARNING {exc} (a backtest over this range will refuse to run)"
+    print(f"{path.name}: {len(rates)} funding rates, {note}")
+    return path
+
+
 def _parse_day(text: str) -> datetime:
     return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=UTC)
 
@@ -181,7 +209,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--end", help="end day, YYYY-MM-DD (UTC, exclusive); default now")
     parser.add_argument("--symbol")
     parser.add_argument("--timeframe")
-    parser.add_argument("--out", default="data/candles")
+    parser.add_argument("--out", help="output directory; default data/candles, or data/funding with --funding")
+    parser.add_argument("--funding", action="store_true", help="download funding-rate history instead of candles")
     try:
         args = parser.parse_args(argv)
         if not args.start:
@@ -189,6 +218,18 @@ def main(argv: list[str] | None = None) -> int:
         start = _parse_day(args.start)
         end = _parse_day(args.end) if args.end else datetime.now(UTC)
         symbol = args.symbol or _config_default("symbol", "BTCUSDT")
+        if args.funding:
+            path = asyncio.run(
+                download_funding(
+                    symbol=symbol,
+                    start=start.date(),
+                    end=end,
+                    out_dir=Path(args.out or "data/funding"),
+                    adapter=BinanceFuturesAdapter(),
+                )
+            )
+            print(f"done: {'1 funding file written' if path else 'no funding file written'}")
+            return 0
         timeframe = args.timeframe or _config_default("timeframe", "1m")
         # Production public API, no credentials, whatever .env says.
         summary = asyncio.run(
@@ -197,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
                 timeframe=timeframe,
                 start=start.date(),
                 end=end,
-                out_dir=Path(args.out),
+                out_dir=Path(args.out or "data/candles"),
                 adapter=BinanceFuturesAdapter(),
             )
         )

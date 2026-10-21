@@ -24,6 +24,7 @@ import ccxt.async_support as ccxt_async
 from silver_bot.config import AppConfig
 from silver_bot.config.settings import BINANCE_FUTURES_TESTNET_HOST, is_binance_futures_testnet_url
 from silver_bot.data.csv_loader import timeframe_interval
+from silver_bot.data.funding import FundingRate
 from silver_bot.exchange.base import ExchangeAdapter
 from silver_bot.models import Candle
 from silver_bot.utils.logging import get_logger
@@ -205,6 +206,43 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             )
         return candles
 
+    async def fetch_funding_rates(
+        self, *, symbol: str, start: datetime, end: datetime, limit: int = 1000
+    ) -> list[FundingRate]:
+        """Fetch public funding-rate history in ascending order for ``[start, end)``."""
+
+        if start >= end:
+            raise ValueError("start must be before end")
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        ccxt_symbol = _to_ccxt_symbol(symbol)
+        start_ms = _to_ms(start)
+        end_ms = _to_ms(end)
+
+        client = self._build_client()
+        try:
+            rows: dict[int, float] = {}
+            since = start_ms
+            while since < end_ms:
+                page = await _fetch_funding_page_with_retry(client, ccxt_symbol, since, limit)
+                if not page:
+                    break
+                newest = max(int(row["timestamp"]) for row in page)
+                for row in page:
+                    rows.setdefault(int(row["timestamp"]), float(row["fundingRate"]))
+                if newest + 1 <= since:
+                    break
+                since = newest + 1
+        finally:
+            await client.close()
+
+        epoch = datetime(1970, 1, 1, tzinfo=UTC)
+        return [
+            FundingRate(epoch + timedelta(milliseconds=ts), rows[ts])
+            for ts in sorted(rows)
+            if start_ms <= ts < end_ms
+        ]
+
 
 def _to_ms(value: datetime) -> int:
     if value.tzinfo is None:
@@ -228,6 +266,20 @@ async def _fetch_page_with_retry(
     while True:
         try:
             return await client.fetch_ohlcv(ccxt_symbol, timeframe, since=since, limit=limit)
+        except ccxt.NetworkError:
+            if attempt >= MAX_NETWORK_RETRIES:
+                raise
+            attempt += 1
+            await _backoff_sleep(_BACKOFF_BASE_SECONDS * 2 ** (attempt - 1))
+
+
+async def _fetch_funding_page_with_retry(
+    client: Any, ccxt_symbol: str, since: int, limit: int
+) -> list[dict[str, Any]]:
+    attempt = 0
+    while True:
+        try:
+            return await client.fetch_funding_rate_history(ccxt_symbol, since=since, limit=limit)
         except ccxt.NetworkError:
             if attempt >= MAX_NETWORK_RETRIES:
                 raise

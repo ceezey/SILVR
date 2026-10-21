@@ -158,6 +158,12 @@ class FakeClient:
             raise self.failures.pop(0)
         return self.pages.pop(0) if self.pages else []
 
+    async def fetch_funding_rate_history(self, symbol, since=None, limit=None):
+        self.calls.append((symbol, since, limit))
+        if self.failures:
+            raise self.failures.pop(0)
+        return self.pages.pop(0) if self.pages else []
+
     async def close(self) -> None:
         self.closed = True
 
@@ -410,3 +416,72 @@ def test_real_ccxt_client_does_not_fetch_currencies(credentialed: bool) -> None:
         assert len(client.options) > 1  # ccxt default options were merged, not replaced
     finally:
         asyncio.run(client.close())
+
+
+# --- fetch_funding_rates (public funding history) -------------------------------------------------
+
+_FUNDING_MS = 8 * 3600 * 1000
+
+
+def _funding_row(index: int, offset_ms: int = 7) -> dict:
+    return {"timestamp": _T0_MS + index * _FUNDING_MS + offset_ms, "fundingRate": 0.0001 * index}
+
+
+def _fetch_funding(adapter, *, start=_T0, end=_T0 + timedelta(days=10), symbol="BTCUSDT", **kwargs):
+    return asyncio.run(adapter.fetch_funding_rates(symbol=symbol, start=start, end=end, **kwargs))
+
+
+def test_fetch_funding_pages_and_bounds() -> None:
+    pages = [
+        [_funding_row(i) for i in range(0, 3)],
+        [_funding_row(i) for i in range(2, 5)],  # overlaps at the page edge
+        [_funding_row(i) for i in range(5, 6)],
+    ]
+    # Row 0 is before start; rows 4 and 5 are at or after end (row 4 is 32h + 7ms, end is 32h).
+    start = _T0 + timedelta(milliseconds=8)
+    end = _T0 + timedelta(hours=32)
+    adapter, holder = _adapter(pages)
+
+    rates = _fetch_funding(adapter, start=start, end=end, limit=3)
+
+    assert [r.time for r in rates] == [
+        _T0 + timedelta(hours=8, milliseconds=7),
+        _T0 + timedelta(hours=16, milliseconds=7),
+        _T0 + timedelta(hours=24, milliseconds=7),
+    ]
+    assert [r.rate for r in rates] == pytest.approx([0.0001, 0.0002, 0.0003])
+    client = holder["client"]
+    assert client.calls[0] == ("BTC/USDT:USDT", _T0_MS + 8, 3)
+    assert client.calls[1][1] == _T0_MS + 2 * _FUNDING_MS + 7 + 1
+    assert client.closed is True
+
+
+def test_funding_uses_no_credentials_for_production() -> None:
+    adapter, holder = _adapter([[_funding_row(0)]], api_key="k", api_secret="s")
+
+    _fetch_funding(adapter)
+
+    options = holder["client"].options
+    assert "apiKey" not in options and "secret" not in options and "urls" not in options
+
+
+def test_funding_network_error_retried_then_raised_and_client_closed() -> None:
+    adapter, holder = _adapter(failures=[ccxt.NetworkError("boom")] * 4)
+
+    with pytest.raises(ccxt.NetworkError):
+        _fetch_funding(adapter)
+
+    assert len(holder["client"].calls) == 4
+    assert holder["client"].closed is True
+
+
+def test_funding_validates_range_limit_and_symbol_before_building_client() -> None:
+    adapter, holder = _adapter()
+
+    with pytest.raises(ValueError, match="start must be before end"):
+        _fetch_funding(adapter, start=_T0, end=_T0)
+    with pytest.raises(ValueError, match="limit"):
+        _fetch_funding(adapter, limit=0)
+    with pytest.raises(ValueError, match="USDT"):
+        _fetch_funding(adapter, symbol="BTCUSD")
+    assert "client" not in holder

@@ -8,6 +8,7 @@ from silver_bot.config import ConfigError
 from silver_bot.data import download as download_module
 from silver_bot.data.csv_loader import load_binance_kline_csv
 from silver_bot.data.download import DownloadSummary, download, main, month_file_name
+from silver_bot.data.funding import FundingRate, load_funding_csv
 from silver_bot.exchange.base import ExchangeAdapter
 from silver_bot.models import Candle
 
@@ -255,3 +256,45 @@ def test_other_config_exception_exits_1(tmp_path, monkeypatch, capsys):
     assert code == 1
     assert not seen
     assert "error" in capsys.readouterr().err
+
+
+def test_download_funding_mode_writes_file_without_credentials(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("BINANCE_API_KEY", "secret-key-value")
+    monkeypatch.setenv("BINANCE_API_SECRET", "secret-secret-value")
+    built = []
+    calls = []
+    t0 = datetime(2024, 1, 1, tzinfo=UTC)
+
+    class FundingAdapter:
+        async def fetch_funding_rates(self, *, symbol, start, end):
+            calls.append((symbol, start, end))
+            return [FundingRate(t0 + timedelta(hours=8 * i, milliseconds=7), 0.0001) for i in range(4)]
+
+    def spy(*args, **kwargs):
+        built.append((args, kwargs))
+        return FundingAdapter()
+
+    monkeypatch.setattr(download_module, "BinanceFuturesAdapter", spy)
+    out = tmp_path / "funding"
+    code = main(["--funding", "--start", "2024-01-01", "--end", "2024-01-02", "--symbol", "BTCUSDT", "--out", str(out)])
+
+    assert code == 0
+    assert built == [((), {})]
+    assert calls == [("BTCUSDT", t0, datetime(2024, 1, 2, tzinfo=UTC))]
+    assert [p.name for p in out.iterdir()] == ["BTCUSDT-funding.csv"]
+    assert len(load_funding_csv(out / "BTCUSDT-funding.csv")) == 4
+    printed = capsys.readouterr().out
+    assert "4 funding rates" in printed and "secret" not in printed
+
+
+def test_download_funding_error_returns_1(tmp_path, monkeypatch, capsys):
+    class Failing:
+        async def fetch_funding_rates(self, **kwargs):
+            raise RuntimeError("exchange unreachable")
+
+    monkeypatch.setattr(download_module, "BinanceFuturesAdapter", lambda: Failing())
+    code = main(["--funding", "--start", "2024-01-01", "--end", "2024-01-02", "--symbol", "BTCUSDT", "--out", str(tmp_path)])
+
+    assert code == 1
+    assert "exchange unreachable" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
