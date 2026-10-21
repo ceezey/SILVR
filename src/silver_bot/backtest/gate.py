@@ -11,10 +11,12 @@ fails, 2 the report is missing, empty or malformed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -29,6 +31,7 @@ MIN_OOS_EFFICIENCY = 0.5
 
 DEFAULT_REPORT = "reports/out_of_sample_validation_report.json"
 OUTPUT_NAME = "promotion_gate.json"
+LOG_NAME = "promotion_gate_log.jsonl"
 RERUN_HINT = "re-run the backtest to regenerate the report"
 REMINDER = (
     "No peeking: strategy settings were frozen before this final test; "
@@ -213,6 +216,40 @@ def _load(path: Path) -> Mapping[str, Any]:
     return data
 
 
+def _log_run(path: Path, verdict: GateVerdict) -> int:
+    """Append one audit line for this run and return how many runs saw the same data range.
+
+    Repeated looks at the final test raise the bar (criterion 7), so each run is
+    recorded with a hash of the exact report it judged.
+    """
+
+    info = verdict.info
+    entry = {
+        "run_at": datetime.now(UTC).isoformat(),
+        "report": str(path),
+        "report_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "data_start": info["data_start"],
+        "data_end": info["data_end"],
+        "candles": info["candles"],
+        "passed": verdict.passed,
+    }
+    log_path = path.parent / LOG_NAME
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry) + "\n")
+    runs = 0
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        try:
+            past = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(past, Mapping) and (past.get("data_start"), past.get("data_end")) == (
+            entry["data_start"],
+            entry["data_end"],
+        ):
+            runs += 1
+    return runs
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Report the phase 2 promotion criteria. Unlocks nothing.")
     parser.add_argument("--report", default=DEFAULT_REPORT, help="out-of-sample validation report JSON")
@@ -232,6 +269,7 @@ def main(argv: list[str] | None = None) -> int:
         "reminder": f"7  {REMINDER}",
     }
     (path.parent / OUTPUT_NAME).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"gate runs on this data range: {_log_run(path, verdict)}")
     return 0 if verdict.passed else 1
 
 

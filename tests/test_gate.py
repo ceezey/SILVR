@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -228,4 +230,70 @@ def test_gate_does_not_touch_config_or_readiness(tmp_path, monkeypatch):
     before = set(tmp_path.rglob("*"))
     assert main(["--report", str(path)]) == 0
     after = set(tmp_path.rglob("*"))
-    assert after - before == {path.parent / "promotion_gate.json"}
+    assert after - before == {path.parent / "promotion_gate.json", path.parent / "promotion_gate_log.jsonl"}
+
+
+def _log_lines(path: Path) -> list[dict[str, Any]]:
+    text = (path.parent / "promotion_gate_log.jsonl").read_text(encoding="utf-8")
+    return [json.loads(line) for line in text.splitlines()]
+
+
+def test_each_run_appends_an_audit_line_and_counts_looks(tmp_path, capsys):
+    code, path = run(tmp_path, report())
+    assert code == 0
+    assert "gate runs on this data range: 1" in capsys.readouterr().out
+
+    assert main(["--report", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert out.index("GATE: PASS") < out.index("gate runs on this data range: 2")
+
+    lines = _log_lines(path)
+    assert len(lines) == 2
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    for line in lines:
+        assert set(line) == {"run_at", "report", "report_sha256", "data_start", "data_end", "candles", "passed"}
+        assert line["report"] == str(path)
+        assert line["report_sha256"] == digest
+        assert line["data_start"] == "2024-01-01T00:00:00+00:00"
+        assert line["data_end"] == "2024-05-01T00:00:00+00:00"
+        assert line["candles"] == 10000
+        assert line["passed"] is True
+        assert datetime.fromisoformat(line["run_at"]).utcoffset() == timedelta(0)
+
+
+def test_different_data_range_is_counted_separately(tmp_path, capsys):
+    run(tmp_path, report())
+    run(tmp_path, report())
+    capsys.readouterr()
+
+    other = report()
+    other["segments"]["final_test"]["end"] = "2024-06-01T00:00:00+00:00"
+    code, path = run(tmp_path, other)
+
+    assert code == 0
+    assert "gate runs on this data range: 1" in capsys.readouterr().out
+    assert len(_log_lines(path)) == 3
+
+    assert main(["--report", str(path)]) == 0
+    assert "gate runs on this data range: 2" in capsys.readouterr().out
+
+
+def test_failing_run_is_logged_with_passed_false(tmp_path, capsys):
+    code, path = run(tmp_path, report(total_trades=99))
+    assert code == 1
+    assert "gate runs on this data range: 1" in capsys.readouterr().out
+    assert _log_lines(path)[0]["passed"] is False
+
+
+def test_exit_2_paths_append_nothing(tmp_path, capsys):
+    run(tmp_path, report())
+    capsys.readouterr()
+    log = tmp_path / "reports" / "promotion_gate_log.jsonl"
+    before = log.read_bytes()
+
+    assert main(["--report", str(tmp_path / "nope.json")]) == 2
+    assert run(tmp_path, "{not json")[0] == 2
+    assert run(tmp_path, "{}")[0] == 2
+
+    assert log.read_bytes() == before
+    assert "gate runs on this data range" not in capsys.readouterr().out
