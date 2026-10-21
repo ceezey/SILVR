@@ -1,8 +1,9 @@
 """Backtest engine for the top-down OB strategy: staged exits, breakeven and funding on 1m candles
 (spec 3.4.3, 3.4.7, 3.4.8, 3.5, 3.6; TD-9, TD-19, TD-23, TD-24).
 
-Per 1m candle, in time order: the simulated kill-switch daily reset; funding due since the last
-candle's open (or the entry), priced at this open; strategy.step(); stage 1 on a 15m close in the
+Per 1m candle, in time order: the simulated kill-switch daily reset; funding due in (previous open,
+this open], priced at this open, while a position is open (the run fails closed at start if the
+funding history has a gap anywhere in the candle span); strategy.step(); stage 1 on a 15m close in the
 trade's direction after entry; the stop, then stage 2 and stage 3 on this candle's range; a new plan
 at this candle's close; one realized-only equity point.
 
@@ -173,7 +174,8 @@ class TopDownBacktestEngine:
         return result
 
     def _manage(self, position: _Position, candle: Candle) -> tuple[float, ExitReason, float, str] | None:
-        """Stop first (market), then stage 2 and stage 3 as maker limit fills at their level.
+        """Stop first (market, at the worse of the stop and the open), then stage 2 and stage 3 as maker
+        limit fills at their level.
 
         Returns the final fill (price, reason, fee rate, label) when the position closes on this candle.
         """
@@ -182,8 +184,10 @@ class TopDownBacktestEngine:
         position.mae = max(position.mae, entry - candle.low if long else candle.high - entry)
 
         if (candle.low <= position.stop) if long else (candle.high >= position.stop):
-            price = costs.market_exit_price(position.stop, position.direction, **self._bps)
-            position.slippage += costs.slippage_value(position.stop, self.config.slippage_bps)
+            # A candle opening beyond the stop fills at its open, never at a price that did not trade.
+            raw = min(position.stop, candle.open) if long else max(position.stop, candle.open)
+            price = costs.market_exit_price(raw, position.direction, **self._bps)
+            position.slippage += costs.slippage_value(raw, self.config.slippage_bps)
             reason = ExitReason.BREAKEVEN_STOP if position.stage1 else ExitReason.STOP_LOSS
             return price, reason, self.config.taker_fee, "stop"
 
@@ -200,6 +204,8 @@ class TopDownBacktestEngine:
         return None
 
     def _open(self, plan: EntryPlan, candle: Candle, equity: float, rejected: list) -> _Position | None:
+        if plan.side not in ("long", "short"):
+            raise ValueError(f"unknown plan side {plan.side!r}")
         direction = SignalDirection.LONG if plan.side == "long" else SignalDirection.SHORT
         entry = costs.entry_price(plan.raw_entry, direction, **self._bps)
         decision = self.risk.evaluate(
@@ -236,7 +242,7 @@ class TopDownBacktestEngine:
             remaining=qty,
             fees=costs.fee(entry, qty, self.config.taker_fee),  # TD-24: entries pay taker
             slippage=costs.slippage_value(plan.raw_entry, self.config.slippage_bps),
-            funded_until=plan.signal_time,
+            funded_until=candle.open_time,  # so a stamp at the entry candle's close is charged
         )
 
     @staticmethod

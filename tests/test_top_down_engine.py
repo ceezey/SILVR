@@ -179,6 +179,65 @@ def test_stop_before_stage1_is_full_loss_with_taker_exit() -> None:
     assert tdob.risk.state.consecutive_losses == 1 and tdob.risk.state.open_positions == 0
 
 
+def test_gap_through_stop_fills_at_open() -> None:
+    # The candle opens at 985, below the stop 990.65: the stop fills at the open, 985 - 0.64025 = 984.35975.
+    # Gross (984.35975 - 1000.65) * 5 = -81.45125; exit fee 984.35975 * 5 * 0.0005 = 2.460899375.
+    trade = only_trade(engine({0: enter()}).run([bar(0, 1000, 1001, 999, 1000), bar(1, 985, 986, 980, 982)]))
+
+    assert trade.exit_reason == ExitReason.STOP_LOSS
+    assert trade.exit_price == pytest.approx(984.35975)
+    assert trade.realized_pnl == pytest.approx(-81.45125 - (ENTRY_FEE + 2.460899375))  # -86.413774375
+
+
+def test_breakeven_stop_past_market_fills_at_open_not_entry() -> None:
+    # Stage 1 from a 15m close of 998, below the entry 1000.65: 1 unit at 998 - 0.6487 = 997.3513, and the
+    # breakeven stop now sits above the market. The next candle opens at 998: the other 4 units fill at
+    # 997.3513 too, not at the entry. Gross (997.3513 - 1000.65) * 5 = -16.4935; fees 2.501625 + 997.3513 * 5
+    # * 0.0005 (2.49337825) = 4.99500325.
+    script = {0: enter(), 15: StepResult(None, None, (bullish_15m_close(15),))}
+    candles = [bar(0, 1000, 1001, 999, 1000), *drift(1, 13), bar(14, 1003, 1004, 997, 998), bar(15, 998, 999, 997, 998)]
+    trade = only_trade(engine(script).run(candles))
+
+    assert trade.exit_reason == ExitReason.BREAKEVEN_STOP
+    assert trade.exit_price == pytest.approx(997.3513)
+    assert trade.realized_pnl == pytest.approx(-16.4935 - 4.99500325)  # -21.48850325
+
+
+def test_stage2_before_stage1_keeps_30_20_50() -> None:
+    # Stage 2 (1.5 units at 1020) fills at 10:01, before stage 1 (1 unit from 1010 at 10:15); stage 3 closes
+    # the last 2.5 at 1040. Same fills as the full path, in a different order: 132.26120325.
+    script = {0: enter(), 15: StepResult(None, None, (bullish_15m_close(15),))}
+    candles = [bar(0, 1000, 1001, 999, 1000), bar(1, 1000, 1021, 995, 1015), *drift(2, 13),
+               bar(14, 1003, 1011, 1002, 1010), bar(15, 1010, 1015, 1005, 1012), bar(16, 1020, 1041, 1015, 1035)]
+    trade = only_trade(engine(script).run(candles))
+
+    assert [fill.split(" ")[0] for fill in trade.notes.split("; ")] == ["s2", "s1", "s3"]
+    assert trade.exit_reason == ExitReason.TAKE_PROFIT
+    assert trade.realized_pnl == pytest.approx(132.26120325)
+
+
+def test_short_staged_exits() -> None:
+    # Short: entry 999.35, stop 1009.35 (qty 5), stage 2 at 980, final 960; entry fee 2.498375.
+    # Stage 1 from a 15m close of 990: 1 unit at 990 + 0.6435 = 990.6435, gross 8.7065, fee 0.49532175.
+    # Stage 2: 1.5 at 980, gross 19.35 * 1.5 = 29.025, fee 980 * 1.5 * 0.0002 = 0.294.
+    # Stage 3: 2.5 at 960, gross 39.35 * 2.5 = 98.375, fee 960 * 2.5 * 0.0002 = 0.48.
+    bearish = StructureEvent("bos", "bearish", 995.0, START + timedelta(minutes=15) - MS)
+    script = {0: enter(side="short", stop=1009.35, final=960.0, stage2=980.0), 15: StepResult(None, None, (bearish,))}
+    candles = [bar(0, 1000, 1001, 999, 1000), *drift(1, 13), bar(14, 997, 998, 989, 990),
+               bar(15, 990, 995, 979, 985), bar(16, 980, 985, 959, 965)]
+    trade = only_trade(engine(script).run(candles))
+
+    fees = 2.498375 + 0.49532175 + 0.294 + 0.48  # 3.76769675
+    assert (trade.direction, trade.exit_reason, trade.exit_price) == ("SHORT", ExitReason.TAKE_PROFIT, 960.0)
+    assert trade.fees == pytest.approx(fees)
+    assert trade.realized_pnl == pytest.approx(8.7065 + 29.025 + 98.375 - fees)  # 132.33880325
+
+
+def test_unknown_plan_side_fails_closed() -> None:
+    with pytest.raises(ValueError, match="unknown plan side"):
+        engine({0: enter(side="flat")}).run([bar(0, 1000, 1001, 999, 1000)])
+
+
 def test_breakeven_after_stage1() -> None:
     script = {0: enter(), 15: StepResult(None, None, (bullish_15m_close(15),))}
     candles = [*path_to_stage1(), bar(15, 1010, 1012, 1000, 1001)]  # back to entry after stage 1
@@ -229,12 +288,29 @@ def test_funding_long_pays_short_receives() -> None:
 
 
 def test_missing_funding_row_while_open_raises() -> None:
-    # The 16:00 row is missing while the long is open from 10:01 to 16:01: never assume zero.
+    # The long is open from 10:01 to 16:01, across the 16:00 stamp. With the 16:00 row the run charges it;
+    # without it the run refuses (the coverage check at run start), never assuming zero.
+    candles = [bar(0, 1000, 1001, 999, 1000), bar(360, 1010, 1012, 1005, 1010), bar(361, 1010, 1012, 1005, 1010)]
+    rows = [FundingRate(datetime(2024, 1, 2, 8, tzinfo=UTC), 0.0),
+            FundingRate(datetime(2024, 1, 2, 16, tzinfo=UTC), 0.0001),
+            FundingRate(datetime(2024, 1, 3, 0, tzinfo=UTC), 0.0)]
+    assert only_trade(engine({0: enter()}, funding=FundingSchedule(rows)).run(candles)).funding == pytest.approx(0.505)
+
+    tdob = engine({0: enter()}, funding=FundingSchedule([rows[0], rows[2]]))
+    with pytest.raises(FundingDataError, match="funding gap between 2024-01-02T08:00:00"):
+        tdob.run(candles)
+    assert tdob.strategy.calls == []  # refused before any candle was simulated
+
+
+def test_funding_stamp_at_entry_candle_close_is_charged() -> None:
+    # Entry on the 15:59 candle, which closes exactly at the 16:00 stamp: the position holds through it.
     funding = FundingSchedule([FundingRate(datetime(2024, 1, 2, 8, tzinfo=UTC), 0.0),
+                               FundingRate(datetime(2024, 1, 2, 16, tzinfo=UTC), 0.0001),
                                FundingRate(datetime(2024, 1, 3, 0, tzinfo=UTC), 0.0)])
-    tdob = engine({0: enter()}, funding=funding)
-    with pytest.raises(FundingDataError, match="funding gap"):
-        tdob.run([bar(0, 1000, 1001, 999, 1000), bar(360, 1010, 1012, 1005, 1010), bar(361, 1010, 1012, 1005, 1010)])
+    trade = only_trade(engine({359: enter(359)}, funding=funding).run(
+        [bar(359, 1000, 1001, 999, 1000), bar(360, 1010, 1012, 1005, 1010)]
+    ))
+    assert trade.funding == pytest.approx(5 * 1010 * 0.0001)  # 0.505
 
 
 def test_risk_rejection_recorded_and_no_trade() -> None:
