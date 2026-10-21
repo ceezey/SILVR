@@ -62,11 +62,13 @@ DESCENT: list[Row] = [(o, o + 0.1, o - 0.6, o - 0.5) for o in (110 - 0.5 * j for
 MSS: Row = (106.0, 107.3, 105.9, 107.2)
 
 
-def day_rows(day2_close: float = 110.0, day0_rows: list[Row] = DAY0_ROWS) -> tuple[list[Candle], list[Candle]]:
+def day_rows(
+    day2_close: float = 110.0, day0_rows: list[Row] = DAY0_ROWS, decline: list[Row] = DECLINE
+) -> tuple[list[Candle], list[Candle]]:
     """(1m candles, intended 15m candles) for days 0 to 2. day2_close is the close of day 2's last 15m candle."""
     last = [(108.3, max(108.5, day2_close + 0.2), min(108.2, day2_close - 0.2), day2_close)]
     late = DAY2 + timedelta(hours=23, minutes=45)
-    blocks = [(DAY0, day0_rows), (DAY1, DAY1_ROWS), (DAY2, DECLINE + SETUP), (late, last)]
+    blocks = [(DAY0, day0_rows), (DAY1, DAY1_ROWS), (DAY2, decline + SETUP), (late, last)]
     ones = [c for start, rows in blocks for c in expand_15m(start, rows)]
     fifteens = [c for start, rows in blocks for c in as_15m(start, rows)]
     return ones, fifteens
@@ -293,13 +295,18 @@ def test_4h_level_recorded_at_a_close_is_only_taken_by_later_15m_candles() -> No
     assert strategy._h4.untaken_levels("high") == []
 
 
+# A 1m descent from 110.5 into the zone, then a close above the last 1m lower high at 105.7: a bullish MSS deep
+# in the zone (entry 105.7, about 1.54 of risk).
+DEEP_DESCENT: list[Row] = [(o, o + 0.1, o - 0.6, o - 0.5) for o in (110.5 - 0.5 * j for j in range(12))]
+DEEP_MSS: Row = (104.5, 105.8, 104.4, 105.7)
+
+
 def test_ob_consumed_by_mss_during_warmup_is_not_tradeable_after() -> None:
     # The touch and the first MSS happen during warm-up (TD-20): the OB is used up there (TD-22), so the second
     # MSS in the same session, now trading, plans nothing.
     ones, _ = day_rows()
     warm = ones + minutes(NY_AM, DESCENT + [MSS])
-    second_try = [(o, o + 0.1, o - 0.6, o - 0.5) for o in (110.5 - 0.5 * j for j in range(12))]  # back into the zone
-    live = minutes(NY_AM + (len(DESCENT) + 1) * M1, second_try + [(104.5, 105.8, 104.4, 105.7)])
+    live = minutes(NY_AM + (len(DESCENT) + 1) * M1, DEEP_DESCENT + [DEEP_MSS])
     strategy = TopDownOBStrategy()
 
     assert all(r.entry is None and r.skipped is None for r in run(warm, trading=False, strategy=strategy))
@@ -308,3 +315,17 @@ def test_ob_consumed_by_mss_during_warmup_is_not_tradeable_after() -> None:
     assert len(warm) + len(live) - 1 in bullish_1m_breaks(warm + live)  # the second MSS is real
     assert entries(results) == []
     assert all(r.skipped is None for r in results)
+
+
+def test_final_target_is_15m_high_beyond_unfilled_bearish_fvg() -> None:
+    # Decline candle 17 tops at 110.6, under candle 15's low 110.7: a bearish 15m FVG 110.6-110.7 above the entry
+    # that no later candle trades back up through. The first untaken 15m high beyond it is 111.3, below the 4H cap.
+    assert DECLINE[15][2] == 110.7 and DECLINE[17] == (110.5, 110.8, 109.7, 110.0)
+    gapped = [*DECLINE[:17], (110.5, 110.6, 109.7, 110.0), *DECLINE[17 + 1 :]]
+
+    for decline, target in ((DECLINE, CAP), (gapped, 111.3)):  # no FVG: the cap (TD-21)
+        ones, _ = day_rows(decline=decline)
+        (plan,) = entries(run(ones + minutes(NY_AM, DEEP_DESCENT + [DEEP_MSS])))
+
+        assert (plan.side, plan.raw_entry) == ("long", 105.7)
+        assert plan.final_target == target

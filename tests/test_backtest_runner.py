@@ -332,3 +332,11 @@ def test_open_position_closed_at_segment_end(tmp_path: Path, monkeypatch: pytest
     assert trade.exit_time == data[29].open_time
     assert [len(result.trades) for _, _, result in runs[2:]] == [0, 0]  # the plan is warm-up history there
     assert runs[0][2].trades[-1].exit_time == data[-1].open_time  # the full run holds it to the last candle
+
+
+def test_top_down_run_record_reports_no_ml_filter(tmp_path: Path) -> None:
+    # The top-down engine applies no ML filter, so the run record never claims one, whatever the settings say.
+    settings = backtest_settings(ml_filter_enabled=True, ml_registry_path=tmp_path / "registry.json")
+    summary = run_backtest(settings, candles(), tmp_path / "reports", inputs={}, strategy="top_down_ob", funding=FUNDING)
+
+    assert read_report(summary, "backtest_run")["ml_filter_enabled"] is False

@@ -119,7 +119,11 @@ def test_entry_uses_taker_fee_and_entry_costs() -> None:
     assert tdob.risk.state.open_positions == 0 and tdob.risk.state.trades_today == 1
 
 
-def test_full_path_stage1_stage2_stage3() -> None:
+def test_full_path_stage1_stage2_stage3(monkeypatch: pytest.MonkeyPatch) -> None:
+    quantities = []
+    fill = TopDownBacktestEngine._fill
+    monkeypatch.setattr(TopDownBacktestEngine, "_fill",
+                        staticmethod(lambda position, qty, *rest: quantities.append(qty) or fill(position, qty, *rest)))
     script = {
         0: enter(),
         # A 15m event closing 1 ms before the entry time is not "after entry": no stage 1 here.
@@ -146,6 +150,8 @@ def test_full_path_stage1_stage2_stage3() -> None:
     assert trade.notes.startswith("s1 2024-01-02T10:15Z@1009.343")
     assert "s2 2024-01-02T10:15Z@1020.0" in trade.notes and "s3 2024-01-02T10:16Z@1040.0" in trade.notes
     assert result.equity_curve[-1].equity == pytest.approx(10_000 + 132.26120325)
+    assert quantities == pytest.approx([1.0, 1.5, 2.5])  # 20% / 30% / the rest
+    assert sum(quantities) == pytest.approx(trade.position_size)
 
 
 def test_stage2_missing_rolls_into_final() -> None:

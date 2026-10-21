@@ -130,7 +130,8 @@ def run_backtest(
             "spread_bps": full_config.spread_bps,
             "maker_fee": full_config.maker_fee,
             "taker_fee": full_config.taker_fee,
-            "ml_filter_enabled": full_config.ml_filter.enabled,
+            # The top-down engine applies no ML filter.
+            "ml_filter_enabled": full_config.ml_filter.enabled and strategy == "silver_bullet",
             "risk_per_trade": full_config.risk.risk_per_trade,
             "kill_switch": full_kill_switch,
             "package_version": silver_bot.__version__,
