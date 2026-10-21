@@ -147,3 +147,42 @@ def test_choch_back_to_bullish_uses_protected_high_setter_range() -> None:
     assert event == StructureEvent("choch", "bullish", 120, candle(10, 125, 99, 124).close_time)
     assert tracker.bearish_trigger == 97  # lowest low since the candle that set the 120 high
     assert tracker.bullish_trigger == 125
+
+
+def test_wick_without_close_and_close_equal_to_trigger_do_not_break() -> None:
+    tracker = StructureTracker("1d")
+    feed(tracker, UP_LEG)
+
+    assert tracker.update(candle(5, 13.5, 11, 13)) is None  # close equals the bullish trigger 13
+    assert tracker.update(candle(6, 12, 10, 10)) is None  # close equals the protected low 10
+    assert tracker.trend == "bullish"
+
+
+def test_bearish_choch_from_none_then_bos() -> None:
+    tracker = StructureTracker("1d")
+    events = feed(tracker, [(10, 9, 9.5), (9.2, 7, 8), (9, 7.5, 8.5), (8.6, 5, 6)])
+
+    assert [(e.kind, e.direction, e.level) for e in events[1:] if e] == [("choch", "bearish", 9), ("bos", "bearish", 7)]
+    assert tracker.bullish_trigger == 9.2  # protected high: highest high since the 7 low's candle
+    assert tracker.bearish_trigger == 5
+
+
+def test_untaken_levels_after_long_one_way_trend() -> None:
+    tracker = StructureTracker("1d")
+    rows = [(11 + 2 * k, 10 + 2 * k, 11 + 2 * k) for k in range(40)]  # every close breaks the last high
+    feed(tracker, rows)
+    lows = tracker.untaken_levels("low")
+    prices = [level.price for level in lows]
+
+    # Price never came back down: every protected low is untaken, newest (highest) first.
+    assert prices == list(range(86, 8, -2))
+    assert [level.price for level in tracker.untaken_levels("high")] == [87]  # only the last broken high is unchecked
+
+    # A wick back down to 48 takes every low at or above it, highest first, and nothing else.
+    assert tracker.update(candle(40, 88, 48, 87)) is None
+    survivors = tracker.untaken_levels("low")
+
+    assert [level.price for level in survivors] == list(range(46, 8, -2))
+    assert {level.price for level in lows if level.taken} == set(range(48, 87, 2))
+    assert not any(level.taken for level in survivors)
+    assert tracker.untaken_levels("high") == []

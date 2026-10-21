@@ -22,13 +22,15 @@ Bookkeeping
   SwingLevel, stamped with the close_time of the update that recorded it (the moment it became known). A
   level turns taken once a later candle's high >= its price (highs) or low <= its price (lows); a level
   recorded on this update is checked from the next update on. A broken protected level is not recorded
-  twice. Only untaken levels are kept in the tracker.
+  twice. Only untaken levels are kept, in a heap per side (highs by lowest price, lows by highest price),
+  so an update only looks at the levels it actually takes.
 * Candle history: the (high, low) of every candle since the candle that set the current protected level,
   pruned after each break, so memory is bounded by the longest stretch between breaks.
 """
 
 from __future__ import annotations
 
+import heapq
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -67,7 +69,9 @@ class StructureTracker:
         self._high_idx = self._low_idx = 0  # absolute index of the candle that set each swing
         self._protected: float | None = None
         self._protected_idx = 0
-        self._untaken: dict[str, list[SwingLevel]] = {"high": [], "low": []}  # oldest first
+        self._seq = 0  # record order, to list levels newest first
+        # (key, seq, level) heaps; key is price for highs and -price for lows, so the next level to be taken is first.
+        self._untaken: dict[str, list[tuple[float, int, SwingLevel]]] = {"high": [], "low": []}
 
     @property
     def bullish_trigger(self) -> float | None:
@@ -83,7 +87,7 @@ class StructureTracker:
 
     def untaken_levels(self, side: Literal["high", "low"]) -> list[SwingLevel]:
         """Recorded levels on this side that price has not traded through, newest first."""
-        return self._untaken[side][::-1]
+        return [level for _, _, level in sorted(self._untaken[side], key=lambda entry: -entry[1])]
 
     def update(self, candle: Candle) -> StructureEvent | None:
         if candle.close_time is None:
@@ -95,12 +99,8 @@ class StructureTracker:
             self._swing_high, self._swing_low = candle.high, candle.low
             return None
 
-        for level in self._untaken["high"]:
-            level.taken = candle.high >= level.price
-        for level in self._untaken["low"]:
-            level.taken = candle.low <= level.price
-        for side, levels in self._untaken.items():
-            self._untaken[side] = [level for level in levels if not level.taken]
+        self._take("high", candle.high)
+        self._take("low", -candle.low)
 
         bullish_trigger, bearish_trigger = self.bullish_trigger, self.bearish_trigger
         if candle.close > bullish_trigger:
@@ -141,5 +141,12 @@ class StructureTracker:
         self._base = self._protected_idx
         return StructureEvent(kind, direction, broken, candle.close_time)
 
+    def _take(self, side: str, threshold: float) -> None:
+        heap = self._untaken[side]
+        while heap and heap[0][0] <= threshold:
+            heapq.heappop(heap)[2].taken = True
+
     def _record(self, price: float, side: Literal["high", "low"], candle: Candle) -> None:
-        self._untaken[side].append(SwingLevel(price, candle.close_time, side))
+        self._seq += 1
+        key = price if side == "high" else -price
+        heapq.heappush(self._untaken[side], (key, self._seq, SwingLevel(price, candle.close_time, side)))
