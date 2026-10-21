@@ -45,6 +45,8 @@ def calculate_metrics(
         return_to_drawdown = return_percent / max_drawdown_percent
     else:
         return_to_drawdown = float("inf")
+    wins = [trade.realized_pnl for trade in winning]
+    losses = [trade.realized_pnl for trade in losing]
 
     return {
         "total_trades": total_trades,
@@ -54,6 +56,11 @@ def calculate_metrics(
         "profit_factor": gross_profit / gross_loss if gross_loss else (float("inf") if gross_profit else 0.0),
         "expectancy": expectancy,
         "average_r": average_r,
+        "median_r": statistics.median(trade.realized_r for trade in trades) if trades else 0.0,
+        "average_win": sum(wins) / len(wins) if wins else 0.0,
+        "average_loss": sum(losses) / len(losses) if losses else 0.0,
+        "largest_win": max(wins, default=0.0),
+        "largest_loss": min(losses, default=0.0),
         "max_drawdown": max_drawdown,
         "max_drawdown_percent": max_drawdown_percent,
         "max_consecutive_wins": _max_consecutive(trades, winning=True),

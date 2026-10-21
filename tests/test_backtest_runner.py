@@ -6,11 +6,13 @@ import pytest
 
 import silver_bot
 from silver_bot.backtest import ExitReason, build_backtest_config, run_backtest
+from silver_bot.backtest.runner import WALK_FORWARD_WINDOWS
 from silver_bot.backtest.top_down_engine import TopDownBacktestEngine
 from silver_bot.config import AppConfig, TradingMode
 from silver_bot.data.funding import FundingRate, FundingSchedule
 from silver_bot.models import Candle, SignalDirection
 from silver_bot.readiness import evaluate_live_readiness
+from silver_bot.strategy import SilverBulletStrategyEngine
 from silver_bot.strategy.models import SilverBulletSignal
 from silver_bot.strategy.top_down import EntryPlan, StepResult
 
@@ -55,6 +57,7 @@ def test_run_writes_all_reports(tmp_path: Path) -> None:
         "trades",
         "equity_curve",
         "rejected_signals",
+        "daily_summary",
         "out_of_sample_validation_report",
         "backtest_run",
     }
@@ -135,6 +138,9 @@ def test_simulated_kill_switch_is_on_even_when_settings_disable_it(tmp_path: Pat
 
 def test_tripping_run_reports_trip_count_and_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     class AlwaysLosingStrategy:
+        # The engine reads the session clock for the pending order's expiry (session-end expiry).
+        sessions = SilverBulletStrategyEngine().sessions
+
         def evaluate(self, history):
             last = history[-1]
             return SilverBulletSignal(
@@ -286,8 +292,8 @@ def test_top_down_segments_get_warmup(tmp_path: Path, monkeypatch: pytest.Monkey
         strategy="top_down_ob", funding=FUNDING,
     )
 
-    assert len(runs) == 4  # full, training, validation, final_test
-    (full, no_warmup, _), training, validation, final = runs
+    assert len(runs) == 4 + WALK_FORWARD_WINDOWS  # full, training, validation, final_test, then walk-forward
+    (full, no_warmup, _), training, validation, final = runs[:4]
     assert (full, no_warmup) == (data, [])
     assert [(len(c), len(w)) for c, w, _ in (training, validation, final)] == [(30, 0), (10, 30), (10, 40)]
     assert final[1] == data[:40]
@@ -305,8 +311,8 @@ def test_warmup_never_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
     run_backtest(backtest_settings(), data, tmp_path / "reports", inputs={}, strategy="top_down_ob", funding=FUNDING)
 
-    assert len(built) == 4  # a fresh strategy per run
-    for strategy, (run_candles, warmup, result) in zip(built[2:], runs[2:]):  # validation and final_test
+    assert len(built) == 4 + WALK_FORWARD_WINDOWS  # a fresh strategy per run
+    for strategy, (run_candles, warmup, result) in zip(built[2:4], runs[2:4]):  # validation and final_test
         assert warmup
         # Warm-up candles were fed with trading=False; only the segment's own candles trade.
         assert strategy.calls == [(c.open_time, False) for c in warmup] + [(c.open_time, True) for c in run_candles]
@@ -330,7 +336,7 @@ def test_open_position_closed_at_segment_end(tmp_path: Path, monkeypatch: pytest
     (trade,) = training[2].trades
     assert trade.exit_reason == ExitReason.END_OF_DATA
     assert trade.exit_time == data[29].open_time
-    assert [len(result.trades) for _, _, result in runs[2:]] == [0, 0]  # the plan is warm-up history there
+    assert [len(result.trades) for _, _, result in runs[2:4]] == [0, 0]  # the plan is warm-up history there
     assert runs[0][2].trades[-1].exit_time == data[-1].open_time  # the full run holds it to the last candle
 
 

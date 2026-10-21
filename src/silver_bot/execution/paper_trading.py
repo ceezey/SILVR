@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 
 from silver_bot.backtest.models import TradeRecord
@@ -43,7 +44,14 @@ class PaperTradingEngine:
         ml_filter: MLProbabilityFilter | None = None,
         audit_logger: StructuredAuditLogger | None = None,
         initial_equity: float = 10_000.0,
+        history: Sequence[Candle] = (),
+        on_trade_closed: Callable[[PaperTradingResult], None] | None = None,
     ) -> None:
+        """`history` seeds the strategy with candles before the stream starts;
+        no signal is evaluated on them. `on_trade_closed` runs after every
+        closed paper trade with the running result.
+        """
+
         self.stream = stream
         self.strategy = strategy or SilverBulletStrategyEngine()
         self.risk = risk or RiskManagementEngine()
@@ -53,7 +61,9 @@ class PaperTradingEngine:
         self.ml_filter = ml_filter or MLProbabilityFilter()
         self.audit = audit_logger or StructuredAuditLogger()
         self.equity = initial_equity
-        self._candles: list[Candle] = []
+        self._candles: list[Candle] = sorted(history, key=lambda candle: candle.open_time)
+        self._on_trade_closed = on_trade_closed
+        self.result: PaperTradingResult | None = None
         self._kill_alert_sent = False
 
     async def run(self, *, max_candles: int | None = None) -> PaperTradingResult:
@@ -65,41 +75,30 @@ class PaperTradingEngine:
         await self.alerter.bot_started()
 
         result = PaperTradingResult(equity=self.equity)
+        self.result = result
         async for candle in self.stream.candles():
             self._candles.append(candle)
             result.candles_processed += 1
             if self.storage is not None:
                 self.storage.save_candles([candle])
 
-            if self.risk.kill_switch.is_active() and not self._kill_alert_sent:
-                event = PaperLifecycleEvent(
-                    event_type=PaperEventType.KILL_SWITCH_ACTIVE,
-                    symbol=candle.symbol,
-                    timestamp=candle.close_time or candle.open_time,
-                    message="Kill switch active",
-                    context={},
-                )
-                await self.alerter.kill_switch_active()
-                self._record_event(event, result)
-                self._kill_alert_sent = True
-
             for event in self.executor.process_candle(candle):
-                self._record_event(event, result)
-                if event.event_type == PaperEventType.PAPER_TRADE_OPENED:
-                    direction = str((event.context or {}).get("direction", "UNKNOWN"))
-                    await self.alerter.paper_trade_opened(event.symbol, direction)
-                if event.event_type == PaperEventType.PAPER_TRADE_CLOSED and event.trade is not None:
-                    self.equity += event.trade.realized_pnl
-                    result.equity = self.equity
-                    result.closed_trades += 1
-                    self.risk.release_trade(
-                        realized_pnl=event.trade.realized_pnl,
-                        day=event.trade.exit_time.date(),
+                await self._handle_execution_event(event, result)
+
+            if self.risk.kill_switch.is_active():
+                if not self._kill_alert_sent:
+                    event = PaperLifecycleEvent(
+                        event_type=PaperEventType.KILL_SWITCH_ACTIVE,
+                        symbol=candle.symbol,
+                        timestamp=candle.close_time or candle.open_time,
+                        message="Kill switch active",
+                        context={},
                     )
-                    if self.storage is not None:
-                        self.storage.save_paper_trade(event.trade)
-                    await self.alerter.paper_trade_closed(event.symbol, event.trade.realized_pnl)
-                    result.trades.append(event.trade)
+                    await self.alerter.kill_switch_active()
+                    self._record_event(event, result)
+                    self._kill_alert_sent = True
+                for event in self.executor.flatten(candle, reason="kill switch active"):
+                    await self._handle_execution_event(event, result)
 
             if not self.executor.has_active_trade:
                 await self._evaluate_signal(candle, result)
@@ -120,6 +119,29 @@ class PaperTradingEngine:
         )
         await self.alerter.bot_stopped()
         return result
+
+    async def _handle_execution_event(self, event: PaperLifecycleEvent, result: PaperTradingResult) -> None:
+        self._record_event(event, result)
+        if event.event_type == PaperEventType.PAPER_TRADE_OPENED:
+            direction = str((event.context or {}).get("direction", "UNKNOWN"))
+            await self.alerter.paper_trade_opened(event.symbol, direction)
+        elif event.event_type == PaperEventType.PAPER_ORDER_CANCELLED:
+            # The order never filled, so its reserved capacity is released with no PnL.
+            self.risk.release_trade(realized_pnl=0.0, day=event.timestamp.date())
+        elif event.event_type == PaperEventType.PAPER_TRADE_CLOSED and event.trade is not None:
+            self.equity += event.trade.realized_pnl
+            result.equity = self.equity
+            result.closed_trades += 1
+            self.risk.release_trade(
+                realized_pnl=event.trade.realized_pnl,
+                day=event.trade.exit_time.date(),
+            )
+            if self.storage is not None:
+                self.storage.save_paper_trade(event.trade)
+            await self.alerter.paper_trade_closed(event.symbol, event.trade.realized_pnl)
+            result.trades.append(event.trade)
+            if self._on_trade_closed is not None:
+                self._on_trade_closed(result)
 
     async def _evaluate_signal(self, candle: Candle, result: PaperTradingResult) -> None:
         signal = self.strategy.evaluate(self._candles)
@@ -263,6 +285,7 @@ class PaperTradingEngine:
             risk_decision=decision,
             ml_probability=ml_decision.probability,
             ml_decision=ml_decision.decision.value,
+            expires_at=self.strategy.sessions.evaluate(candle.open_time).end_at,
         )
         self.risk.reserve_trade(signal.generated_at.date())
         self._record_event(order_event, result)

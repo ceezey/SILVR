@@ -123,7 +123,7 @@ def test_adapter_rejects_lookalike_testnet_host() -> None:
         BinanceFuturesAdapter(testnet=True, base_url="https://testnet.binancefuture.com.evil.com")
 
 
-# --- fetch_ohlcv (ccxt-backed, public candles only) ---------------------------------------------
+# --- fetch_ohlcv_history (ccxt-backed, public candles only) -----------------------------------------
 
 from datetime import timedelta
 from urllib.parse import urlsplit
@@ -185,7 +185,7 @@ def _adapter(pages=None, failures=None, now=None, **kwargs):
 
 def _fetch(adapter, *, start=_T0, end=_T0 + timedelta(days=10), limit=1500, symbol="BTCUSDT"):
     return asyncio.run(
-        adapter.fetch_ohlcv(symbol=symbol, timeframe="1m", start=start, end=end, limit=limit)
+        adapter.fetch_ohlcv_history(symbol=symbol, timeframe="1m", start=start, end=end, limit=limit)
     )
 
 
@@ -484,4 +484,15 @@ def test_funding_validates_range_limit_and_symbol_before_building_client() -> No
         _fetch_funding(adapter, limit=0)
     with pytest.raises(ValueError, match="USDT"):
         _fetch_funding(adapter, symbol="BTCUSD")
+    assert "client" not in holder
+
+
+def test_ccxt_paths_refuse_a_host_changed_after_construction() -> None:
+    adapter, holder = _adapter()
+    adapter.base_url = "https://fapi.binance.com.evil.com"
+
+    with pytest.raises(ValueError, match="production or testnet"):
+        _fetch_funding(adapter)
+    with pytest.raises(ValueError, match="production or testnet"):
+        _fetch(adapter)
     assert "client" not in holder

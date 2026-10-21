@@ -8,6 +8,7 @@ from silver_bot.backtest import BacktestConfig, BacktestEngine
 from silver_bot.backtest.sim_kill_switch import SimulatedKillSwitch
 from silver_bot.models import Candle, SignalDirection
 from silver_bot.risk import KillSwitch, RiskManagementEngine
+from silver_bot.strategy import SilverBulletStrategyEngine
 from silver_bot.strategy.models import SilverBulletSignal
 
 REASON = "Max consecutive losses limit reached"
@@ -110,6 +111,9 @@ def flat_candle(opened: datetime, *, low: float = 99, high: float = 101) -> Cand
 
 class ScriptedStrategy:
     """Returns a prepared LONG signal at chosen candle open times, else NO_TRADE."""
+
+    # The engine reads the session clock for the pending order's expiry (session-end expiry).
+    sessions = SilverBulletStrategyEngine().sessions
 
     def __init__(self, signal_times: set[datetime]) -> None:
         self.signal_times = signal_times

@@ -144,7 +144,7 @@ async def download(
         else:
             window_start = max(month_begin, start_dt)
             candles = list(
-                await adapter.fetch_ohlcv(
+                await adapter.fetch_ohlcv_history(
                     symbol=symbol,
                     timeframe=timeframe,
                     start=window_start,

@@ -9,13 +9,12 @@ from silver_bot.data import download as download_module
 from silver_bot.data.csv_loader import load_binance_kline_csv
 from silver_bot.data.download import DownloadSummary, download, main, month_file_name
 from silver_bot.data.funding import FundingRate, load_funding_csv
-from silver_bot.exchange.base import ExchangeAdapter
 from silver_bot.models import Candle
 
 MINUTE = timedelta(minutes=1)
 
 
-class FakeAdapter(ExchangeAdapter):
+class FakeAdapter:
     """Returns synthetic 1m candles for any [start, end) range; never touches the network."""
 
     def __init__(self, omit=(), fail_from: datetime | None = None):
@@ -23,7 +22,7 @@ class FakeAdapter(ExchangeAdapter):
         self.omit = set(omit)
         self.fail_from = fail_from
 
-    async def fetch_ohlcv(self, *, symbol, timeframe, start, end, limit=1000):
+    async def fetch_ohlcv_history(self, *, symbol, timeframe, start, end, limit=1000):
         self.calls.append((start, end, limit))
         if self.fail_from is not None and start >= self.fail_from:
             raise RuntimeError("boom")
@@ -163,10 +162,10 @@ def test_gaps_at_month_edges_are_counted(tmp_path):
 
 def test_entirely_empty_month_window_counts_all_intervals_as_gaps(tmp_path):
     class NoFebruary(FakeAdapter):
-        async def fetch_ohlcv(self, *, symbol, timeframe, start, end, limit=1000):
+        async def fetch_ohlcv_history(self, *, symbol, timeframe, start, end, limit=1000):
             if start.month == 2:
                 return []
-            return await super().fetch_ohlcv(symbol=symbol, timeframe=timeframe, start=start, end=end, limit=limit)
+            return await super().fetch_ohlcv_history(symbol=symbol, timeframe=timeframe, start=start, end=end, limit=limit)
 
     summary = run(NoFebruary(), tmp_path)
 
@@ -197,7 +196,7 @@ def test_download_never_passes_credentials(tmp_path, monkeypatch, capsys):
 
 def test_main_returns_1_with_reason_on_error(tmp_path, monkeypatch, capsys):
     class Failing(FakeAdapter):
-        async def fetch_ohlcv(self, **kwargs):
+        async def fetch_ohlcv_history(self, **kwargs):
             raise RuntimeError("exchange unreachable")
 
     monkeypatch.setattr(download_module, "BinanceFuturesAdapter", lambda: Failing())
@@ -218,9 +217,9 @@ def _stub_adapter_and_capture(monkeypatch):
     seen = []
 
     class Recording(FakeAdapter):
-        async def fetch_ohlcv(self, **kwargs):
+        async def fetch_ohlcv_history(self, **kwargs):
             seen.append((kwargs["symbol"], kwargs["timeframe"]))
-            return await super().fetch_ohlcv(**kwargs)
+            return await super().fetch_ohlcv_history(**kwargs)
 
     monkeypatch.setattr(download_module, "BinanceFuturesAdapter", lambda: Recording())
     return seen

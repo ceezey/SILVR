@@ -12,8 +12,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-21
-**Last reconciled:** 2026-10-21 against code at commit `c523f04` for the section 3 stack table (ccxt, the first runtime dependency); 2026-10-08 against code at commit `62037d1` for the rest; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`; the D-4 and D-11 rows of the deprecations register re-checked 2026-10-09 against `099085b`
+**Last updated:** 2026-10-22
+**Last reconciled:** 2026-10-21 against code at commit `c523f04` for the section 3 stack table (ccxt, the first runtime dependency); 2026-10-08 against code at commit `62037d1` for the rest; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`; the D-4 and D-11 rows of the deprecations register re-checked 2026-10-09 against `099085b`; the D-4 and D-11 rows and the golden path (b) line references re-checked 2026-10-14 against `40ea0b1` (paper and demo runtime `973cd82`, merged into `dev` 2026-10-22)
 
 This guide tells a coding agent or a human how to build Silver Bot from the canonical docs. It is the root `AGENTS.md`, which every future session reads first. Safety rules in section 5 are carried over from the previous `AGENTS.md` and must not be weakened.
 
@@ -89,8 +89,8 @@ No version in this table is invented. If `pyproject.toml` or the `Dockerfile` ch
 
 | ID | Old convention (in old docs) | Current code | Use instead |
 |----|------------------------------|--------------|-------------|
-| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Partly resolved (`f84557e`): the keys reach the filter in CLI backtests only (`src/silver_bot/backtest/runner.py:50-55`); the paper loop ignores them | Treat ML as not wired outside backtests; see [rfc-silverbot-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-ml-filter-gate.md>) |
-| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into `RiskConfig` (`4726cb5`) and CLI backtests use it with a simulated per-run kill switch; nothing calls `build_risk_engine` at runtime yet (G-3), and the daily-loss and leverage bounds are checked in demo mode only | Build a runtime engine with `build_risk_engine(config, storage)` (`src/silver_bot/risk/factory.py:26-33`); a backtest takes `build_risk_config` through `build_backtest_config` (`src/silver_bot/backtest/runner.py:35-57`) and never the real kill-switch path; never hand-build a `RiskConfig` for a running bot; see [rfc-silverbot-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-risk-kill-switch.md>) |
+| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Partly resolved (`f84557e`, `973cd82`): the keys reach the filter through `build_ml_filter_config` in CLI backtests and in the paper and demo runtime (`src/silver_bot/backtest/runner.py:54,59-67`, `src/silver_bot/execution/runtime.py:87`); a `PaperTradingEngine` built without `ml_filter` still uses a disabled default | Build the filter config with `build_ml_filter_config(config)`; the filter still needs an active registered model to do anything; see [rfc-silverbot-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-ml-filter-gate.md>) |
+| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into `RiskConfig` (`4726cb5`) and CLI backtests use it with a simulated per-run kill switch; the paper and demo runtime calls `build_risk_engine(config, storage)` (`src/silver_bot/execution/runtime.py:76`, `973cd82`); the daily-loss and leverage bounds are checked in demo mode only | Build a runtime engine with `build_risk_engine(config, storage)` (`src/silver_bot/risk/factory.py:26-33`); a backtest takes `build_risk_config` through `build_backtest_config` (`src/silver_bot/backtest/runner.py:39-67`) and never the real kill-switch path; never hand-build a `RiskConfig` for a running bot; see [rfc-silverbot-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-risk-kill-switch.md>) |
 | D-10 | Live trading is gated by `LIVE_TRADING` plus readiness | `LIVE_TRADING=true` is rejected at load; readiness is never consulted by the entrypoint | Live is `Planned, blocked`; see [rfc-silverbot-readiness-gates.md](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-readiness-gates.md>) |
 
 The full list is in [audit-docs-drift.md](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>).
@@ -128,7 +128,7 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
 
 ### (b) An order request passes through the risk engine and kill switch
 
-`src/silver_bot/risk/engine.py:38-55` (an unreadable persisted risk state halts first; the kill switch is the first gate) and `src/silver_bot/execution/paper_trading.py:207-216` (the caller must ask the risk engine before any fill):
+`src/silver_bot/risk/engine.py:38-55` (an unreadable persisted risk state halts first; the kill switch is the first gate) and `src/silver_bot/execution/paper_trading.py:229-239` (the caller must ask the risk engine before any fill):
 
 ```python
     def evaluate(self, request: RiskRequest) -> RiskDecision:
@@ -167,7 +167,7 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
             return
 ```
 
-The `...` elides the lines after line 217 (the `if not decision.approved:` header; the rejection event, audit log and alert).
+The `...` elides the lines after line 239 (the `if not decision.approved:` header; the rejection event, audit log and alert).
 
 A rejected decision is recorded and the function returns before any position is opened.
 
@@ -405,6 +405,16 @@ Never cut: validation at trust boundaries, error handling that prevents data los
 SilverBot additions, never cut: validation, risk gates, the kill switch, stop loss, tests or secret hygiene. YAGNI applies to features, not to safety.
 
 ### 5.1 Change Workflow
+
+Branch flow (owner decision, 2026-10-14): BE and FE work, then merge to `dev`, then QA, then a PR to `main`. `main` is the production bot; nothing is developed, tested or pushed there.
+
+1. Branch from `dev` per task: `feat/be-<name>` for bot code, `feat/fe-<name>` for the operator dashboard or Telegram (FE is built by `psl-purist`, SAD-B1).
+2. Build on the branch with tests, and run the reviewers below before merging.
+3. Merge the branch into `dev` and push. No PR and no owner sign-off is needed for this step.
+4. QA on `dev`: the full `python -m pytest`, the [QAD](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SilverBot/qad-silverbot.md>) section 6 release criteria for the affected mode gate, and a smoke run of the bot and the dashboard. The owner signs off.
+5. Open a PR from `dev` to `main` only after QA passes and the owner says go.
+
+For each change:
 
 1. When a change touches a Locked doc, propose a Change Record `cr-silverbot-<slug>.md` in the vault folder `01_Projects/SilverBot/Change_Records/` (template `03_Resources/Templates/change-record-template.md`) with sections: Why, Divergences, Changes, Verification, Pre-merge gate runs, Deferred.
 2. Apply the change (code, tests, docs).

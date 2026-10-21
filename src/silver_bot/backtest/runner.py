@@ -10,11 +10,12 @@ from typing import Any
 
 import silver_bot
 from silver_bot.backtest.engine import BacktestEngine
+from silver_bot.backtest.criteria import combine_verdicts, evaluate_evidence
 from silver_bot.backtest.models import BacktestConfig, BacktestResult
-from silver_bot.backtest.reporting import _json_safe
+from silver_bot.backtest.reporting import json_safe
 from silver_bot.backtest.sim_kill_switch import SimulatedKillSwitch
 from silver_bot.backtest.top_down_engine import TopDownBacktestEngine
-from silver_bot.backtest.validation import BacktestValidationSuite
+from silver_bot.backtest.validation import BacktestValidationSuite, monte_carlo_r
 from silver_bot.config import AppConfig
 from silver_bot.data.funding import FundingSchedule
 from silver_bot.ml import MLFilterConfig
@@ -25,6 +26,9 @@ from silver_bot.risk import RiskManagementEngine, build_risk_config
 TRAINING_FRACTION = 0.6
 VALIDATION_FRACTION = 0.2
 STRATEGIES = ("silver_bullet", "top_down_ob")
+WALK_FORWARD_WINDOWS = 4
+MONTE_CARLO_RUNS = 1000
+MONTE_CARLO_SEED = 7
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,13 +54,19 @@ def build_backtest_config(
 
     return BacktestConfig(
         risk=replace(build_risk_config(config), kill_switch_path=kill_switch_path),
-        ml_filter=MLFilterConfig(
-            enabled=config.ml_filter_enabled,
-            registry_path=config.ml_registry_path,
-            min_probability=config.ml_min_probability,
-            reduce_risk_threshold=config.ml_reduce_risk_threshold,
-        ),
+        ml_filter=build_ml_filter_config(config),
         export_dir=export_dir,
+    )
+
+
+def build_ml_filter_config(config: AppConfig) -> MLFilterConfig:
+    """Return the ML filter settings from AppConfig (shared by backtest and paper)."""
+
+    return MLFilterConfig(
+        enabled=config.ml_filter_enabled,
+        registry_path=config.ml_registry_path,
+        min_probability=config.ml_min_probability,
+        reduce_risk_threshold=config.ml_reduce_risk_threshold,
     )
 
 
@@ -89,11 +99,21 @@ def run_backtest(
 
     full, full_kill_switch, full_config = _simulate(config, ordered, export_dir=directory, funding=funding)
 
-    split = BacktestValidationSuite().chronological_split(
+    suite = BacktestValidationSuite()
+    split = suite.chronological_split(
         ordered,
         training_fraction=TRAINING_FRACTION,
         validation_fraction=VALIDATION_FRACTION,
     )
+    full_criteria = _criteria(full.metrics, full_config)
+    training = _segment(config, split.training, funding, ordered)
+    validation = _segment(config, split.validation, funding, ordered)
+    final_test = _segment(config, split.final_test, funding, ordered)
+    # Walk-forward covers the training and validation span only, so the final
+    # test set is evaluated exactly once, in its own segment above.
+    research = [*split.training, *split.validation]
+    windows = suite.walk_forward_windows(research, windows=WALK_FORWARD_WINDOWS)
+    walk_forward = [_segment(config, window, funding, ordered) for window in windows]
     oos_path = directory / "out_of_sample_validation_report.json"
     _write_json(
         oos_path,
@@ -107,9 +127,23 @@ def run_backtest(
             "parameters_tuned": False,
             "strategy": strategy,
             "segments": {
-                "training": _segment(config, split.training, funding, ordered),
-                "validation": _segment(config, split.validation, funding, ordered),
-                "final_test": _segment(config, split.final_test, funding, ordered),
+                "training": training,
+                "validation": validation,
+                "final_test": final_test,
+            },
+            "walk_forward": {"span": "training_and_validation", "windows": walk_forward},
+            "monte_carlo": {
+                "source": "full_period_trades",
+                **monte_carlo_r(
+                    [trade.realized_r for trade in full.trades],
+                    runs=MONTE_CARLO_RUNS,
+                    seed=MONTE_CARLO_SEED,
+                ),
+            },
+            "criteria": {
+                "verdict": combine_verdicts(full_criteria["verdict"], final_test["criteria"]["verdict"]),
+                "full_period": full_criteria,
+                "final_test": final_test["criteria"],
             },
         },
     )
@@ -178,19 +212,31 @@ def _segment(
     config: AppConfig, candles: list[Candle], funding: FundingSchedule | None, ordered: list[Candle]
 ) -> dict[str, Any]:
     if not candles:
-        return {"candles": 0, "start": None, "end": None, "metrics": None, "kill_switch": None}
+        # No run means no metrics; costs are the BacktestConfig defaults, which
+        # build_backtest_config never changes.
+        criteria = _criteria({}, BacktestConfig())
+        return {"candles": 0, "start": None, "end": None, "metrics": None, "kill_switch": None, "criteria": criteria}
     # `candles` is a slice of `ordered`; everything before its first candle is warm-up history.
     warmup = ordered[: ordered.index(candles[0])] if funding is not None else ()
-    result, kill_switch, _ = _simulate(config, candles, export_dir=None, funding=funding, warmup=warmup)
+    result, kill_switch, backtest_config = _simulate(config, candles, export_dir=None, funding=funding, warmup=warmup)
     return {
         "candles": len(candles),
         "start": candles[0].open_time.isoformat(),
         "end": candles[-1].open_time.isoformat(),
         "metrics": result.metrics,
         "kill_switch": kill_switch,
+        "criteria": _criteria(result.metrics, backtest_config),
     }
+
+
+def _criteria(metrics: Mapping[str, Any], backtest_config: BacktestConfig) -> dict[str, Any]:
+    return evaluate_evidence(
+        metrics,
+        slippage_bps=backtest_config.slippage_bps,
+        spread_bps=backtest_config.spread_bps,
+    )
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_json_safe(dict(payload)), indent=2, sort_keys=True), encoding="utf-8")
+    path.write_text(json.dumps(json_safe(dict(payload)), indent=2, sort_keys=True), encoding="utf-8")
