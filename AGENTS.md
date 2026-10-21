@@ -12,8 +12,8 @@
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-09
-**Last reconciled:** 2026-10-08 against code at commit `62037d1`; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`; the D-4 and D-11 rows of the deprecations register re-checked 2026-10-09 against `099085b`
+**Last updated:** 2026-10-21
+**Last reconciled:** 2026-10-21 against code at commit `c523f04` for the section 3 stack table (ccxt, the first runtime dependency); 2026-10-08 against code at commit `62037d1` for the rest; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`; the D-4 and D-11 rows of the deprecations register re-checked 2026-10-09 against `099085b`
 
 This guide tells a coding agent or a human how to build Silver Bot from the canonical docs. It is the root `AGENTS.md`, which every future session reads first. Safety rules in section 5 are carried over from the previous `AGENTS.md` and must not be weakened.
 
@@ -70,12 +70,13 @@ Four safety reviewers run before merge on the paths each guards, and one standar
 
 ## 3. Stack Currency & Deprecations
 
-**Verified 2026-10-08** against `pyproject.toml`, `Dockerfile` and the code at commit `62037d1`.
+**Verified 2026-10-21** against `pyproject.toml`, `Dockerfile` and the code at commit `c523f04`. The `ccxt` row was checked against the installed package (`ccxt.__version__` is 4.5.89) and a Docker build on the same day.
 
 | Component | Pinned value | Source |
 |-----------|--------------|--------|
 | Python | `requires-python = ">=3.11"` | `pyproject.toml` |
-| Runtime dependencies | `dependencies = []` (none declared; standard library only) | `pyproject.toml` |
+| Runtime dependencies | `dependencies = ["ccxt>=4.5,<5"]` (one declared; everything else is standard library) | `pyproject.toml` |
+| ccxt | `>=4.5,<5`; 4.5.89 installed and verified 2026-10-21. Used for public candle history through `ccxt.async_support.binanceusdm`; an API key is attached only on the Binance Futures testnet host | `pyproject.toml`; `src/silver_bot/exchange/binance_futures.py` |
 | Dev dependency | `pytest>=8.0` (optional extra `dev`) | `pyproject.toml` |
 | Build backend | `setuptools>=68` | `pyproject.toml` |
 | scikit-learn | Optional and undeclared; used only for the RandomForest and GradientBoosting models if it imports | [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/aia-silverbot.md>) section 1.2 |

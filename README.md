@@ -30,10 +30,11 @@ Full proposal conditions: [RFC-004 §7.1](<C:/AI Agentic Memory/03_Resources/RFC
 
 Honest summary at commit `5c781fc` on `dev` (see [prd-silverbot](<C:/AI Agentic Memory/03_Resources/Blueprints/prd-silverbot.md>) section 3 for the per-feature table):
 
-- Built and tested: signal engine, risk engine, config loading, readiness checkers, backtest from the command line (`python -m pytest -q`: 220 passed).
+- Built and tested: signal engine, risk engine, config loading, readiness checkers, backtest from the command line (`python -m pytest -q`: 400 passed at commit `c523f04`, 2026-10-21).
 - HIGH safety fixes batch 1 (2026-10-09): a NaN or out-of-range ML probability now rejects; the testnet URL guard is an exact `https` host match; `.env.example` loads as paper mode; readiness rejects empty or non-JSON reports; backtests default to 5 bps slippage and 3 bps spread; risk per trade is capped at 0.5% everywhere; the kill switch fails closed and trips itself on the daily-loss and consecutive-loss limits; risk state can persist in SQLite. Backtests use the settings caps and a simulated per-run kill switch; no paper bot uses the real kill switch or the persisted state until a paper runtime builds its engine with `build_risk_engine` (G-3). Details: [scrutiny-silverbot](<C:/AI Agentic Memory/01_Projects/SilverBot/Planning/scrutiny-silverbot.md>) section 3.
 - Partial: backtester, paper trading, demo/testnet mode, ML filter, monitoring, market data, deployment files.
 - Entrypoint (G-3 entrypoint batch 2, 2026-10-09): `python -m silver_bot` runs the mode from configuration. Backtest mode loads Binance kline CSV files given with `--candles` and writes six reports, including a chronological out-of-sample report and a run record (exit 0; 2 on bad input). Paper and demo exit 78 (`mode not available yet: needs market data (G-13)`), and the systemd unit and compose do not restart on 78 (systemd also stops on exit 2 since `5c781fc`). There is no paper or demo runtime yet (G-3, G-13, G-17).
+- ccxt data and promotion gate (2026-10-21, `c523f04`): `python -m silver_bot.data.download` fetches public Binance Futures candles through ccxt (the first runtime dependency, `ccxt>=4.5,<5`) into monthly CSV files with no API key, and `python -m silver_bot.backtest.gate` prints PASS or FAIL for six promotion criteria on the out-of-sample report. The gate only reports; it unlocks nothing, and live trading stays `Planned, blocked`. A backtest-only simulated kill switch clears at the next UTC day and logs each trip.
 - No evidence: `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are empty until the owner runs a backtest on real data, and `reports/` is git-ignored. Nothing here supports any claim about strategy performance.
 - Known safety hazards are listed in [audit-docs-drift](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>) and [scrutiny-silverbot](<C:/AI Agentic Memory/01_Projects/SilverBot/Planning/scrutiny-silverbot.md>).
 
@@ -43,9 +44,10 @@ Set up the environment and run the tests by following [runbook-local-dev](<C:/AI
 
 Backtest on Binance USD-M futures klines (full steps, including checksums, in [runbook-backtest](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/runbook-backtest.md>)):
 
-1. Download monthly files from `https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/`, for example `BTCUSDT-1m-2026-01.zip`, and unzip the CSVs into `data/candles/`.
+1. Download the candles: `python -m silver_bot.data.download --start 2022-01-01 --end 2026-10-21` writes monthly CSV files into `data/candles/` from the Binance public API (no API key; rerun it to resume). Or download monthly files by hand from `https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/`, for example `BTCUSDT-1m-2026-01.zip`, and unzip the CSVs into `data/candles/`.
 2. In `.env` set `MODE=` (blank), `TRADING_MODE=backtest` and `PAPER_TRADING=false`; `SYMBOL` and `TIMEFRAME` must match the files.
 3. Run `python -m silver_bot --candles data/candles`. Expected: exit 0 and six files in `reports/`.
+4. Run `python -m silver_bot.backtest.gate`. Expected: one PASS or FAIL row per criterion and `GATE: PASS` or `GATE: FAIL` (exit 0, 1; 2 if the report is missing or malformed). Change no strategy setting between looks at the result: the runbook explains why.
 
 The reports are not committed (`reports/` is git-ignored), and no number from them is a performance claim. Paper and demo modes exit 78 for now; testnet preparation steps are in [runbook-demo-testnet](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/runbook-demo-testnet.md>).
 
