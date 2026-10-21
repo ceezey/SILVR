@@ -22,6 +22,7 @@ from typing import Any, Literal
 
 MIN_TRADES = 100
 MIN_T_STAT = 2.0
+MIN_T_STAT_REPEAT = 3.0  # any later look at the same data range, across all strategies
 MIN_PROFIT_FACTOR = 1.5
 WARN_PROFIT_FACTOR = 3.0
 MIN_REALIZED_RR = 1.5
@@ -29,6 +30,7 @@ MAX_DRAWDOWN_PERCENT = 0.10
 MIN_RETURN_TO_DRAWDOWN = 2.0
 MIN_OOS_EFFICIENCY = 0.5
 
+DEFAULT_STRATEGY = "silver_bullet"  # reports from before the strategy key existed
 DEFAULT_REPORT = "reports/out_of_sample_validation_report.json"
 OUTPUT_NAME = "promotion_gate.json"
 LOG_NAME = "promotion_gate_log.jsonl"
@@ -68,6 +70,9 @@ class GateVerdict:
     criteria: list[CriterionResult]
     info: dict[str, Any]
     passed: bool
+    strategy: str = DEFAULT_STRATEGY
+    t_stat_bar: float = MIN_T_STAT
+    look: int = 1
 
 
 def _number(value: Any, label: str) -> float:
@@ -108,7 +113,12 @@ def _fmt(value: float) -> str:
     return "inf" if value == float("inf") else f"{value:.4g}"
 
 
-def evaluate_gate(report: Mapping[str, Any]) -> GateVerdict:
+def evaluate_gate(report: Mapping[str, Any], *, prior_looks: int = 0) -> GateVerdict:
+    t_stat_bar = MIN_T_STAT_REPEAT if prior_looks >= 1 else MIN_T_STAT
+    strategy = report.get("strategy", DEFAULT_STRATEGY)
+    if not isinstance(strategy, str) or not strategy:
+        raise GateInputError(f"strategy is not a name; {RERUN_HINT}")
+    look = prior_looks + 1
     training = _segment(report, "training")
     final = _segment(report, "final_test")
     _segment(report, "validation")
@@ -134,7 +144,7 @@ def evaluate_gate(report: Mapping[str, Any]) -> GateVerdict:
 
     names = {
         1: ("Enough trades", f">= {MIN_TRADES}"),
-        2: ("Real edge", f"avg R > 0, t >= {MIN_T_STAT}"),
+        2: ("Real edge", f"avg R > 0, t >= {t_stat_bar}"),
         3: ("Profit factor", f">= {MIN_PROFIT_FACTOR} (warn > {WARN_PROFIT_FACTOR})"),
         4: ("Realized reward:risk", f">= {MIN_REALIZED_RR}"),
         5: ("Drawdown", f"<= {MAX_DRAWDOWN_PERCENT}, return/dd >= {MIN_RETURN_TO_DRAWDOWN}"),
@@ -146,7 +156,7 @@ def evaluate_gate(report: Mapping[str, Any]) -> GateVerdict:
             CriterionResult(number, name, threshold, "no trades in final test", "FAIL")
             for number, (name, threshold) in names.items()
         ]
-        return GateVerdict(criteria=criteria, info=info, passed=False)
+        return GateVerdict(criteria, info, False, strategy, t_stat_bar, look)
 
     trades = _number(final_metrics["total_trades"], "final_test.total_trades")
     average_r = _number(final_metrics["average_r"], "final_test.average_r")
@@ -165,7 +175,7 @@ def evaluate_gate(report: Mapping[str, Any]) -> GateVerdict:
 
     criteria = [
         criterion(1, *names[1], f"{int(trades)}", trades >= MIN_TRADES),
-        criterion(2, *names[2], f"avg R {_fmt(average_r)}, t {_fmt(t_stat)}", average_r > 0 and t_stat >= MIN_T_STAT),
+        criterion(2, *names[2], f"avg R {_fmt(average_r)}, t {_fmt(t_stat)}", average_r > 0 and t_stat >= t_stat_bar),
         criterion(
             3,
             *names[3],
@@ -182,7 +192,8 @@ def evaluate_gate(report: Mapping[str, Any]) -> GateVerdict:
         ),
         criterion(6, *names[6], efficiency_actual, efficiency_ok),
     ]
-    return GateVerdict(criteria=criteria, info=info, passed=all(c.result != "FAIL" for c in criteria))
+    passed = all(c.result != "FAIL" for c in criteria)
+    return GateVerdict(criteria, info, passed, strategy, t_stat_bar, look)
 
 
 def _render(verdict: GateVerdict) -> str:
@@ -194,6 +205,7 @@ def _render(verdict: GateVerdict) -> str:
     ]
     lines.append("")
     lines += [f"{key}: {value}" for key, value in verdict.info.items()]
+    lines.append(f"t-stat bar: {verdict.t_stat_bar} (look {verdict.look} at this data range, all strategies)")
     lines.append("")
     lines.append(f"7  {REMINDER}")
     lines.append(f"GATE: {'PASS' if verdict.passed else 'FAIL'}")
@@ -216,12 +228,31 @@ def _load(path: Path) -> Mapping[str, Any]:
     return data
 
 
-def _log_run(path: Path, verdict: GateVerdict) -> int:
-    """Append one audit line for this run and return how many runs saw the same data range.
+def _count_looks(log_path: Path, info: Mapping[str, Any]) -> int:
+    """Count past runs on this exact data range, whatever their strategy or verdict.
 
-    Repeated looks at the final test raise the bar (criterion 7), so each run is
-    recorded with a hash of the exact report it judged.
+    A line that cannot be read fails closed: skipping it could undercount and lower the bar.
     """
+
+    if not log_path.exists():
+        return 0
+    looks = 0
+    for number, line in enumerate(log_path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            past = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise GateInputError(f"{log_path} line {number} is not valid JSON ({exc}); fix or remove it") from exc
+        if not isinstance(past, Mapping):
+            raise GateInputError(f"{log_path} line {number} is not a JSON object; fix or remove it")
+        if (past.get("data_start"), past.get("data_end")) == (info["data_start"], info["data_end"]):
+            looks += 1
+    return looks
+
+
+def _log_run(path: Path, verdict: GateVerdict) -> None:
+    """Append one audit line for this run, with a hash of the exact report it judged."""
 
     info = verdict.info
     entry = {
@@ -232,22 +263,11 @@ def _log_run(path: Path, verdict: GateVerdict) -> int:
         "data_end": info["data_end"],
         "candles": info["candles"],
         "passed": verdict.passed,
+        "strategy": verdict.strategy,
+        "t_stat_bar": verdict.t_stat_bar,
     }
-    log_path = path.parent / LOG_NAME
-    with log_path.open("a", encoding="utf-8") as handle:
+    with (path.parent / LOG_NAME).open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry) + "\n")
-    runs = 0
-    for line in log_path.read_text(encoding="utf-8").splitlines():
-        try:
-            past = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(past, Mapping) and (past.get("data_start"), past.get("data_end")) == (
-            entry["data_start"],
-            entry["data_end"],
-        ):
-            runs += 1
-    return runs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -256,7 +276,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     path = Path(args.report)
     try:
-        verdict = evaluate_gate(_load(path))
+        data = _load(path)
+        verdict = evaluate_gate(data)
+        prior_looks = _count_looks(path.parent / LOG_NAME, verdict.info)
+        if prior_looks:
+            verdict = evaluate_gate(data, prior_looks=prior_looks)
     except GateInputError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -264,12 +288,15 @@ def main(argv: list[str] | None = None) -> int:
     payload = {
         "report": str(path),
         "passed": verdict.passed,
+        "strategy": verdict.strategy,
+        "t_stat_bar": verdict.t_stat_bar,
         "criteria": [asdict(c) for c in verdict.criteria],
         "info": verdict.info,
         "reminder": f"7  {REMINDER}",
     }
     (path.parent / OUTPUT_NAME).write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(f"gate runs on this data range: {_log_run(path, verdict)}")
+    _log_run(path, verdict)
+    print(f"gate runs on this data range: {verdict.look}")
     return 0 if verdict.passed else 1
 
 

@@ -224,6 +224,10 @@ def test_thresholds_are_module_constants():
     assert (gate.MIN_RETURN_TO_DRAWDOWN, gate.MIN_OOS_EFFICIENCY) == (2.0, 0.5)
 
 
+def test_repeat_bar_constant():
+    assert gate.MIN_T_STAT_REPEAT == 3.0
+
+
 def test_gate_does_not_touch_config_or_readiness(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     path = write_report(tmp_path, report())
@@ -239,7 +243,7 @@ def _log_lines(path: Path) -> list[dict[str, Any]]:
 
 
 def test_each_run_appends_an_audit_line_and_counts_looks(tmp_path, capsys):
-    code, path = run(tmp_path, report())
+    code, path = run(tmp_path, report(r_t_stat=3.5))  # clears the repeat-look bar of 3.0
     assert code == 0
     assert "gate runs on this data range: 1" in capsys.readouterr().out
 
@@ -251,7 +255,17 @@ def test_each_run_appends_an_audit_line_and_counts_looks(tmp_path, capsys):
     assert len(lines) == 2
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     for line in lines:
-        assert set(line) == {"run_at", "report", "report_sha256", "data_start", "data_end", "candles", "passed"}
+        assert set(line) == {
+            "run_at",
+            "report",
+            "report_sha256",
+            "data_start",
+            "data_end",
+            "candles",
+            "passed",
+            "strategy",
+            "t_stat_bar",
+        }
         assert line["report"] == str(path)
         assert line["report_sha256"] == digest
         assert line["data_start"] == "2024-01-01T00:00:00+00:00"
@@ -262,11 +276,11 @@ def test_each_run_appends_an_audit_line_and_counts_looks(tmp_path, capsys):
 
 
 def test_different_data_range_is_counted_separately(tmp_path, capsys):
-    run(tmp_path, report())
-    run(tmp_path, report())
+    run(tmp_path, report(r_t_stat=3.5))
+    run(tmp_path, report(r_t_stat=3.5))
     capsys.readouterr()
 
-    other = report()
+    other = report(r_t_stat=3.5)
     other["segments"]["final_test"]["end"] = "2024-06-01T00:00:00+00:00"
     code, path = run(tmp_path, other)
 
@@ -297,3 +311,101 @@ def test_exit_2_paths_append_nothing(tmp_path, capsys):
 
     assert log.read_bytes() == before
     assert "gate runs on this data range" not in capsys.readouterr().out
+
+
+def _seed_log(tmp_path: Path, *lines: str) -> Path:
+    log = tmp_path / "reports" / "promotion_gate_log.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+    return log
+
+
+def _old_line(**overrides: Any) -> str:
+    entry = {
+        "run_at": "2026-10-21T09:39:08+00:00",
+        "report": "reports/out_of_sample_validation_report.json",
+        "report_sha256": "0" * 64,
+        "data_start": "2024-01-01T00:00:00+00:00",
+        "data_end": "2024-05-01T00:00:00+00:00",
+        "candles": 10000,
+        "passed": False,
+    }
+    return json.dumps({**entry, **overrides})
+
+
+def _criterion(verdict, number: int):
+    return next(c for c in verdict.criteria if c.number == number)
+
+
+def test_first_look_bar_2(tmp_path, capsys):
+    verdict = evaluate_gate(report(r_t_stat=2.0))
+    assert verdict.passed
+    assert verdict.t_stat_bar == 2.0
+    assert "t >= 2.0" in _criterion(verdict, 2).threshold
+    code, path = run(tmp_path, report(r_t_stat=2.5))
+    assert code == 0
+    assert "t-stat bar: 2.0 (look 1 at this data range, all strategies)" in capsys.readouterr().out
+
+
+def test_second_look_bar_3_fails_t_2_5(tmp_path, capsys):
+    verdict = evaluate_gate(report(r_t_stat=2.5), prior_looks=1)
+    assert failed_numbers(verdict) == {2}
+    assert "t >= 3.0" in _criterion(verdict, 2).threshold
+    assert verdict.t_stat_bar == 3.0
+    assert evaluate_gate(report(r_t_stat=3.0), prior_looks=1).passed
+
+    assert run(tmp_path, report(r_t_stat=2.5))[0] == 0
+    capsys.readouterr()
+    code, path = run(tmp_path, report(r_t_stat=2.5))
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "t-stat bar: 3.0 (look 2 at this data range, all strategies)" in out
+    assert "gate runs on this data range: 2" in out
+    assert _log_lines(path)[-1]["passed"] is False
+
+
+def test_looks_counted_across_strategies(tmp_path, capsys):
+    data = report(r_t_stat=2.5)
+    data["strategy"] = "top_down_ob"
+    _seed_log(tmp_path, _old_line(strategy="silver_bullet", t_stat_bar=2.0, passed=True))
+    code, path = run(tmp_path, data)
+    assert code == 1
+    assert "look 2 at this data range" in capsys.readouterr().out
+    # a different data range is a first look
+    _seed_log(tmp_path, _old_line(data_end="2024-04-01T00:00:00+00:00"))
+    assert main(["--report", str(path)]) == 0
+
+
+def test_strategy_in_json_and_log(tmp_path):
+    data = report()
+    data["strategy"] = "top_down_ob"
+    code, path = run(tmp_path, data)
+    assert code == 0
+    written = json.loads((path.parent / "promotion_gate.json").read_text(encoding="utf-8"))
+    assert (written["strategy"], written["t_stat_bar"]) == ("top_down_ob", 2.0)
+    assert (_log_lines(path)[0]["strategy"], _log_lines(path)[0]["t_stat_bar"]) == ("top_down_ob", 2.0)
+
+    # reports from before the strategy key existed are silver_bullet
+    code, path = run(tmp_path, report(r_t_stat=3.5))
+    line = _log_lines(path)[-1]
+    assert (line["strategy"], line["t_stat_bar"]) == ("silver_bullet", 3.0)
+    written = json.loads((path.parent / "promotion_gate.json").read_text(encoding="utf-8"))
+    assert (written["strategy"], written["t_stat_bar"]) == ("silver_bullet", 3.0)
+
+
+def test_existing_log_without_strategy_still_counts(tmp_path, capsys):
+    _seed_log(tmp_path, _old_line())
+    code, _ = run(tmp_path, report(r_t_stat=2.5))
+    assert code == 1
+    assert "look 2 at this data range" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("bad", ["{not json", "[1, 2]", '"text"'])
+def test_unparseable_log_line_fails_closed(tmp_path, capsys, bad):
+    log = _seed_log(tmp_path, _old_line(), bad)
+    before = log.read_bytes()
+    code, path = run(tmp_path, report())
+    assert code == 2
+    assert "promotion_gate_log.jsonl" in capsys.readouterr().err
+    assert log.read_bytes() == before
+    assert not (path.parent / "promotion_gate.json").exists()
