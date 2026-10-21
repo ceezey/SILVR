@@ -1,0 +1,145 @@
+"""Causal body-close market structure (spec 3.1; TD-2, TD-3, TD-18).
+
+One StructureTracker runs per timeframe and is fed closed candles, oldest first.
+
+Bookkeeping
+-----------
+* Swing high / swing low: the highest high / lowest low since the tracker started or since it was last
+  restarted. The first candle seeds both. A bullish break restarts the swing high at the breaking candle;
+  a bearish break restarts the swing low at the breaking candle.
+* Protected level: one price, the protected low while the trend is bullish or the protected high while it
+  is bearish. Each break sets it to the opposite extreme measured from the candle that set the broken
+  level through the breaking candle (inclusive): for a bullish break the lowest low, for a bearish break
+  the highest high. The broken level is the swing high (trend none or bullish) or the protected high
+  (trend bearish); mirrored for a bearish break. On ties the earliest candle counts as the setter.
+* Triggers: the bullish trigger is the protected high while the trend is bearish, otherwise the swing high;
+  the bearish trigger is the protected low while the trend is bullish, otherwise the swing low. A candle
+  breaks a trigger only when its close is beyond it. The check uses the triggers as they stood before the
+  candle's own high and low are folded into the swing extremes, so a wick never breaks anything.
+* Event: a break while the trend already points that way is a BoS, otherwise (trend none or opposite) a
+  ChoCh. The event time is the breaking candle's close_time.
+* Recorded levels (the liquidity of TD-18): every broken swing level and every protected level becomes a
+  SwingLevel, stamped with the close_time of the update that recorded it (the moment it became known). A
+  level turns taken once a later candle's high >= its price (highs) or low <= its price (lows); a level
+  recorded on this update is checked from the next update on. A broken protected level is not recorded
+  twice. Only untaken levels are kept in the tracker.
+* Candle history: the (high, low) of every candle since the candle that set the current protected level,
+  pruned after each break, so memory is bounded by the longest stretch between breaks.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal
+
+from silver_bot.models import Candle
+
+Trend = Literal["bullish", "bearish", "none"]
+
+
+@dataclass(slots=True)
+class SwingLevel:
+    """A recorded swing price. taken flips to True once price trades through it."""
+
+    price: float
+    time: datetime
+    side: Literal["high", "low"]
+    taken: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class StructureEvent:
+    kind: Literal["bos", "choch"]
+    direction: Literal["bullish", "bearish"]
+    level: float
+    time: datetime
+
+
+class StructureTracker:
+    def __init__(self, timeframe: str) -> None:
+        self.timeframe = timeframe
+        self.trend: Trend = "none"
+        self._count = 0  # candles seen; the next candle's absolute index
+        self._base = 0  # absolute index of _bars[0]
+        self._bars: list[tuple[float, float]] = []  # (high, low)
+        self._swing_high = self._swing_low = 0.0
+        self._high_idx = self._low_idx = 0  # absolute index of the candle that set each swing
+        self._protected: float | None = None
+        self._protected_idx = 0
+        self._untaken: dict[str, list[SwingLevel]] = {"high": [], "low": []}  # oldest first
+
+    @property
+    def bullish_trigger(self) -> float | None:
+        if self._count == 0:
+            return None
+        return self._protected if self.trend == "bearish" else self._swing_high
+
+    @property
+    def bearish_trigger(self) -> float | None:
+        if self._count == 0:
+            return None
+        return self._protected if self.trend == "bullish" else self._swing_low
+
+    def untaken_levels(self, side: Literal["high", "low"]) -> list[SwingLevel]:
+        """Recorded levels on this side that price has not traded through, newest first."""
+        return self._untaken[side][::-1]
+
+    def update(self, candle: Candle) -> StructureEvent | None:
+        if candle.close_time is None:
+            raise ValueError("StructureTracker needs candles with a close_time")
+        index = self._count
+        self._count += 1
+        self._bars.append((candle.high, candle.low))
+        if index == 0:
+            self._swing_high, self._swing_low = candle.high, candle.low
+            return None
+
+        for level in self._untaken["high"]:
+            level.taken = candle.high >= level.price
+        for level in self._untaken["low"]:
+            level.taken = candle.low <= level.price
+        for side, levels in self._untaken.items():
+            self._untaken[side] = [level for level in levels if not level.taken]
+
+        bullish_trigger, bearish_trigger = self.bullish_trigger, self.bearish_trigger
+        if candle.close > bullish_trigger:
+            return self._break("bullish", candle, index, bullish_trigger)
+        if candle.close < bearish_trigger:
+            return self._break("bearish", candle, index, bearish_trigger)
+        if candle.high > self._swing_high:
+            self._swing_high, self._high_idx = candle.high, index
+        if candle.low < self._swing_low:
+            self._swing_low, self._low_idx = candle.low, index
+        return None
+
+    def _break(
+        self, direction: Literal["bullish", "bearish"], candle: Candle, index: int, broken: float
+    ) -> StructureEvent:
+        bullish = direction == "bullish"
+        kind = "bos" if self.trend == direction else "choch"
+        reversal = self.trend == ("bearish" if bullish else "bullish")  # the broken level was the protected one
+        if reversal:
+            setter = self._protected_idx
+        else:
+            setter = self._high_idx if bullish else self._low_idx
+            self._record(broken, "high" if bullish else "low", candle)
+
+        # Opposite extreme from the broken level's candle through this one.
+        window = self._bars[setter - self._base :]
+        position, pick = (1, min) if bullish else (0, max)
+        offset = pick(range(len(window)), key=lambda i: window[i][position])
+        self.trend = direction
+        self._protected, self._protected_idx = window[offset][position], setter + offset
+        self._record(self._protected, "low" if bullish else "high", candle)
+
+        if bullish:
+            self._swing_high, self._high_idx = candle.high, index
+        else:
+            self._swing_low, self._low_idx = candle.low, index
+        del self._bars[: self._protected_idx - self._base]
+        self._base = self._protected_idx
+        return StructureEvent(kind, direction, broken, candle.close_time)
+
+    def _record(self, price: float, side: Literal["high", "low"], candle: Candle) -> None:
+        self._untaken[side].append(SwingLevel(price, candle.close_time, side))
