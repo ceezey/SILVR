@@ -1,0 +1,212 @@
+"""Download Binance Futures candle history into monthly CSV files for backtests.
+
+Only public market data is requested: ``main`` always builds the adapter for the
+production public API with no credentials and never reads ``.env`` keys or
+``TRADING_MODE``. Each file is written to ``<name>.part`` and then renamed, so a
+crash never leaves a half-written file that looks complete.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import csv
+import os
+import sys
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+
+from silver_bot.config import load_config
+from silver_bot.data.csv_loader import timeframe_interval
+from silver_bot.exchange.base import ExchangeAdapter
+from silver_bot.exchange.binance_futures import BinanceFuturesAdapter
+from silver_bot.models import Candle
+
+FETCH_LIMIT = 1500  # Binance USD-M klines maximum per request.
+CSV_HEADER = ["open_time", "open", "high", "low", "close", "volume", "close_time"]
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_MS = timedelta(milliseconds=1)
+
+
+@dataclass(frozen=True)
+class DownloadSummary:
+    candles: int
+    files: list[Path]
+    skipped: list[Path]
+    gaps: int
+
+
+def month_file_name(symbol: str, timeframe: str, year: int, month: int) -> str:
+    return f"{symbol}-{timeframe}-{year:04d}-{month:02d}.csv"
+
+
+def _to_ms(value: datetime) -> int:
+    return (value - _EPOCH) // _MS
+
+
+def _next_month(year: int, month: int) -> tuple[int, int]:
+    return (year + 1, 1) if month == 12 else (year, month + 1)
+
+
+def _month_start(year: int, month: int) -> datetime:
+    return datetime(year, month, 1, tzinfo=UTC)
+
+
+def _edge_open_times(path: Path) -> tuple[int, int] | None:
+    """Return the first and last row open_time (ms) of a candle CSV, or None if unreadable."""
+
+    first: int | None = None
+    last: int | None = None
+    try:
+        with path.open(newline="", encoding="utf-8") as handle:
+            for row in csv.reader(handle):
+                if not row or row[0].strip().lower() == "open_time":
+                    continue
+                value = int(row[0])
+                if first is None:
+                    first = value
+                last = value
+    except (OSError, ValueError):
+        return None
+    return None if first is None or last is None else (first, last)
+
+
+def _is_complete(path: Path, *, first_ms: int, last_ms: int, month_end: datetime, end: datetime, now: datetime) -> bool:
+    if month_end > end or month_end > now or not path.is_file():
+        return False
+    return _edge_open_times(path) == (first_ms, last_ms)
+
+
+def _count_missing(candles: list[Candle], interval: timedelta) -> int:
+    missing = 0
+    for previous, current in zip(candles, candles[1:]):
+        missing += max(0, (current.open_time - previous.open_time) // interval - 1)
+    return missing
+
+
+def _write_atomic(path: Path, candles: list[Candle], interval_ms: int) -> None:
+    part = path.with_name(path.name + ".part")
+    try:
+        with part.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle, lineterminator="\n")
+            writer.writerow(CSV_HEADER)
+            for candle in candles:
+                open_ms = _to_ms(candle.open_time)
+                writer.writerow(
+                    [open_ms, candle.open, candle.high, candle.low, candle.close, candle.volume, open_ms + interval_ms - 1]
+                )
+        os.replace(part, path)
+    finally:
+        part.unlink(missing_ok=True)
+
+
+async def download(
+    *,
+    symbol: str,
+    timeframe: str,
+    start: date,
+    end: datetime,
+    out_dir: Path,
+    adapter: ExchangeAdapter,
+) -> DownloadSummary:
+    """Download ``[start, end)`` as one CSV file per UTC month into ``out_dir``."""
+
+    interval = timeframe_interval(timeframe)
+    interval_ms = interval // _MS
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=UTC)
+    start_dt = datetime(start.year, start.month, start.day, tzinfo=UTC)
+    if start_dt >= end:
+        raise ValueError("start must be before end")
+    now = datetime.now(UTC)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    total = 0
+    gaps = 0
+    files: list[Path] = []
+    skipped: list[Path] = []
+    year, month = start.year, start.month
+    while _month_start(year, month) < end:
+        month_begin = _month_start(year, month)
+        month_end = _month_start(*_next_month(year, month))
+        path = out_dir / month_file_name(symbol, timeframe, year, month)
+        first_ms = _to_ms(month_begin)
+        last_ms = _to_ms(month_end) - interval_ms
+        if _is_complete(path, first_ms=first_ms, last_ms=last_ms, month_end=month_end, end=end, now=now):
+            print(f"{path.name}: complete, skipped")
+            skipped.append(path)
+        else:
+            candles = list(
+                await adapter.fetch_ohlcv(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start=max(month_begin, start_dt),
+                    end=min(month_end, end),
+                    limit=FETCH_LIMIT,
+                )
+            )
+            if not candles:
+                print(f"{path.name}: no candles returned, no file written")
+            else:
+                _write_atomic(path, candles, interval_ms)
+                month_gaps = _count_missing(candles, interval)
+                print(f"{path.name}: {len(candles)} candles, {month_gaps} gaps")
+                files.append(path)
+                total += len(candles)
+                gaps += month_gaps
+        year, month = _next_month(year, month)
+    return DownloadSummary(candles=total, files=files, skipped=skipped, gaps=gaps)
+
+
+def _parse_day(text: str) -> datetime:
+    return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=UTC)
+
+
+def _config_default(name: str, fallback: str) -> str:
+    try:
+        return str(getattr(load_config(), name))
+    except Exception:
+        return fallback
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Download Binance Futures candle history to monthly CSV files.")
+    parser.add_argument("--start", help="first day, YYYY-MM-DD (UTC)")
+    parser.add_argument("--end", help="end day, YYYY-MM-DD (UTC, exclusive); default now")
+    parser.add_argument("--symbol")
+    parser.add_argument("--timeframe")
+    parser.add_argument("--out", default="data/candles")
+    try:
+        args = parser.parse_args(argv)
+        if not args.start:
+            raise ValueError("--start YYYY-MM-DD is required")
+        start = _parse_day(args.start)
+        end = _parse_day(args.end) if args.end else datetime.now(UTC)
+        symbol = args.symbol or _config_default("symbol", "BTCUSDT")
+        timeframe = args.timeframe or _config_default("timeframe", "1m")
+        # Production public API, no credentials, whatever .env says.
+        summary = asyncio.run(
+            download(
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start.date(),
+                end=end,
+                out_dir=Path(args.out),
+                adapter=BinanceFuturesAdapter(),
+            )
+        )
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) and exc.code == 0 else 1
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"done: {summary.candles} candles written, {len(summary.files)} files "
+        f"({len(summary.skipped)} skipped), {summary.gaps} gaps (reported, not filled)"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
