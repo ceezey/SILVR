@@ -4,13 +4,18 @@ TD-11, TD-19, TD-22).
 The engine calls step() once per 1m candle, oldest first. Higher-timeframe candles come from causal resamplers,
 so a 15m/4H/1D candle is applied only at the first 1m candle opening at or after its close.
 
-Order-block liquidity (TD-18): the sweep candle k-1 must take a level that was untaken when k-1 opened. When
-candle k closes, the live trackers have already marked that level taken, and snapshotting every level on every
-15m candle is too slow. So the levels "untaken as of k-1's open" are rebuilt as the levels still untaken that the
-sweep reached (StructureTracker.untaken_reached_by, a heap walk over the matches only) plus the levels taken by
-the 15m/4H updates applied since k-1 opened (StructureTracker.last_taken, kept for the last two updates). Those
-are passed as untaken copies; detect_order_block's own `time < sweep.open_time` check drops the levels recorded
-after k-1 opened.
+Order-block liquidity (TD-18): a level stops being liquidity as soon as price trades through it. A 4H level is
+therefore marked taken by every closed 15m candle (StructureTracker.mark_taken), not only at the next 4H close.
+Each 15m candle marks before a 4H candle closing at the same instant is applied, so a level is only checked by
+candles that closed after it was recorded.
+
+The sweep candle k-1 must take a level that was untaken when k-1 opened. When candle k closes, the live trackers
+have already marked that level taken, and snapshotting every level on every 15m candle is too slow. So the levels
+"untaken as of k-1's open" are rebuilt as the levels still untaken that the sweep reached
+(StructureTracker.untaken_reached_by, a heap walk over the matches only) plus the levels taken since k-1 opened
+(StructureTracker.last_taken): by the 15m updates of k-1 and k, and on 4H by the marks of k-1 and k and any 4H
+update closing in that span. Those are passed as untaken copies; detect_order_block's own
+`time < sweep.open_time` check drops the levels recorded after k-1 opened.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ from silver_bot.strategy.top_down.targets import atr, final_target, stage2_level
 
 _ATR_PERIOD = 14
 _HTF_ORDER = ("1d", "4h", "15m")  # tie order for HTF candles closing at the same time
+_MARK_ORDER = 0.5  # a 15m candle's 4H mark: after the 1D candle, before a 4H candle closing at the same time
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,8 +69,11 @@ class TopDownOBStrategy:
         self._h4 = StructureTracker("4h")
         self._m15 = StructureTracker("15m")
         self._m1 = StructureTracker("1m")
-        # (close_time, levels taken) of the last two 4H / 15m updates, for the sweep's liquidity rebuild.
-        self._taken_4h: deque[tuple[datetime, list[SwingLevel]]] = deque(maxlen=2)
+        # (close_time, levels taken) of the latest 4H updates and marks / 15m updates, for the sweep's liquidity
+        # rebuild. On 4H, k-1 and k each add a mark, and only the 4H candles holding k-1 and k can close after k-1
+        # opens and by k's close (entries arrive in close-time order): four entries cover everything taken since
+        # k-1 opened.
+        self._taken_4h: deque[tuple[datetime, list[SwingLevel]]] = deque(maxlen=4)
         self._taken_15m: deque[tuple[datetime, list[SwingLevel]]] = deque(maxlen=2)
         self._candles_15m: list[Candle] = []
         self._book = OrderBookOfBlocks()
@@ -110,11 +119,15 @@ class TopDownOBStrategy:
             for order, (tf, resampler) in enumerate(self._resamplers)
             for htf in resampler.push(candle_1m)
         ]
+        closed += [(close_time, _MARK_ORDER, "mark", candle) for close_time, _, tf, candle in closed if tf == "15m"]
         if len(closed) > 1:
             closed.sort(key=lambda item: (item[0], item[1]))
         events: list[StructureEvent] = []
         for _, _, tf, candle in closed:
-            if tf == "1d":
+            if tf == "mark":
+                self._h4.mark_taken(candle.high, candle.low)  # TD-18: a 15m candle takes 4H liquidity at its close
+                self._taken_4h.append((candle.close_time, self._h4.last_taken))
+            elif tf == "1d":
                 self._daily.update(candle)
                 self._book.on_bias(self._daily.trend)
             elif tf == "4h":

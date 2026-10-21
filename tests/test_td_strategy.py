@@ -236,3 +236,58 @@ def test_htf_candles_never_used_before_close(monkeypatch: pytest.MonkeyPatch) ->
 
     assert {c.timeframe for _, c in seen} == {"15m", "4h", "1d"}
     assert all(c.close_time < open_time for open_time, c in seen)
+
+
+# TD-18 at 15m resolution. After days 0 and 1 the 4H tracker holds the untaken low 109 (the protected low of
+# day 1's 4H ChoCh, recorded at day 1 03:59:59.999). Day 2's first three 15m candles (k-2, the sweep k-1 and the
+# engulfing k) all sit inside the still-forming 00:00-04:00 4H candle.
+SWEEP_4H: Row = (112.0, 112.2, 108.5, 110.0)  # low 108.5 under 109, close back above it
+ENGULF_4H: Row = (110.0, 113.0, 109.8, 112.8)  # bullish, closes above both earlier highs (112.5)
+
+
+def obs_after_4h_sweep(prev2_low: float, start: datetime = DAY2) -> list:
+    """The active OBs once k closes, with k-2's low at prev2_low and k-2 opening at start."""
+    days = [c for begin, rows in ((DAY0, DAY0_ROWS), (DAY1, DAY1_ROWS)) for c in expand_15m(begin, rows)]
+    day2 = expand_15m(start, [(112.0, 112.5, prev2_low, 112.0), SWEEP_4H, ENGULF_4H])
+    strategy = TopDownOBStrategy()
+    run(days + day2 + [one_minute(start + 3 * M15, 112.8, 112.8, 112.8, 112.8)], strategy=strategy)  # emits k
+    return strategy._book._active
+
+
+def test_4h_sweep_forms_rank_2_ob() -> None:
+    (ob,) = obs_after_4h_sweep(prev2_low=109.5)  # k-2 stays above 109: the level is untaken when k-1 opens
+
+    assert ob.rank == 2
+    assert (ob.swept.price, ob.swept.side) == (109, "low")
+    assert ob.swept.time == DAY1 + timedelta(hours=4) - timedelta(milliseconds=1)  # the 4H level, not the 15m 109
+    assert (ob.zone_low, ob.zone_high) == (108.5, 112.5)
+
+
+def test_4h_sweep_by_last_15m_candle_of_a_4h_candle_forms_rank_2_ob() -> None:
+    # k-1 is the 03:45 candle: its mark, then the 4H candle closing at the same instant, then k's mark are all
+    # applied after k-1 opened, and the level k-1 took must still be found.
+    (ob,) = obs_after_4h_sweep(prev2_low=109.5, start=DAY2 + timedelta(hours=3, minutes=30))
+
+    assert (ob.rank, ob.swept.price) == (2, 109)
+
+
+def test_4h_level_taken_inside_forming_4h_candle_is_not_swept() -> None:
+    # k-2 wicks to 108.8 first: the 4H level is taken before k-1 opens, though its 4H candle has not closed.
+    assert [ob.rank for ob in obs_after_4h_sweep(prev2_low=108.8)] == []
+
+
+def test_4h_level_recorded_at_a_close_is_only_taken_by_later_15m_candles() -> None:
+    # Two 4H candles: the second closes at 111.2 above the 4H swing high 111 (a ChoCh recording the high 111 at
+    # 07:59:59.999). Its last 15m candle (07:45) closes at that same instant with a high of 111.5.
+    first = expand_15m(DAY0, [(110, 111, 109, 110)] * 16)
+    second = expand_15m(DAY0 + timedelta(hours=4), [(110, 111.5, 110, 111.2)] * 16)
+    # The 08:00 15m candle trades through 111 while its 4H candle is still forming.
+    third = expand_15m(DAY0 + timedelta(hours=8), [(111.2, 111.6, 111.0, 111.2)])
+    strategy = TopDownOBStrategy()
+    run(first + second + third[:1], strategy=strategy)  # 08:00 emits the second 4H candle
+
+    assert [level.price for level in strategy._h4.untaken_levels("high")] == [111]  # not taken by the 07:45 candle
+
+    run(third[1:] + [one_minute(DAY0 + timedelta(hours=8, minutes=15), 111.2, 111.2, 111.2, 111.2)], strategy=strategy)
+
+    assert strategy._h4.untaken_levels("high") == []

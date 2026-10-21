@@ -204,3 +204,40 @@ def test_last_taken_and_untaken_reached_by() -> None:
     assert all(level.taken for level in tracker.last_taken)
     tracker.update(candle(41, 88, 87, 87.5))
     assert tracker.last_taken == []  # reset by every update
+
+
+def test_mark_taken_takes_levels_without_touching_structure() -> None:
+    tracker = StructureTracker("1d")
+    feed(tracker, UP_LEG)  # untaken: highs [12], lows [10, 9]; triggers 13 / 10
+    swings = (tracker.trend, tracker.bullish_trigger, tracker.bearish_trigger)
+
+    tracker.mark_taken(13.5, 9.95)  # above the bullish trigger 13 and below the protected low 10, but no close
+
+    assert sorted(level.price for level in tracker.last_taken) == [10, 12]
+    assert all(level.taken for level in tracker.last_taken)
+    assert tracker.untaken_levels("high") == []
+    assert [level.price for level in tracker.untaken_levels("low")] == [9]
+    assert (tracker.trend, tracker.bullish_trigger, tracker.bearish_trigger) == swings  # a mark never breaks or folds in
+    tracker.mark_taken(14, 9.5)
+    assert tracker.last_taken == []  # reset by every mark; 9 is not reached
+
+    # The next update sees the same structure it would have seen without the marks.
+    unmarked = StructureTracker("1d")
+    feed(unmarked, UP_LEG)
+    assert tracker.update(candle(5, 10.5, 9.5, 9.8)) == unmarked.update(candle(5, 10.5, 9.5, 9.8))
+
+
+def test_mark_only_reaches_levels_recorded_before_it() -> None:
+    tracker = StructureTracker("1d")
+    feed(tracker, UP_LEG[:4])
+    breaking = candle(4, 13, 10.5, 12.5)  # the BoS candle: it records the broken high 12 (and the protected low 10)
+
+    tracker.mark_taken(breaking.high, breaking.low)  # a candle that ended at or before the recording: 12 is not there yet
+    assert tracker.last_taken == []
+    tracker.update(breaking)
+    assert [level.price for level in tracker.untaken_levels("high")] == [12]
+
+    tracker.mark_taken(12.2, 10.5)  # a later candle trading through 12 takes it; 10.5 stays above the low 10
+
+    assert [level.price for level in tracker.last_taken] == [12]
+    assert tracker.untaken_levels("high") == []

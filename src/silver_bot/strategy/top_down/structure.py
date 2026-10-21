@@ -23,9 +23,11 @@ Bookkeeping
   level turns taken once a later candle's high >= its price (highs) or low <= its price (lows); a level
   recorded on this update is checked from the next update on. A broken protected level is not recorded
   twice. Only untaken levels are kept, in a heap per side (highs by lowest price, lows by highest price),
-  so an update only looks at the levels it actually takes. last_taken lists the levels the most recent update
-  took, and untaken_reached_by finds the untaken levels a given price would take without sorting, so a caller
-  can rebuild the levels that were untaken a few updates ago (the order-block sweep check of TD-18).
+  so an update only looks at the levels it actually takes. mark_taken applies the same check to a
+  lower-timeframe candle's high and low without touching structure, so a level is taken as soon as any candle
+  trades through it, not only at this timeframe's next close. last_taken lists the levels the most recent update
+  or mark took, and untaken_reached_by finds the untaken levels a given price would take without sorting, so a
+  caller can rebuild the levels that were untaken a few updates ago (the order-block sweep check of TD-18).
 * Candle history: the (high, low) of every candle since the candle that set the current protected level,
   pruned after each break, so memory is bounded by the longest stretch between breaks.
 """
@@ -74,7 +76,7 @@ class StructureTracker:
         self._seq = 0  # record order, to list levels newest first
         # (key, seq, level) heaps; key is price for highs and -price for lows, so the next level to be taken is first.
         self._untaken: dict[str, list[tuple[float, int, SwingLevel]]] = {"high": [], "low": []}
-        self.last_taken: list[SwingLevel] = []  # levels the most recent update marked taken
+        self.last_taken: list[SwingLevel] = []  # levels the most recent update or mark_taken marked taken
 
     @property
     def bullish_trigger(self) -> float | None:
@@ -107,6 +109,16 @@ class StructureTracker:
                 found.append(heap[i][2])
                 stack += (2 * i + 1, 2 * i + 2)
         return found
+
+    def mark_taken(self, high: float, low: float) -> None:
+        """Mark taken the untaken levels a candle with this high and low traded through, as update does.
+
+        Structure (trend, swings, protected level, history) is untouched. last_taken lists the levels taken. A
+        caller must only mark with candles that closed after the levels it may reach were recorded.
+        """
+        self.last_taken = []
+        self._take("high", high)
+        self._take("low", -low)
 
     def update(self, candle: Candle) -> StructureEvent | None:
         if candle.close_time is None:
