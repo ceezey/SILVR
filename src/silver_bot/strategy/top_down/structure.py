@@ -23,7 +23,9 @@ Bookkeeping
   level turns taken once a later candle's high >= its price (highs) or low <= its price (lows); a level
   recorded on this update is checked from the next update on. A broken protected level is not recorded
   twice. Only untaken levels are kept, in a heap per side (highs by lowest price, lows by highest price),
-  so an update only looks at the levels it actually takes.
+  so an update only looks at the levels it actually takes. last_taken lists the levels the most recent update
+  took, and untaken_reached_by finds the untaken levels a given price would take without sorting, so a caller
+  can rebuild the levels that were untaken a few updates ago (the order-block sweep check of TD-18).
 * Candle history: the (high, low) of every candle since the candle that set the current protected level,
   pruned after each break, so memory is bounded by the longest stretch between breaks.
 """
@@ -72,6 +74,7 @@ class StructureTracker:
         self._seq = 0  # record order, to list levels newest first
         # (key, seq, level) heaps; key is price for highs and -price for lows, so the next level to be taken is first.
         self._untaken: dict[str, list[tuple[float, int, SwingLevel]]] = {"high": [], "low": []}
+        self.last_taken: list[SwingLevel] = []  # levels the most recent update marked taken
 
     @property
     def bullish_trigger(self) -> float | None:
@@ -89,11 +92,28 @@ class StructureTracker:
         """Recorded levels on this side that price has not traded through, newest first."""
         return [level for _, _, level in sorted(self._untaken[side], key=lambda entry: -entry[1])]
 
+    def untaken_reached_by(self, side: Literal["high", "low"], price: float) -> list[SwingLevel]:
+        """Untaken levels a candle reaching `price` would take (highs <= price, lows >= price), in no order.
+
+        Walks only the matching top of the heap, so the cost is the number of matches.
+        """
+        heap = self._untaken[side]
+        threshold = price if side == "high" else -price
+        found: list[SwingLevel] = []
+        stack = [0]
+        while stack:
+            i = stack.pop()
+            if i < len(heap) and heap[i][0] <= threshold:
+                found.append(heap[i][2])
+                stack += (2 * i + 1, 2 * i + 2)
+        return found
+
     def update(self, candle: Candle) -> StructureEvent | None:
         if candle.close_time is None:
             raise ValueError("StructureTracker needs candles with a close_time")
         index = self._count
         self._count += 1
+        self.last_taken = []
         self._bars.append((candle.high, candle.low))
         if index == 0:
             self._swing_high, self._swing_low = candle.high, candle.low
@@ -144,7 +164,9 @@ class StructureTracker:
     def _take(self, side: str, threshold: float) -> None:
         heap = self._untaken[side]
         while heap and heap[0][0] <= threshold:
-            heapq.heappop(heap)[2].taken = True
+            level = heapq.heappop(heap)[2]
+            level.taken = True
+            self.last_taken.append(level)
 
     def _record(self, price: float, side: Literal["high", "low"], candle: Candle) -> None:
         self._seq += 1

@@ -186,3 +186,21 @@ def test_untaken_levels_after_long_one_way_trend() -> None:
     assert {level.price for level in lows if level.taken} == set(range(48, 87, 2))
     assert not any(level.taken for level in survivors)
     assert tracker.untaken_levels("high") == []
+
+
+def test_last_taken_and_untaken_reached_by() -> None:
+    tracker = StructureTracker("1d")
+    feed(tracker, [(11 + 2 * k, 10 + 2 * k, 11 + 2 * k) for k in range(40)])  # untaken lows 86, 84, ..., 10
+    reached = tracker.untaken_reached_by("low", 48)
+
+    assert sorted(level.price for level in reached) == list(range(48, 87, 2))
+    assert not any(level.taken for level in reached)
+    assert tracker.untaken_reached_by("low", 87) == []
+    assert [level.price for level in tracker.untaken_reached_by("high", 87)] == [87]
+
+    tracker.update(candle(40, 88, 48, 87))
+
+    assert sorted(level.price for level in tracker.last_taken) == [*range(48, 87, 2), 87]  # the 88 high takes 87
+    assert all(level.taken for level in tracker.last_taken)
+    tracker.update(candle(41, 88, 87, 87.5))
+    assert tracker.last_taken == []  # reset by every update
