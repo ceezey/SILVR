@@ -76,7 +76,7 @@ Four safety reviewers run before merge on the paths each guards, and one standar
 |-----------|--------------|--------|
 | Python | `requires-python = ">=3.11"` | `pyproject.toml` |
 | Runtime dependencies | `dependencies = ["ccxt>=4.5,<5"]` (one declared; everything else is standard library) | `pyproject.toml` |
-| ccxt | `>=4.5,<5`; 4.5.89 installed and verified 2026-10-21. Used for public candle history through `ccxt.async_support.binanceusdm`; an API key is attached only on the Binance Futures testnet host | `pyproject.toml`; `src/silver_bot/exchange/binance_futures.py` |
+| ccxt | `>=4.5,<5`; 4.5.89 installed and verified 2026-10-21. Used for public candle history through `ccxt.async_support.binanceusdm`, plus funding-rate history; the ccxt client never carries an API key or secret | `pyproject.toml`; `src/silver_bot/exchange/binance_futures.py` |
 | Dev dependency | `pytest>=8.0` (optional extra `dev`) | `pyproject.toml` |
 | Build backend | `setuptools>=68` | `pyproject.toml` |
 | scikit-learn | Optional and undeclared; used only for the RandomForest and GradientBoosting models if it imports | [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SilverBot/aia-silverbot.md>) section 1.2 |

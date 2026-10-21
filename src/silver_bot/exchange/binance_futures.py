@@ -7,11 +7,9 @@ The base URL must be exactly the production or testnet host.
 - ``fetch_ohlcv`` (paper and demo polling) sends one unsigned GET to the public
   klines endpoint, never sends an API key and refuses redirects.
 - ``fetch_ohlcv_history`` and ``fetch_funding_rates`` (backtest data download) use
-  ccxt. Credential rule: an API key and secret are attached to the ccxt client only
-  when the configured host is the Binance Futures testnet, with every endpoint pointed
-  at that host. Against any other host the client is built without credentials, so
-  only public endpoints are reachable and a key can never be sent to a production or
-  look-alike host.
+  ccxt. The ccxt client never carries an API key or secret, on any host, so only
+  public endpoints are reachable. On the exact testnet host every endpoint is pinned
+  to that host.
 """
 
 from __future__ import annotations
@@ -85,9 +83,9 @@ def is_binance_futures_production_url(url: str) -> bool:
 MAX_NETWORK_RETRIES = 3
 _BACKOFF_BASE_SECONDS = 1.0
 
-# Every REST endpoint group of the ccxt binanceusdm client (ccxt 4.5.x) and its path. When the
-# client carries credentials, all of them are pointed at the testnet host so that no signed
-# request, including one ccxt might make on its own, can reach another host.
+# Every REST endpoint group of the ccxt binanceusdm client (ccxt 4.5.x) and its path. On the
+# testnet host all of them are pointed at that host so that no request, including one ccxt
+# might make on its own, can reach another host.
 _TESTNET_API_PATHS = {
     "fapiPublic": "/fapi/v1",
     "fapiPublicV2": "/fapi/v2",
