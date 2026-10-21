@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from silver_bot.config import load_config
+from silver_bot.config import ConfigError, load_config
 from silver_bot.data.csv_loader import timeframe_interval
 from silver_bot.exchange.base import ExchangeAdapter
 from silver_bot.exchange.binance_futures import BinanceFuturesAdapter
@@ -170,7 +170,8 @@ def _parse_day(text: str) -> datetime:
 def _config_default(name: str, fallback: str) -> str:
     try:
         return str(getattr(load_config(), name))
-    except Exception:
+    except ConfigError as exc:
+        print(f"note: config could not be loaded ({exc}); using default {name} {fallback}", file=sys.stderr)
         return fallback
 
 

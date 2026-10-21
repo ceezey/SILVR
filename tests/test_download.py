@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from silver_bot.config import ConfigError
 from silver_bot.data import download as download_module
 from silver_bot.data.csv_loader import load_binance_kline_csv
 from silver_bot.data.download import DownloadSummary, download, main, month_file_name
@@ -209,4 +210,48 @@ def test_main_returns_1_with_reason_on_error(tmp_path, monkeypatch, capsys):
 def test_main_returns_1_on_bad_arguments(capsys):
     assert main([]) == 1
     assert main(["--start", "not-a-date"]) == 1
+    assert "error" in capsys.readouterr().err
+
+
+def _stub_adapter_and_capture(monkeypatch):
+    seen = []
+
+    class Recording(FakeAdapter):
+        async def fetch_ohlcv(self, **kwargs):
+            seen.append((kwargs["symbol"], kwargs["timeframe"]))
+            return await super().fetch_ohlcv(**kwargs)
+
+    monkeypatch.setattr(download_module, "BinanceFuturesAdapter", lambda: Recording())
+    return seen
+
+
+def test_config_error_falls_back_with_notice(tmp_path, monkeypatch, capsys):
+    def bad_config():
+        raise ConfigError("TRADING_MODE=live is not supported in Phase 1")
+
+    monkeypatch.setattr(download_module, "load_config", bad_config)
+    seen = _stub_adapter_and_capture(monkeypatch)
+
+    code = main(["--start", "2024-01-01", "--end", "2024-01-02", "--out", str(tmp_path)])
+
+    err = capsys.readouterr().err
+    assert code == 0
+    assert seen and seen[0] == ("BTCUSDT", "1m")
+    assert "config could not be loaded" in err
+    assert "TRADING_MODE=live is not supported" in err
+    assert "using default symbol BTCUSDT" in err
+    assert "using default timeframe 1m" in err
+
+
+def test_other_config_exception_exits_1(tmp_path, monkeypatch, capsys):
+    def broken_config():
+        raise KeyError("surprise")
+
+    monkeypatch.setattr(download_module, "load_config", broken_config)
+    seen = _stub_adapter_and_capture(monkeypatch)
+
+    code = main(["--start", "2024-01-01", "--end", "2024-01-02", "--out", str(tmp_path)])
+
+    assert code == 1
+    assert not seen
     assert "error" in capsys.readouterr().err
