@@ -302,6 +302,15 @@ def test_restart_does_not_reset_consecutive_loss_limit(storage) -> None:
     assert second.evaluate(request()).reason == "Max consecutive losses limit reached"
 
 
+def test_unreachable_database_halts_trading() -> None:
+    engine = RiskManagementEngine(state_store=PostgresStorage("postgresql://bot:pw@127.0.0.1:1/silverbot"))
+
+    decision = engine.evaluate(request())
+
+    assert decision.approved is False
+    assert decision.reason == "Risk state could not be loaded; trading halted"
+
+
 def test_corrupt_risk_state_halts_trading(storage) -> None:
     storage.save_risk_state(RiskState(current_day=date(2026, 1, 2)))
     execute(storage.database_url, "UPDATE risk_state SET open_positions = -3")

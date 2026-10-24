@@ -14,6 +14,10 @@ from silver_bot.models import Candle
 from silver_bot.risk.models import RiskState, RiskStateError
 
 
+# A black-holed database must not hang the trading loop; the risk engine then halts.
+CONNECT_TIMEOUT_SECONDS = 10
+
+
 class PostgresStorage:
     """Small PostgreSQL persistence layer."""
 
@@ -312,7 +316,7 @@ class PostgresStorage:
     @contextmanager
     def _connect(self) -> Iterator[psycopg.Connection]:
         # shortcut: one connection per call, no pool; add psycopg_pool if writes pass ~10/s.
-        connection = psycopg.connect(self.database_url)
+        connection = psycopg.connect(self.database_url, connect_timeout=CONNECT_TIMEOUT_SECONDS)
         try:
             yield connection
             connection.commit()

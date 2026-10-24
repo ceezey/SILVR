@@ -117,8 +117,13 @@ def load_config(
         raise ConfigError("PAPER_TRADING must be false when DEMO_TRADING=true")
 
     database_url = _blank_to_none(raw.get("DATABASE_URL"))
-    if database_url is not None and urlsplit(database_url).scheme not in {"postgresql", "postgres"}:
-        raise ConfigError("DATABASE_URL must be a postgresql:// URL")
+    if database_url is not None:
+        try:
+            scheme = urlsplit(database_url).scheme
+        except ValueError as exc:
+            raise ConfigError("DATABASE_URL is not a valid URL") from exc
+        if scheme not in {"postgresql", "postgres"}:
+            raise ConfigError("DATABASE_URL must be a postgresql:// URL")
     exchange_name = _required(raw, "EXCHANGE_NAME").strip().lower()
     if not exchange_name.replace("_", "").isalnum():
         raise ConfigError("EXCHANGE_NAME must contain only letters, numbers, or underscores")

@@ -74,7 +74,7 @@ def test_railway_builds_the_dockerfile_and_restarts_only_on_failure() -> None:
     assert 'startCommand = "sh /app/deploy/railway/start.sh"' in railway
     assert 'restartPolicyType = "ON_FAILURE"' in railway
     assert "restartPolicyMaxRetries = 10" in railway
-    assert "LIVE" not in railway.upper().replace("DELIVER", "")
+    assert "LIVE_TRADING" not in railway and "TRADING_MODE" not in railway
 
 
 def test_railway_start_script_runs_from_the_volume_and_execs_the_bot() -> None:

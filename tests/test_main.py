@@ -4,12 +4,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+import psycopg
 import pytest
 
 from silver_bot.data.funding import FundingRate, write_funding_csv
 from silver_bot.exchange import binance_futures
 from silver_bot.main import main
 from silver_bot.readiness import evaluate_live_readiness
+from silver_bot.storage import PostgresStorage
 
 MODE_KEYS = ("MODE", "TRADING_MODE", "PAPER_TRADING", "DEMO_TRADING", "LIVE_TRADING", "KILL_SWITCH_ENABLED", "DATABASE_URL")
 START_MS = int(datetime(2026, 1, 2, 14, 0, tzinfo=UTC).timestamp() * 1000)
@@ -150,6 +152,20 @@ def test_unreachable_database_exits_1_and_audits(
     assert [event["event_type"] for event in events] == ["bot_started", "database_unavailable", "bot_stopped"]
     assert all("pw@" not in json.dumps(event) for event in events)
     assert klines == []
+
+
+def test_database_error_text_never_carries_the_password(
+    workdir: Path, monkeypatch: pytest.MonkeyPatch, klines: list[str]
+) -> None:
+    def echo_dsn(self) -> None:
+        raise psycopg.OperationalError('invalid connection option near "s3cret-pw@db"')
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://bot:s3cret-pw@db/silverbot")
+    monkeypatch.setattr(PostgresStorage, "initialize", echo_dsn)
+
+    assert main([]) == 1
+
+    assert "s3cret-pw" not in (workdir / "logs" / "audit.jsonl").read_text(encoding="utf-8")
 
 
 def test_paper_mode_rejects_a_non_binance_base_url(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:

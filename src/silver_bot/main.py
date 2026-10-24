@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import signal
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import psycopg
 
@@ -143,8 +144,11 @@ def _run_market_mode(
     try:
         storage.initialize()
     except psycopg.Error as exc:
-        logger.error("database unavailable: %s", exc)
-        audit.log("database_unavailable", str(exc), context={"mode": config.mode.value}, level="ERROR")
+        # libpq can echo parts of a malformed URL, so the password never reaches a log.
+        password = urlsplit(config.database_url).password
+        message = str(exc).replace(password, "***") if password else str(exc)
+        logger.error("database unavailable: %s", message)
+        audit.log("database_unavailable", message, context={"mode": config.mode.value}, level="ERROR")
         return EXIT_FAILURE
     previous_handler = signal.signal(signal.SIGTERM, _interrupt)
     try:

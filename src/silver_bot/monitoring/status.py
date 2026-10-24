@@ -14,6 +14,7 @@ import psycopg
 from silver_bot.config import AppConfig, ConfigError, load_config
 from silver_bot.monitoring.audit import redact_secrets
 from silver_bot.risk.kill_switch import KillSwitch
+from silver_bot.storage.postgres import CONNECT_TIMEOUT_SECONDS
 
 PANEL_TITLES: tuple[str, ...] = (
     "MODE & SAFETY",
@@ -386,7 +387,7 @@ def _query(database_url: str | None, sql: str) -> list[tuple[Any, ...]] | None:
 
     if database_url is None:
         return None
-    with psycopg.connect(database_url) as connection:
+    with psycopg.connect(database_url, connect_timeout=CONNECT_TIMEOUT_SECONDS) as connection:
         connection.read_only = True
         try:
             return connection.execute(sql).fetchall()

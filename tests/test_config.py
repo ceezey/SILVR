@@ -81,6 +81,15 @@ def test_database_url_must_be_postgres(tmp_path: Path, url: str) -> None:
         load_config(env_path=tmp_path / ".env", yaml_path=tmp_path / "missing.yaml", environ={"DATABASE_URL": url})
 
 
+def test_malformed_database_url_is_a_config_error(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="not a valid URL"):
+        load_config(
+            env_path=tmp_path / ".env",
+            yaml_path=tmp_path / "missing.yaml",
+            environ={"DATABASE_URL": "postgresql://[bad/silverbot"},
+        )
+
+
 def test_database_url_accepts_postgres_scheme_and_defaults_to_none(tmp_path: Path) -> None:
     def load(environ: dict[str, str]):
         return load_config(env_path=tmp_path / ".env", yaml_path=tmp_path / "missing.yaml", environ=environ)
