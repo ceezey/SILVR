@@ -89,7 +89,7 @@ td.ok,td.warn,td.err,td.off{white-space:nowrap}
 @media (max-width:959px){.row{flex-direction:column}section{flex:1 1 auto;width:100%}}
 """
 # One header for every HTML page: the S-tier mark (DSD 2.4), wordmark and context.
-HEADER = string.Template(
+HEADER = (
     '<header><svg viewBox="0 0 160 160" width="28" height="28" role="img" aria-label="Silverbot mark">'
     '<rect class="m-brand" x="40" y="0" width="5" height="16" rx="2"/>'
     '<rect class="m-brand" x="115" y="0" width="5" height="16" rx="2"/>'
@@ -100,7 +100,7 @@ HEADER = string.Template(
     '<rect class="m-ink" x="20" y="75" width="120" height="2"/>'
     "</svg>"
     '<span class="wordmark">Silverbot</span>'
-    '<span class="meta">status &middot; read-only &middot; $host</span></header>'
+    '<span class="meta">status &middot; read-only</span></header>'
 )
 NOT_FOUND_PAGE = string.Template(
     """<!doctype html>
@@ -144,7 +144,7 @@ $strip$panels
 )
 
 
-def render_page(status: dict[str, Any], host: str = BIND_HOST) -> str:
+def render_page(status: dict[str, Any]) -> str:
     """Render the status dict as one self-contained, escaped HTML page."""
 
     panels = status["panels"]
@@ -166,7 +166,7 @@ def render_page(status: dict[str, Any], host: str = BIND_HOST) -> str:
     strip = f'<p class="next-strip">{html.escape(next_text)}</p>\n' if next_text else ""
     return PAGE.substitute(
         css=CSS,
-        header=HEADER.substitute(host=html.escape(host)),
+        header=HEADER,
         banner=groups[0],
         degraded=degraded,
         ladder=_render_ladder(ladder),
@@ -177,10 +177,10 @@ def render_page(status: dict[str, Any], host: str = BIND_HOST) -> str:
     )
 
 
-def render_not_found(host: str = BIND_HOST) -> str:
+def render_not_found() -> str:
     """Render the branded 404 page: no status data and no collection."""
 
-    return NOT_FOUND_PAGE.substitute(css=CSS, header=HEADER.substitute(host=html.escape(host)))
+    return NOT_FOUND_PAGE.substitute(css=CSS, header=HEADER)
 
 
 def is_loopback_host(host: str) -> bool:
@@ -250,7 +250,6 @@ class DashboardServer(ThreadingHTTPServer):
             raise ValueError(f"refusing to bind {host}: a non-loopback host needs {PASSWORD_ENV}")
         self.root = Path(root)
         self.load = load
-        self.bind_host = host
         self.allowed_host = allowed_host.strip().lower() if allowed_host and allowed_host.strip() else None
         self.password = password.encode("utf-8") if password else None
         super().__init__((host, port), DashboardHandler)
@@ -280,15 +279,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._authorized():
             self._send(401, "authentication required\n", headers={"WWW-Authenticate": AUTH_CHALLENGE})
             return
-        host = self.server.bind_host
         if self.path == "/":
             status = collect_status(self.server.root, load=self.server.load)
-            self._send(200, render_page(status, host), content_type=HTML_TYPE)
+            self._send(200, render_page(status), content_type=HTML_TYPE)
         elif self.path in FONTS:
             font = files("silver_bot.monitoring").joinpath("fonts", FONTS[self.path]).read_bytes()
             self._send(200, font, content_type="font/woff2")
         else:
-            self._send(404, render_not_found(host), content_type=HTML_TYPE)
+            self._send(404, render_not_found(), content_type=HTML_TYPE)
 
     def end_headers(self) -> None:
         # Every response, including send_error ones, carries the security headers.

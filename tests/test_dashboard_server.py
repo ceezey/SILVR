@@ -100,7 +100,8 @@ def test_title_header_and_mark(tmp_path):
     assert "<title>Silverbot status</title>" in page
     assert "<svg" in header and "Silverbot" in header
     assert "xmlns" not in page
-    assert "status &middot; read-only &middot; 127.0.0.1" in header
+    assert "status &middot; read-only</span>" in header
+    assert "127.0.0.1" not in header
 
 
 def test_root_block_holds_exactly_the_ten_tokens():
@@ -611,41 +612,6 @@ def test_loopback_without_password_needs_no_auth(server):
     assert call(server)[0].status == 200
     assert call_raw(server, "/fonts/IBMPlexMono-Regular.woff2")[0].status == 200
     assert call(server, auth="Bearer garbage")[0].status == 200
-
-
-def test_page_header_shows_the_bound_host(tmp_path):
-    status = collect_status(tmp_path, load=lambda: make_config(tmp_path), now=NOW)
-
-    page = render_page(status, host="0.0.0.0")
-    header = page[page.index("<header>") : page.index("</header>")]
-
-    assert "status &middot; read-only &middot; 0.0.0.0" in header
-    assert "127.0.0.1" not in header
-
-
-def test_page_header_escapes_the_host(tmp_path):
-    from silver_bot.monitoring.dashboard_server import render_not_found
-
-    status = collect_status(tmp_path, load=lambda: make_config(tmp_path), now=NOW)
-
-    for page in (render_page(status, host="<b>&"), render_not_found("<b>&")):
-        assert "&lt;b&gt;&amp;" in page
-        assert "<b>" not in page
-
-
-def test_served_page_header_shows_the_bound_host(tmp_path):
-    config = make_config(tmp_path)
-    instance = DashboardServer(0, root=tmp_path, load=lambda: config, host="localhost")
-    threading.Thread(target=instance.serve_forever, daemon=True).start()
-    try:
-        _, body = call(instance, host=f"localhost:{instance.server_address[1]}")
-        _, missing = call(instance, path="/nope", host=f"localhost:{instance.server_address[1]}")
-    finally:
-        instance.shutdown()
-        instance.server_close()
-
-    assert "read-only &middot; localhost</span>" in body
-    assert "read-only &middot; localhost</span>" in missing
 
 
 def test_main_startup_line_names_the_directory(monkeypatch, capsys, tmp_path):
