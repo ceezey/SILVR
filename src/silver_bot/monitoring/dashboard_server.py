@@ -82,12 +82,16 @@ td.ok,td.warn,td.err,td.off{white-space:nowrap}
 .step{flex:1 1 18ch;background:var(--canvas);border:1px solid var(--border);border-radius:3px;padding:0 8px}
 .step.next{border-color:var(--accent);outline:1px solid var(--accent)}
 .step strong{font-size:10px;color:var(--accent)}
+.note{margin:0;margin-top:auto;color:var(--muted);font-size:11px;overflow-wrap:anywhere}
 .degraded,.next-strip{margin:0 0 16px}
 .next-strip{color:var(--accent)}
 .ok{color:var(--success)}.warn{color:var(--warning)}.err{color:var(--danger)}.off{color:var(--muted)}
 @media (min-width:1280px){.layout{display:grid;grid-template-columns:clamp(38ch,24vw,44ch) minmax(0,1fr);
 gap:16px;align-items:start}
-.sidebar{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow-y:auto}}
+.sidebar{position:sticky;top:64px;align-self:start;height:calc(100vh - 80px);overflow-y:auto;
+display:flex;flex-direction:column}
+.sidebar .row{flex:1 1 auto;flex-direction:column;margin-bottom:0}
+.sidebar section{flex:1 1 auto;display:flex;flex-direction:column}}
 @media (max-width:1279px){main{padding:16px 16px 0}header{padding:0 16px}
 .sidebar{position:sticky;top:48px;z-index:2;background:var(--canvas)}}
 @media (max-width:959px){.row{flex-direction:column}section{flex:1 1 auto;width:100%}}
@@ -161,7 +165,8 @@ def render_page(status: dict[str, Any]) -> str:
     groups = []
     for group in LAYOUT:
         css_class = "row banner" if group == LAYOUT[0] else "row"
-        sections = "".join(_render_panel(panels[index]) for index in group)
+        note_last = group == LAYOUT[0]
+        sections = "".join(_render_panel(panels[index], note_last=note_last) for index in group)
         groups.append(f'<div class="{css_class}">{sections}</div>')
     count = int(status.get("degraded", 0))
     degraded = ""
@@ -220,17 +225,26 @@ def _render_ladder(ladder: dict[str, Any]) -> str:
     )
 
 
-def _render_panel(panel: dict[str, Any]) -> str:
+def _render_panel(panel: dict[str, Any], *, note_last: bool = False) -> str:
+    """Render one panel; with ``note_last`` its NOTE rows follow the table as <p class="note">."""
+
+    rows = panel["rows"]
+    notes = [item for item in rows if note_last and item["label"] == "NOTE"]
     body = "".join(
         f'<tr><th scope="row">{html.escape(item["label"])}</th>'
         f'<td class="{item["state"]}">{TAGS[item["state"]]}</td>'
         f'<td>{html.escape(item["text"])}</td></tr>'
-        for item in panel["rows"]
+        for item in rows
+        if item not in notes
+    )
+    tail = "".join(
+        f'<p class="note"><span class="label">{html.escape(item["label"])}</span> {html.escape(item["text"])}</p>'
+        for item in notes
     )
     return (
         f'<section><table><caption>{html.escape(panel["title"])}</caption>'
         '<thead><tr><th scope="col">item</th><th scope="col">state</th><th scope="col">detail</th></tr></thead>'
-        f"<tbody>{body}</tbody></table></section>"
+        f"<tbody>{body}</tbody></table>{tail}</section>"
     )
 
 
