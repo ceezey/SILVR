@@ -4,9 +4,9 @@ Run with ``python -m silver_bot.monitoring.dashboard_server [--port N]`` from th
 project root. It binds 127.0.0.1 by default. The page has no controls and the
 server answers GET only.
 
-Hosted mode (owner decision 2026-10-24, Railway): ``--host 0.0.0.0
+Hosted mode (owner decision 2026-10-24): ``--host 0.0.0.0
 --allowed-host <public domain>`` with the ``DASHBOARD_PASSWORD`` environment
-variable set. TLS ends at the platform edge, so the server sees plain HTTP. A
+variable set. The server speaks plain HTTP, so only expose it behind HTTPS. A
 non-loopback bind without a password is refused, and every GET then needs HTTP
 Basic auth.
 """

@@ -2,7 +2,7 @@ name: silver-bot
 
 x-safe-environment: &safe-environment
   LIVE_TRADING: "false"
-  DATABASE_URL: postgresql://silverbot:silverbot@postgres:5432/silverbot
+  DATABASE_URL: postgresql://silverbot:${POSTGRES_PASSWORD:-silverbot}@postgres:5432/silverbot
   ML_REGISTRY_PATH: /app/models/model_registry.json
   TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-false}"
   ML_FILTER_ENABLED: "${ML_FILTER_ENABLED:-false}"
@@ -21,12 +21,12 @@ x-bot-common: &bot-common
     - ./reports:/app/reports
 
 services:
-  # Local Postgres for the bot and the tests; the major version matches Railway's Postgres template.
+  # Postgres for the bot (and the tests locally). On a server, set POSTGRES_PASSWORD in .env.
   postgres:
     image: postgres:18
     environment:
       POSTGRES_USER: silverbot
-      POSTGRES_PASSWORD: silverbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silverbot}
       POSTGRES_DB: silverbot
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
@@ -51,6 +51,26 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+
+  # Read-only status page on the host's 127.0.0.1 only (host network, no published port).
+  # Reach it from your PC with an SSH tunnel: ssh -L 8765:127.0.0.1:8765 <server>.
+  # The systemd unit starts it detached, so a dashboard failure never stops the bot.
+  dashboard:
+    <<: *bot-common
+    network_mode: host
+    volumes:
+      - ./data:/app/data:ro
+      - ./logs:/app/logs:ro
+      - ./models:/app/models:ro
+      - ./reports:/app/reports:ro
+    environment:
+      <<: *safe-environment
+      DATABASE_URL: postgresql://silverbot:${POSTGRES_PASSWORD:-silverbot}@127.0.0.1:${POSTGRES_PORT:-5432}/silverbot
+    command: ["python", "-m", "silver_bot.monitoring.dashboard_server", "--port", "8765"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
 
   paper:
     <<: *bot-common
