@@ -186,9 +186,9 @@ def test_candles_flag_outside_backtest_is_usage_error(workdir: Path) -> None:
     assert main(["--candles", "x.csv"]) == 2
 
 
-def test_strategy_and_funding_flags_outside_backtest_are_usage_errors(workdir: Path) -> None:
-    assert main(["--strategy", "top_down_ob"]) == 2
-    assert main(["--funding", "f.csv"]) == 2
+@pytest.mark.parametrize("flags", [["--strategy", "top_down_ob"], ["--strategy", "top_down_ob_any_hour"], ["--funding", "f.csv"]])
+def test_strategy_and_funding_flags_outside_backtest_are_usage_errors(workdir: Path, flags: list[str]) -> None:
+    assert main(flags) == 2
 
 
 def test_backtest_without_candles_is_usage_error(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:

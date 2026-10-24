@@ -111,14 +111,14 @@ def run_backtest(
         validation_fraction=VALIDATION_FRACTION,
     )
     full_criteria = _criteria(full.metrics, full_config)
-    training = _segment(config, split.training, funding, ordered, any_hour)
-    validation = _segment(config, split.validation, funding, ordered, any_hour)
-    final_test = _segment(config, split.final_test, funding, ordered, any_hour)
+    training = _segment(config, split.training, funding, ordered, any_hour=any_hour)
+    validation = _segment(config, split.validation, funding, ordered, any_hour=any_hour)
+    final_test = _segment(config, split.final_test, funding, ordered, any_hour=any_hour)
     # Walk-forward covers the training and validation span only, so the final
     # test set is evaluated exactly once, in its own segment above.
     research = [*split.training, *split.validation]
     windows = suite.walk_forward_windows(research, windows=WALK_FORWARD_WINDOWS)
-    walk_forward = [_segment(config, window, funding, ordered, any_hour) for window in windows]
+    walk_forward = [_segment(config, window, funding, ordered, any_hour=any_hour) for window in windows]
     oos_path = directory / "out_of_sample_validation_report.json"
     _write_json(
         oos_path,
@@ -192,7 +192,7 @@ def _simulate(
     export_dir: Path | None,
     funding: FundingSchedule | None,
     warmup: Sequence[Candle] = (),
-    any_hour: bool = False,
+    any_hour: bool,
 ) -> tuple[BacktestResult, dict[str, Any], BacktestConfig]:
     """Run one engine with its own simulated kill switch (and, for top-down, its own fresh strategy).
 
@@ -224,7 +224,8 @@ def _segment(
     candles: list[Candle],
     funding: FundingSchedule | None,
     ordered: list[Candle],
-    any_hour: bool = False,
+    *,
+    any_hour: bool,
 ) -> dict[str, Any]:
     if not candles:
         # No run means no metrics; costs are the BacktestConfig defaults, which

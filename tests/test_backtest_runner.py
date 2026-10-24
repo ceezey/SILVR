@@ -5,8 +5,7 @@ from pathlib import Path
 import pytest
 
 import silver_bot
-from silver_bot.backtest import ExitReason, build_backtest_config, run_backtest
-from silver_bot.backtest import runner
+from silver_bot.backtest import ExitReason, build_backtest_config, run_backtest, runner
 from silver_bot.backtest.runner import WALK_FORWARD_WINDOWS
 from silver_bot.backtest.top_down_engine import TopDownBacktestEngine
 from silver_bot.config import AppConfig, TradingMode
@@ -241,7 +240,7 @@ def spy_on_engine_runs(monkeypatch: pytest.MonkeyPatch) -> list[tuple[list[Candl
 
 
 def script_strategy(monkeypatch: pytest.MonkeyPatch, entry_minutes: set[int]) -> list:
-    """Make the engine build a strategy that plans a long on the given minutes (offsets from START) when trading.
+    """Make the runner build a strategy that plans a long on the given minutes (offsets from START) when trading.
 
     Returns the strategies built, one per engine run, each with a `calls` log of (open_time, trading).
     """
@@ -315,7 +314,12 @@ def test_any_hour_flag_reaches_every_strategy(
 ) -> None:
     seen: list[bool] = []
     real = runner.TopDownOBStrategy
-    monkeypatch.setattr(runner, "TopDownOBStrategy", lambda **kw: seen.append(kw.get("any_hour", False)) or real(**kw))
+
+    def spy(**kw: object):
+        seen.append(kw.get("any_hour", False))
+        return real(**kw)
+
+    monkeypatch.setattr(runner, "TopDownOBStrategy", spy)
 
     run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy=strategy, funding=FUNDING)
 

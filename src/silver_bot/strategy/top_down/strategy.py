@@ -100,7 +100,8 @@ class TopDownOBStrategy:
             session_name, window = _ANY_HOUR, (_ANY_HOUR, None)
         else:
             session = self._sessions.evaluate(candle_1m.open_time)
-            session_name, window = session.name, (session.name, session.start_at) if session.is_active else None
+            session_name = session.name
+            window = (session.name, session.start_at) if session.is_active else None
         if window != self._window:
             self._window, self._touched = window, []
         if window is None:
