@@ -1,10 +1,11 @@
-import hashlib
 import json
 import os
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import psycopg
+
+from conftest import execute
 from silver_bot.config import AppConfig, ConfigError
 from silver_bot.monitoring.status import (
     AUDIT_EVENTS,
@@ -14,16 +15,14 @@ from silver_bot.monitoring.status import (
     _read_json_object,
     collect_status,
 )
-from silver_bot.storage.sqlite import SQLiteStorage
+from silver_bot.storage import PostgresStorage
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
 BANNER, READINESS, EVIDENCE, RISK, POSITIONS, ALERTS = range(6)
 
 
 def make_config(root: Path, **overrides) -> AppConfig:
-    values = {"database_path": root / "data" / "silver_bot.sqlite3"}
-    values.update(overrides)
-    return AppConfig(**values)
+    return AppConfig(**overrides)
 
 
 def collect(root: Path, config: AppConfig | None = None) -> dict:
@@ -413,34 +412,22 @@ def test_one_unreadable_source_only_breaks_its_panel(tmp_path):
         assert all(item["label"] != "unreadable" for item in rows(status, index))
 
 
-def init_db(path: Path) -> Path:
-    SQLiteStorage(path).initialize()
-    return path
+def init_db(database_url: str) -> str:
+    PostgresStorage(database_url).initialize()
+    return database_url
 
 
-def execute(path: Path, sql: str, params: tuple = ()) -> None:
-    """Write test fixtures and close the connection, so WAL is checkpointed and no lock stays open."""
-
-    connection = sqlite3.connect(path)
-    try:
-        with connection:
-            connection.execute(sql, params)
-    finally:
-        connection.close()
-
-
-def insert_risk_state(path: Path, current_day: str) -> None:
-    # Column order: id, current_day, daily_realized_pnl, consecutive_losses, trades_today, open_positions, updated_at.
+def insert_risk_state(database_url: str, current_day: str) -> None:
     execute(
-        path,
-        "INSERT OR REPLACE INTO risk_state VALUES (1, ?, ?, ?, ?, ?, ?)",
+        database_url,
+        "INSERT INTO risk_state VALUES (1, %s, %s, %s, %s, %s, %s)",
         (current_day, -12.5, 2, 3, 1, "2026-10-09T11:59:00+00:00"),
     )
 
 
-def insert_paper_trade(path: Path) -> None:
+def insert_paper_trade(database_url: str) -> None:
     execute(
-        path,
+        database_url,
         """
         INSERT INTO paper_trades (
             trade_id, symbol, timeframe, session_name, direction, entry_time, exit_time,
@@ -452,42 +439,47 @@ def insert_paper_trade(path: Path) -> None:
         """,
     )
     execute(
-        path,
+        database_url,
         "INSERT INTO paper_events (event_type, symbol, timestamp, message, context_json) "
         "VALUES ('paper_trade_opened', 'BTCUSDT', '2026-10-09T10:00:00+00:00', 'opened', '{}')",
     )
 
 
-def digest(path: Path) -> tuple[str, int]:
-    return hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns
+def collect_db(root: Path, database_url: str, **overrides) -> dict:
+    return collect(root, make_config(root, database_url=database_url, **overrides))
 
 
-def test_sqlite_panels_empty_when_database_missing(tmp_path):
+def test_database_panels_empty_when_no_database_configured(tmp_path):
     status = collect(tmp_path)
 
     assert rows(status, RISK) == [
         {"state": "off", "label": "", "text": "not available: risk_state empty, no running bot (G-3)"}
     ]
     assert rows(status, POSITIONS) == [{"state": "off", "label": "", "text": "none recorded (no paper run, G-3)"}]
-    assert not (tmp_path / "data" / "silver_bot.sqlite3").exists()
 
 
-def test_sqlite_panels_empty_when_tables_missing(tmp_path):
-    database = tmp_path / "data" / "silver_bot.sqlite3"
-    database.parent.mkdir()
-    execute(database, "CREATE TABLE candles (id INTEGER PRIMARY KEY)")
+def test_database_panels_empty_when_tables_missing(tmp_path, database_url):
+    execute(database_url, "CREATE TABLE candles (id INTEGER PRIMARY KEY)")
 
-    status = collect(tmp_path)
+    status = collect_db(tmp_path, database_url)
 
     assert rows(status, RISK)[0]["state"] == "off"
     assert rows(status, POSITIONS)[0]["text"] == "none recorded (no paper run, G-3)"
 
 
-def test_risk_budget_shows_row_and_limits(tmp_path):
-    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
-    insert_risk_state(database, "2026-10-09")
+def test_unreachable_database_degrades_only_its_panels(tmp_path, fast_connect_timeout):
+    status = collect_db(tmp_path, "postgresql://bot:pw@127.0.0.1:1/silverbot?connect_timeout=2")
 
-    risk = by_label(collect(tmp_path), RISK)
+    assert rows(status, RISK)[0]["label"] == "unreadable"
+    assert rows(status, POSITIONS)[0]["label"] == "unreadable"
+    assert status["degraded"] == 2
+    assert "bot:pw@" not in json.dumps(status)
+
+
+def test_risk_budget_shows_row_and_limits(tmp_path, database_url):
+    insert_risk_state(init_db(database_url), "2026-10-09")
+
+    risk = by_label(collect_db(tmp_path, database_url), RISK)
 
     assert risk["day"] == {"state": "plain", "label": "day", "text": "2026-10-09"}
     assert risk["daily realized pnl"]["text"] == "-12.50"
@@ -498,22 +490,20 @@ def test_risk_budget_shows_row_and_limits(tmp_path):
     assert risk["max risk per trade"]["text"] == "0.005 of equity"
 
 
-def test_risk_budget_day_is_stale_when_not_today(tmp_path):
-    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
-    insert_risk_state(database, "2026-10-08")
+def test_risk_budget_day_is_stale_when_not_today(tmp_path, database_url):
+    insert_risk_state(init_db(database_url), "2026-10-08")
 
-    risk = by_label(collect(tmp_path), RISK)
+    risk = by_label(collect_db(tmp_path, database_url), RISK)
 
     assert risk["day"]["state"] == "warn"
     assert "stale" in risk["day"]["text"]
 
 
-def test_positions_lists_simulated_trades_and_events(tmp_path):
-    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
-    insert_risk_state(database, "2026-10-09")
-    insert_paper_trade(database)
+def test_positions_lists_simulated_trades_and_events(tmp_path, database_url):
+    insert_risk_state(init_db(database_url), "2026-10-09")
+    insert_paper_trade(database_url)
 
-    result = rows(collect(tmp_path), POSITIONS)
+    result = rows(collect_db(tmp_path, database_url), POSITIONS)
 
     assert result[0] == {"state": "plain", "label": "open positions", "text": "1"}
     assert result[1]["label"].startswith("SIM ")
@@ -521,57 +511,43 @@ def test_positions_lists_simulated_trades_and_events(tmp_path):
     assert result[2]["text"] == "paper_trade_opened: opened"
 
 
-def test_database_path_with_spaces_opens_read_only(tmp_path):
-    root = tmp_path / "dir with space"
-    database = init_db(root / "data" / "silver_bot.sqlite3")
-    insert_risk_state(database, "2026-10-09")
+def test_collecting_writes_nothing_to_the_database(tmp_path, database_url):
+    insert_risk_state(init_db(database_url), "2026-10-09")
+    insert_paper_trade(database_url)
+    snapshot = "SELECT (SELECT updated_at FROM risk_state), (SELECT count(*) FROM paper_trades), (SELECT count(*) FROM paper_events)"
+    with psycopg.connect(database_url) as connection:
+        before = connection.execute(snapshot).fetchone()
 
-    risk = by_label(collect(root), RISK)
+    collect_db(tmp_path, database_url)
+    collect_db(tmp_path, database_url)
 
-    assert risk["open positions"]["text"] == "1"
-
-
-def test_collecting_leaves_database_bytes_unchanged(tmp_path):
-    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
-    insert_risk_state(database, "2026-10-09")
-    insert_paper_trade(database)
-    before = digest(database)
-
-    collect(tmp_path)
-    collect(tmp_path)
-
-    assert digest(database) == before
-    allowed = {database.name, database.name + "-wal", database.name + "-shm"}
-    assert {path.name for path in database.parent.iterdir()} <= allowed
+    with psycopg.connect(database_url) as connection:
+        assert connection.execute(snapshot).fetchone() == before
 
 
-def test_positions_show_stored_prices_exactly(tmp_path):
-    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
-    insert_risk_state(database, "2026-10-09")
-    insert_paper_trade(database)
-    execute(database, "UPDATE paper_trades SET entry_price = ?, exit_price = ?", (64123.45, 120345.67))
+def test_positions_show_stored_prices_exactly(tmp_path, database_url):
+    insert_risk_state(init_db(database_url), "2026-10-09")
+    insert_paper_trade(database_url)
+    execute(database_url, "UPDATE paper_trades SET entry_price = %s, exit_price = %s", (64123.45, 120345.67))
 
-    result = rows(collect(tmp_path), POSITIONS)
+    result = rows(collect_db(tmp_path, database_url), POSITIONS)
 
     assert result[1]["text"] == "BTCUSDT long 64123.45 to 120345.67, pnl 3.00, take_profit"
 
 
-def test_risk_limits_show_stored_values_exactly(tmp_path):
-    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
-    insert_risk_state(database, "2026-10-09")
-    config = make_config(tmp_path, max_daily_loss=0.0123456789, max_risk_per_trade=0.005)
+def test_risk_limits_show_stored_values_exactly(tmp_path, database_url):
+    insert_risk_state(init_db(database_url), "2026-10-09")
 
-    risk = by_label(collect(tmp_path, config), RISK)
+    risk = by_label(collect_db(tmp_path, database_url, max_daily_loss=0.0123456789, max_risk_per_trade=0.005), RISK)
 
     assert risk["max daily loss"]["text"] == "0.0123456789 of equity"
     assert risk["max risk per trade"]["text"] == "0.005 of equity"
 
 
-def test_positions_without_risk_state_row_is_not_available(tmp_path):
-    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
-    insert_paper_trade(database)
+def test_positions_without_risk_state_row_is_not_available(tmp_path, database_url):
+    insert_paper_trade(init_db(database_url))
 
-    result = rows(collect(tmp_path), POSITIONS)
+    result = rows(collect_db(tmp_path, database_url), POSITIONS)
 
     assert result[0] == {"state": "off", "label": "open positions", "text": "not available: no risk_state row"}
 
@@ -616,22 +592,12 @@ def test_read_json_object_returns_stat_from_the_same_open_file(tmp_path):
     assert (problem, stat.st_size) == ("empty", 0)
 
 
-def test_risk_panel_reads_committed_row_while_writer_is_open_without_touching_main_file(tmp_path):
-    database = init_db(tmp_path / "data" / "silver_bot.sqlite3")
-    writer = sqlite3.connect(database)
-    try:
-        writer.execute("PRAGMA wal_autocheckpoint=0")
-        with writer:
-            writer.execute(
-                "INSERT OR REPLACE INTO risk_state VALUES (1, ?, ?, ?, ?, ?, ?)",
-                ("2026-10-09", -12.5, 2, 3, 1, "2026-10-09T11:59:00+00:00"),
-            )
-        before = digest(database)
+def test_risk_panel_reads_committed_row_while_a_writer_transaction_is_open(tmp_path, database_url):
+    insert_risk_state(init_db(database_url), "2026-10-09")
+    with psycopg.connect(database_url) as writer:
+        writer.execute("UPDATE risk_state SET trades_today = 9")
 
-        risk = by_label(collect(tmp_path), RISK)
+        risk = by_label(collect_db(tmp_path, database_url), RISK)
 
         assert risk["trades today"]["text"] == "3"
         assert risk["daily realized pnl"]["text"] == "-12.50"
-        assert digest(database) == before
-    finally:
-        writer.close()

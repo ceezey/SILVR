@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Mapping
@@ -30,7 +30,8 @@ class AppConfig:
     live_trading: bool = False
     paper_trading: bool = True
     demo_trading: bool = False
-    database_path: Path = Path("data/silver_bot.sqlite3")
+    # Kept out of repr: a Postgres URL carries the password.
+    database_url: str | None = field(default=None, repr=False)
     exchange_name: str = "binance_futures"
     symbol: str = "BTCUSDT"
     timeframe: str = "1m"
@@ -70,7 +71,7 @@ def load_config(
         "LIVE_TRADING": "false",
         "PAPER_TRADING": "true",
         "DEMO_TRADING": "false",
-        "DATABASE_PATH": "data/silver_bot.sqlite3",
+        "DATABASE_URL": "",
         "EXCHANGE_NAME": "binance_futures",
         "SYMBOL": "BTCUSDT",
         "TIMEFRAME": "1m",
@@ -115,13 +116,14 @@ def load_config(
     if demo_trading and paper_trading:
         raise ConfigError("PAPER_TRADING must be false when DEMO_TRADING=true")
 
-    database_path = Path(_required(raw, "DATABASE_PATH"))
-    if database_path.name in {"", ".", ".."}:
-        raise ConfigError("DATABASE_PATH must point to a database file")
-    if ".." in database_path.parts:
-        raise ConfigError("DATABASE_PATH must not traverse parent directories")
-    if database_path.exists() and database_path.is_dir():
-        raise ConfigError("DATABASE_PATH must point to a file, not a directory")
+    database_url = _blank_to_none(raw.get("DATABASE_URL"))
+    if database_url is not None:
+        try:
+            scheme = urlsplit(database_url).scheme
+        except ValueError as exc:
+            raise ConfigError("DATABASE_URL is not a valid URL") from exc
+        if scheme not in {"postgresql", "postgres"}:
+            raise ConfigError("DATABASE_URL must be a postgresql:// URL")
     exchange_name = _required(raw, "EXCHANGE_NAME").strip().lower()
     if not exchange_name.replace("_", "").isalnum():
         raise ConfigError("EXCHANGE_NAME must contain only letters, numbers, or underscores")
@@ -198,7 +200,7 @@ def load_config(
         live_trading=live_trading,
         paper_trading=paper_trading,
         demo_trading=demo_trading,
-        database_path=database_path,
+        database_url=database_url,
         exchange_name=exchange_name,
         symbol=symbol,
         timeframe=timeframe,
@@ -305,7 +307,7 @@ def _flatten_config_yaml(path: Path) -> dict[str, str]:
 
     aliases = {
         "MODE": "TRADING_MODE",
-        "DATABASE_PATH": "DATABASE_PATH",
+        "DATABASE_URL": "DATABASE_URL",
         "EXCHANGE_NAME": "EXCHANGE_NAME",
         "TRADING_LIVE_TRADING": "LIVE_TRADING",
         "TRADING_PAPER_TRADING": "PAPER_TRADING",

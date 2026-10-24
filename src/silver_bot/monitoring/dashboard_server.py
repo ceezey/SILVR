@@ -1,13 +1,25 @@
-"""Read-only operator dashboard on 127.0.0.1 (PRD-F13, silverbot-cr-001).
+"""Read-only operator dashboard (PRD-F13, silverbot-cr-001).
 
 Run with ``python -m silver_bot.monitoring.dashboard_server [--port N]`` from the
-project root. The page has no controls and the server answers GET only.
+project root. It binds 127.0.0.1 by default. The page has no controls and the
+server answers GET only.
+
+Hosted mode (owner decision 2026-10-24, Railway): ``--host 0.0.0.0
+--allowed-host <public domain>`` with the ``DASHBOARD_PASSWORD`` environment
+variable set. TLS ends at the platform edge, so the server sees plain HTTP. A
+non-loopback bind without a password is refused, and every GET then needs HTTP
+Basic auth.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+import hmac
 import html
+import ipaddress
+import os
 import string
 import sys
 from collections.abc import Callable
@@ -21,6 +33,8 @@ from silver_bot.monitoring.status import collect_status
 
 BIND_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
+PASSWORD_ENV = "DASHBOARD_PASSWORD"
+AUTH_CHALLENGE = 'Basic realm="silverbot", charset="UTF-8"'
 TAGS = {"ok": "[ OK ]", "warn": "[ WRN ]", "err": "[ ERR ]", "off": "[ OFF ]", "plain": ""}
 # DSD section 3.2: banner; readiness | evidence; risk budget; positions | alerts.
 LAYOUT: tuple[tuple[int, ...], ...] = ((0,), (1, 2), (3,), (4, 5))
@@ -86,7 +100,7 @@ HEADER = (
     '<rect class="m-ink" x="20" y="75" width="120" height="2"/>'
     "</svg>"
     '<span class="wordmark">Silverbot</span>'
-    '<span class="meta">status &middot; read-only &middot; 127.0.0.1</span></header>'
+    '<span class="meta">status &middot; read-only</span></header>'
 )
 NOT_FOUND_PAGE = string.Template(
     """<!doctype html>
@@ -169,6 +183,17 @@ def render_not_found() -> str:
     return NOT_FOUND_PAGE.substitute(css=CSS, header=HEADER)
 
 
+def is_loopback_host(host: str) -> bool:
+    """True for "localhost" and loopback IPs; anything unparsable counts as non-loopback."""
+
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def _render_ladder(ladder: dict[str, Any]) -> str:
     cards = []
     for index, step in enumerate(ladder["steps"]):
@@ -200,20 +225,38 @@ def _render_panel(panel: dict[str, Any]) -> str:
 
 
 class DashboardServer(ThreadingHTTPServer):
-    """HTTP server fixed to 127.0.0.1 that serves the status page."""
+    """HTTP server for the status page; loopback unless a password is set.
+
+    Binds ``host`` (default 127.0.0.1). A non-loopback ``host`` fails closed: it
+    needs ``password``, which then gates every GET with HTTP Basic auth.
+    ``allowed_host`` is one extra public Host header value to accept.
+    """
 
     daemon_threads = True
     # On Windows SO_REUSEADDR lets a second socket share a busy port; refuse that.
     allow_reuse_address = sys.platform != "win32"
 
-    def __init__(self, port: int, *, root: Path, load: Callable[[], AppConfig] = load_config) -> None:
+    def __init__(
+        self,
+        port: int,
+        *,
+        root: Path,
+        load: Callable[[], AppConfig] = load_config,
+        host: str = BIND_HOST,
+        allowed_host: str | None = None,
+        password: str | None = None,
+    ) -> None:
+        if not password and not is_loopback_host(host):
+            raise ValueError(f"refusing to bind {host}: a non-loopback host needs {PASSWORD_ENV}")
         self.root = Path(root)
         self.load = load
-        super().__init__((BIND_HOST, port), DashboardHandler)
+        self.allowed_host = allowed_host.strip().lower() if allowed_host and allowed_host.strip() else None
+        self.password = password.encode("utf-8") if password else None
+        super().__init__((host, port), DashboardHandler)
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
-    """Answer GET / with the page; refuse every other method, path and host."""
+    """Answer GET / with the page; refuse every other method, path, host and (if gated) anonymous caller."""
 
     server: DashboardServer
     server_version = "silver-bot-dashboard"
@@ -232,6 +275,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if not self._host_allowed():
             self._send(400, "bad host\n")
+            return
+        if not self._authorized():
+            self._send(401, "authentication required\n", headers={"WWW-Authenticate": AUTH_CHALLENGE})
             return
         if self.path == "/":
             status = collect_status(self.server.root, load=self.server.load)
@@ -252,7 +298,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
         port = self.server.server_address[1]
         names = {"127.0.0.1", "localhost"}
         allowed = {f"{name}:{port}" for name in names} | (names if port == 80 else set())
-        return self.headers.get("Host", "") in allowed
+        host = self.headers.get("Host", "")
+        if host in allowed:
+            return True
+        # The platform edge sends the bare public domain, so the port is optional.
+        public = self.server.allowed_host
+        return public is not None and host.lower() in {public, f"{public}:{port}"}
+
+    def _authorized(self) -> bool:
+        """True when no password is set, or the Basic credentials carry it (user name ignored)."""
+
+        expected = self.server.password
+        if expected is None:
+            return True
+        scheme, _, token = self.headers.get("Authorization", "").partition(" ")
+        if scheme.lower() != "basic":
+            return False
+        try:
+            decoded = base64.b64decode(token.strip(), validate=True)
+        except (binascii.Error, ValueError):
+            return False
+        _, colon, supplied = decoded.partition(b":")
+        return bool(colon) and hmac.compare_digest(supplied, expected)
 
     def _send(
         self,
@@ -279,21 +346,34 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(
         prog="python -m silver_bot.monitoring.dashboard_server",
-        description="Read-only Silver Bot status page on 127.0.0.1.",
+        description=(
+            f"Read-only Silver Bot status page (default {BIND_HOST}). A non-loopback --host "
+            f"needs the {PASSWORD_ENV} environment variable and serves behind HTTP Basic auth."
+        ),
     )
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"port on 127.0.0.1 (default {DEFAULT_PORT})")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"port to listen on (default {DEFAULT_PORT})")
+    parser.add_argument("--host", default=BIND_HOST, help=f"address to bind (default {BIND_HOST})")
+    parser.add_argument("--allowed-host", default=None, help="extra Host header to accept, e.g. the public domain")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         print(f"invalid port: {args.port}", file=sys.stderr)
         return 2
+    # Environment only, never a flag: a flag would show in the process list.
+    password = (os.environ.get(PASSWORD_ENV) or "").strip() or None
     try:
-        server = DashboardServer(args.port, root=Path.cwd())
-    except OSError as exc:
-        print(f"cannot listen on {BIND_HOST}:{args.port}: {exc.strerror or exc}", file=sys.stderr)
+        server = DashboardServer(
+            args.port, root=Path.cwd(), host=args.host, allowed_host=args.allowed_host, password=password
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
         return 2
+    except OSError as exc:
+        print(f"cannot listen on {args.host}:{args.port}: {exc.strerror or exc}", file=sys.stderr)
+        return 2
+    gate = "; password required" if password else ""
     print(
-        f"silver-bot status: http://{BIND_HOST}:{server.server_address[1]}/ "
-        f"(read-only; reading {server.root}; Ctrl+C to stop)"
+        f"silver-bot status: http://{args.host}:{server.server_address[1]}/ "
+        f"(read-only{gate}; reading {server.root}; Ctrl+C to stop)"
     )
     try:
         server.serve_forever()

@@ -1,3 +1,4 @@
+import json
 import asyncio
 from datetime import UTC, datetime, timedelta
 
@@ -11,7 +12,7 @@ from silver_bot.monitoring import (
 )
 from silver_bot.monitoring.reports import build_daily_paper_report
 from silver_bot.risk import RiskConfig, RiskManagementEngine
-from silver_bot.storage import SQLiteStorage
+from silver_bot.storage import PostgresStorage
 from silver_bot.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
 
 
@@ -55,9 +56,9 @@ def strategy() -> SilverBulletStrategyEngine:
     )
 
 
-def test_paper_trading_opens_closes_stores_and_alerts(tmp_path) -> None:
+def test_paper_trading_opens_closes_stores_and_alerts(database_url) -> None:
     candles = [*valid_long_setup(), candle(9, 112, 141, 105, 140)]
-    storage = SQLiteStorage(tmp_path / "paper.sqlite3")
+    storage = PostgresStorage(database_url)
     telegram_client = InMemoryTelegramClient()
     alerter = TelegramAlerter(
         TelegramAlertConfig(enabled=True, chat_id="chat"),
@@ -145,3 +146,114 @@ def test_reconnecting_market_stream_recovers_from_mock_failure() -> None:
 
     assert candles == expected
     assert attempts["count"] == 2
+
+
+class TripAfterStream(MockMarketDataStream):
+    """Mock stream that creates the kill-switch file after yielding `trip_after` candles."""
+
+    def __init__(self, candles, *, kill_file, trip_after: int) -> None:
+        super().__init__(candles)
+        self.kill_file = kill_file
+        self.trip_after = trip_after
+
+    async def candles(self):
+        index = 0
+        async for item in super().candles():
+            if index == self.trip_after:
+                self.kill_file.write_text("stop", encoding="utf-8")
+            yield item
+            index += 1
+
+
+def test_kill_switch_closes_open_paper_position(tmp_path) -> None:
+    kill_file = tmp_path / "KILL_SWITCH"
+    candles = [*valid_long_setup(), candle(9, 112, 113, 105, 110), candle(10, 110, 112, 108, 111)]
+    risk = RiskManagementEngine(RiskConfig(kill_switch_path=kill_file))
+    engine = PaperTradingEngine(
+        stream=TripAfterStream(candles, kill_file=kill_file, trip_after=10),
+        strategy=strategy(),
+        risk=risk,
+    )
+
+    result = asyncio.run(engine.run())
+
+    assert result.closed_trades == 1
+    trade = result.trades[0]
+    assert trade.exit_reason.value == "kill_switch"
+    assert trade.exit_time == candles[-1].open_time
+    assert trade.realized_pnl > 0
+    assert risk.state.open_positions == 0
+    assert engine.executor.has_active_trade is False
+
+
+def test_kill_switch_cancels_pending_paper_order(tmp_path) -> None:
+    kill_file = tmp_path / "KILL_SWITCH"
+    candles = [*valid_long_setup(), candle(9, 116, 125, 116, 120)]
+    risk = RiskManagementEngine(RiskConfig(kill_switch_path=kill_file))
+    engine = PaperTradingEngine(
+        stream=TripAfterStream(candles, kill_file=kill_file, trip_after=9),
+        strategy=strategy(),
+        risk=risk,
+    )
+
+    result = asyncio.run(engine.run())
+
+    assert result.closed_trades == 0
+    assert any(event.event_type == PaperEventType.PAPER_ORDER_CANCELLED for event in result.events)
+    assert risk.state.open_positions == 0
+    assert engine.executor.has_active_trade is False
+
+
+def test_unfilled_paper_order_is_cancelled_when_session_window_ends() -> None:
+    risk = RiskManagementEngine()
+    engine = PaperTradingEngine(
+        stream=MockMarketDataStream([*valid_long_setup(), candle(9, 116, 125, 116, 120), candle(60, 121, 130, 121, 128)]),
+        strategy=strategy(),
+        risk=risk,
+    )
+
+    result = asyncio.run(engine.run())
+
+    cancelled = [event for event in result.events if event.event_type == PaperEventType.PAPER_ORDER_CANCELLED]
+    assert len(cancelled) == 1
+    assert "session window ended" in cancelled[0].message
+    assert risk.state.open_positions == 0
+
+
+def test_history_seeds_the_strategy_without_evaluating_it() -> None:
+    setup = valid_long_setup()
+    engine = PaperTradingEngine(
+        stream=MockMarketDataStream([setup[-1], candle(9, 112, 141, 105, 140)]),
+        strategy=strategy(),
+        history=setup[:-1],
+    )
+
+    result = asyncio.run(engine.run())
+
+    assert result.candles_processed == 2
+    assert result.closed_trades == 1
+
+
+def test_on_trade_closed_and_report_writer(tmp_path) -> None:
+    from silver_bot.config import AppConfig
+    from silver_bot.execution.runtime import write_paper_report
+
+    seen = []
+    engine = PaperTradingEngine(
+        stream=MockMarketDataStream([*valid_long_setup(), candle(9, 112, 141, 105, 140)]),
+        strategy=strategy(),
+        on_trade_closed=lambda result: seen.append(result.closed_trades),
+    )
+    result = asyncio.run(engine.run())
+    path = tmp_path / "reports" / "paper_trading_report.json"
+
+    write_paper_report(path, result, config=AppConfig(), started_at=datetime(2026, 1, 2, tzinfo=UTC), initial_equity=10_000.0)
+
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert seen == [1]
+    assert engine.result is result
+    assert report["mode"] == "paper"
+    assert report["closed_trades"] == 1
+    assert report["metrics"]["total_trades"] == 1
+    assert report["ending_equity"] == result.equity
+    assert not (tmp_path / "reports" / "paper_trading_report.json.tmp").exists()

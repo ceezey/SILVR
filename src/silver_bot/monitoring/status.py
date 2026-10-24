@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import psycopg
+
 from silver_bot.config import AppConfig, ConfigError, load_config
 from silver_bot.monitoring.audit import redact_secrets
 from silver_bot.risk.kill_switch import KillSwitch
+from silver_bot.storage.postgres import CONNECT_TIMEOUT_SECONDS
 
 PANEL_TITLES: tuple[str, ...] = (
     "MODE & SAFETY",
@@ -86,8 +88,8 @@ def collect_status(
         lambda: _banner(config, config_error, root),
         lambda: _readiness(root, now),
         lambda: _evidence(root),
-        lambda: _risk_budget(config, root, now),
-        lambda: _positions(config, root),
+        lambda: _risk_budget(config, now),
+        lambda: _positions(config),
         lambda: _alerts(root),
     )
     panels = []
@@ -249,11 +251,11 @@ def _evidence(root: Path) -> list[Row]:
     return rows
 
 
-def _risk_budget(config: AppConfig | None, root: Path, now: datetime) -> list[Row]:
+def _risk_budget(config: AppConfig | None, now: datetime) -> list[Row]:
     if config is None:
         return [row("off", "", CONFIG_INVALID)]
     found = _query(
-        _resolve(root, config.database_path),
+        config.database_url,
         "SELECT current_day, daily_realized_pnl, trades_today, consecutive_losses, open_positions, updated_at "
         "FROM risk_state WHERE id = 1",
     )
@@ -274,10 +276,10 @@ def _risk_budget(config: AppConfig | None, root: Path, now: datetime) -> list[Ro
     ]
 
 
-def _positions(config: AppConfig | None, root: Path) -> list[Row]:
+def _positions(config: AppConfig | None) -> list[Row]:
     if config is None:
         return [row("off", "", CONFIG_INVALID)]
-    database = _resolve(root, config.database_path)
+    database = config.database_url
     state = _query(database, "SELECT open_positions FROM risk_state WHERE id = 1")
     trades = _query(
         database,
@@ -380,20 +382,17 @@ def _number(value: float) -> str:
     return repr(value)
 
 
-def _query(database: Path, sql: str) -> list[tuple[Any, ...]] | None:
-    """Run one read-only query; None when the database file or table is absent."""
+def _query(database_url: str | None, sql: str) -> list[tuple[Any, ...]] | None:
+    """Run one read-only query; None when no database is configured or the table is absent."""
 
-    if not database.is_file():
+    if database_url is None:
         return None
-    connection = sqlite3.connect(f"{database.resolve().as_uri()}?mode=ro", uri=True)
-    try:
-        return connection.execute(sql).fetchall()
-    except sqlite3.OperationalError as exc:
-        if "no such table" in str(exc):
+    with psycopg.connect(database_url, connect_timeout=CONNECT_TIMEOUT_SECONDS) as connection:
+        connection.read_only = True
+        try:
+            return connection.execute(sql).fetchall()
+        except psycopg.errors.UndefinedTable:
             return None
-        raise
-    finally:
-        connection.close()
 
 
 def _resolve(root: Path, path: str | Path) -> Path:

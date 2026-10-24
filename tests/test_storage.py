@@ -1,44 +1,43 @@
-import sqlite3
 from datetime import date
-from pathlib import Path
 
 import pytest
 
+from conftest import execute
 from silver_bot.risk import RiskState, RiskStateError
-from silver_bot.storage import SQLiteStorage
+from silver_bot.storage import PostgresStorage
 
 
-def test_database_initialization_creates_phase_one_tables(tmp_path: Path) -> None:
-    database_path = tmp_path / "silver_bot.sqlite3"
-    storage = SQLiteStorage(database_path)
-
-    storage.initialize()
-
-    assert database_path.exists()
-    assert {"candles", "signals", "trades", "logs", "ml_predictions"}.issubset(storage.table_names())
-
-
-def initialized(tmp_path: Path) -> SQLiteStorage:
-    storage = SQLiteStorage(tmp_path / "silver_bot.sqlite3")
+def initialized(database_url: str) -> PostgresStorage:
+    storage = PostgresStorage(database_url)
     storage.initialize()
     return storage
 
 
-def corrupt(storage: SQLiteStorage, sql: str) -> None:
-    connection = sqlite3.connect(storage.database_path)
-    try:
-        connection.execute(sql)
-        connection.commit()
-    finally:
-        connection.close()
+def test_database_initialization_creates_tables(database_url: str) -> None:
+    assert initialized(database_url).table_names() == {
+        "candles",
+        "paper_trades",
+        "paper_events",
+        "ml_predictions",
+        "risk_state",
+    }
 
 
-def test_risk_state_table_exists(tmp_path: Path) -> None:
-    assert "risk_state" in initialized(tmp_path).table_names()
+def test_initialize_is_idempotent(database_url: str) -> None:
+    storage = initialized(database_url)
+    storage.save_risk_state(RiskState(current_day=date(2026, 1, 2), trades_today=2))
+
+    storage.initialize()
+
+    assert storage.load_risk_state().trades_today == 2
 
 
-def test_risk_state_round_trip(tmp_path: Path) -> None:
-    storage = initialized(tmp_path)
+def test_repr_hides_the_database_url() -> None:
+    assert "secret-password" not in repr(PostgresStorage("postgresql://bot:secret-password@db/silverbot"))
+
+
+def test_risk_state_round_trip(database_url: str) -> None:
+    storage = initialized(database_url)
     state = RiskState(
         current_day=date(2026, 1, 2),
         daily_realized_pnl=-75.5,
@@ -48,28 +47,40 @@ def test_risk_state_round_trip(tmp_path: Path) -> None:
     )
 
     storage.save_risk_state(state)
+    storage.save_risk_state(state)
 
     assert storage.load_risk_state() == state
     assert storage.count_rows("risk_state") == 1
 
 
-def test_risk_state_missing_row_returns_none(tmp_path: Path) -> None:
-    assert initialized(tmp_path).load_risk_state() is None
+def test_risk_state_missing_row_returns_none(database_url: str) -> None:
+    assert initialized(database_url).load_risk_state() is None
+
+
+def test_load_risk_state_without_schema_raises(database_url: str) -> None:
+    with pytest.raises(RiskStateError):
+        PostgresStorage(database_url).load_risk_state()
 
 
 @pytest.mark.parametrize(
     "sql",
     [
         "UPDATE risk_state SET consecutive_losses = -1",
-        "UPDATE risk_state SET trades_today = 'abc'",
+        "UPDATE risk_state SET trades_today = -2",
         "UPDATE risk_state SET current_day = 'not-a-date'",
-        "UPDATE risk_state SET daily_realized_pnl = 'x'",
+        "UPDATE risk_state SET daily_realized_pnl = 'NaN'",
+        "UPDATE risk_state SET daily_realized_pnl = 'Infinity'",
     ],
 )
-def test_corrupt_risk_state_raises(tmp_path: Path, sql: str) -> None:
-    storage = initialized(tmp_path)
+def test_corrupt_risk_state_raises(database_url: str, sql: str) -> None:
+    storage = initialized(database_url)
     storage.save_risk_state(RiskState(current_day=date(2026, 1, 2)))
-    corrupt(storage, sql)
+    execute(database_url, sql)
 
     with pytest.raises(RiskStateError):
         storage.load_risk_state()
+
+
+def test_count_rows_rejects_unknown_table(database_url: str) -> None:
+    with pytest.raises(ValueError):
+        initialized(database_url).count_rows("pg_class")

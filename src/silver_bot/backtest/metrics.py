@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import statistics
 from collections import defaultdict
 from typing import Any
 
@@ -23,9 +25,28 @@ def calculate_metrics(
     gross_loss = abs(sum(trade.realized_pnl for trade in losing))
     net_profit = sum(trade.realized_pnl for trade in trades)
     total_fees = sum(trade.fees for trade in trades)
+    total_funding = sum(trade.funding for trade in trades)
     average_r = sum(trade.realized_r for trade in trades) / total_trades if trades else 0.0
     expectancy = net_profit / total_trades if trades else 0.0
     max_drawdown = max((point.drawdown for point in equity_curve), default=0.0)
+    max_drawdown_percent = max_drawdown / initial_balance if initial_balance else 0.0
+    return_percent = net_profit / initial_balance if initial_balance else 0.0
+    average_win_r = sum(trade.realized_r for trade in winning) / len(winning) if winning else 0.0
+    average_loss_r = sum(abs(trade.realized_r) for trade in losing) / len(losing) if losing else 0.0
+    if average_loss_r:
+        realized_rr = average_win_r / average_loss_r
+    else:
+        realized_rr = float("inf") if winning else 0.0
+    r_stdev = statistics.stdev(trade.realized_r for trade in trades) if total_trades >= 2 else 0.0
+    r_t_stat = average_r / (r_stdev / math.sqrt(total_trades)) if r_stdev else 0.0
+    if return_percent <= 0:
+        return_to_drawdown = 0.0
+    elif max_drawdown_percent:
+        return_to_drawdown = return_percent / max_drawdown_percent
+    else:
+        return_to_drawdown = float("inf")
+    wins = [trade.realized_pnl for trade in winning]
+    losses = [trade.realized_pnl for trade in losing]
 
     return {
         "total_trades": total_trades,
@@ -35,13 +56,25 @@ def calculate_metrics(
         "profit_factor": gross_profit / gross_loss if gross_loss else (float("inf") if gross_profit else 0.0),
         "expectancy": expectancy,
         "average_r": average_r,
+        "median_r": statistics.median(trade.realized_r for trade in trades) if trades else 0.0,
+        "average_win": sum(wins) / len(wins) if wins else 0.0,
+        "average_loss": sum(losses) / len(losses) if losses else 0.0,
+        "largest_win": max(wins, default=0.0),
+        "largest_loss": min(losses, default=0.0),
         "max_drawdown": max_drawdown,
-        "max_drawdown_percent": max_drawdown / initial_balance if initial_balance else 0.0,
+        "max_drawdown_percent": max_drawdown_percent,
         "max_consecutive_wins": _max_consecutive(trades, winning=True),
         "max_consecutive_losses": _max_consecutive(trades, winning=False),
         "total_fees": total_fees,
+        "total_funding": total_funding,
         "net_profit": net_profit,
-        "return_percent": net_profit / initial_balance if initial_balance else 0.0,
+        "return_percent": return_percent,
+        "average_win_r": average_win_r,
+        "average_loss_r": average_loss_r,
+        "realized_rr": realized_rr,
+        "r_stdev": r_stdev,
+        "r_t_stat": r_t_stat,
+        "return_to_drawdown": return_to_drawdown,
         "session_performance": _session_metrics(trades),
     }
 

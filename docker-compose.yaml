@@ -2,7 +2,7 @@ name: silver-bot
 
 x-safe-environment: &safe-environment
   LIVE_TRADING: "false"
-  DATABASE_PATH: /app/data/silver_bot.sqlite3
+  DATABASE_URL: postgresql://silverbot:silverbot@postgres:5432/silverbot
   ML_REGISTRY_PATH: /app/models/model_registry.json
   TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-false}"
   ML_FILTER_ENABLED: "${ML_FILTER_ENABLED:-false}"
@@ -21,6 +21,24 @@ x-bot-common: &bot-common
     - ./reports:/app/reports
 
 services:
+  # Local Postgres for the bot and the tests; the major version matches Railway's Postgres template.
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: silverbot
+      POSTGRES_PASSWORD: silverbot
+      POSTGRES_DB: silverbot
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U silverbot -d silverbot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: "no"
+
   bot:
     <<: *bot-common
     container_name: silver-bot-paper
@@ -29,6 +47,9 @@ services:
       TRADING_MODE: paper
       PAPER_TRADING: "true"
     command: ["python", "-m", "silver_bot"]
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: "no"
 
   paper:
@@ -39,6 +60,9 @@ services:
       TRADING_MODE: paper
       PAPER_TRADING: "true"
     command: ["python", "-m", "silver_bot"]
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: "no"
 
   demo:
@@ -60,6 +84,9 @@ services:
       MAX_DAILY_LOSS: "0.02"
       MAX_LEVERAGE: "3"
     command: ["python", "-m", "silver_bot"]
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: "no"
 
   backtest:
@@ -83,3 +110,6 @@ services:
       ML_FILTER_ENABLED: "false"
     command: ["python", "-m", "silver_bot", "--candles", "/app/data/candles"]
     restart: "no"
+
+volumes:
+  pgdata:

@@ -5,11 +5,19 @@ from pathlib import Path
 import pytest
 
 import silver_bot
-from silver_bot.backtest import build_backtest_config, run_backtest
-from silver_bot.backtest.runner import _read_trip
+from silver_bot.backtest import ExitReason, build_backtest_config, run_backtest
+from silver_bot.backtest.runner import WALK_FORWARD_WINDOWS
+from silver_bot.backtest.top_down_engine import TopDownBacktestEngine
 from silver_bot.config import AppConfig, TradingMode
-from silver_bot.models import Candle
+from silver_bot.data.funding import FundingRate, FundingSchedule
+from silver_bot.models import Candle, SignalDirection
 from silver_bot.readiness import evaluate_live_readiness
+from silver_bot.strategy import SilverBulletStrategyEngine
+from silver_bot.strategy.models import SilverBulletSignal
+from silver_bot.strategy.top_down import EntryPlan, StepResult
+
+
+NO_TRIPS = {"mode": "simulated_per_run_daily_reset", "trips": 0, "trip_log": []}
 
 
 def candles(count: int = 50) -> list[Candle]:
@@ -49,6 +57,7 @@ def test_run_writes_all_reports(tmp_path: Path) -> None:
         "trades",
         "equity_curve",
         "rejected_signals",
+        "daily_summary",
         "out_of_sample_validation_report",
         "backtest_run",
     }
@@ -85,7 +94,7 @@ def test_out_of_sample_report_structure(tmp_path: Path) -> None:
     assert oos["segments"]["validation"]["end"] < oos["segments"]["final_test"]["start"]
     assert isinstance(oos["segments"]["final_test"]["metrics"], dict)
     for name in ("training", "validation", "final_test"):
-        assert oos["segments"][name]["kill_switch"] == {"tripped": False, "reason": None, "tripped_at": None}
+        assert oos["segments"][name]["kill_switch"] == NO_TRIPS
 
 
 def test_run_record_lists_inputs_costs_and_kill_switch_mode(tmp_path: Path) -> None:
@@ -103,7 +112,7 @@ def test_run_record_lists_inputs_costs_and_kill_switch_mode(tmp_path: Path) -> N
     assert run["ml_filter_enabled"] is False
     assert run["package_version"] == silver_bot.__version__
     assert run["first_open_time"] == "2026-01-02T14:00:00+00:00"
-    assert run["kill_switch"] == {"mode": "simulated_per_run", "tripped": False, "reason": None, "tripped_at": None}
+    assert run["kill_switch"] == NO_TRIPS
 
 
 def test_backtest_never_uses_real_kill_switch(tmp_path: Path) -> None:
@@ -127,19 +136,57 @@ def test_simulated_kill_switch_is_on_even_when_settings_disable_it(tmp_path: Pat
     assert config.risk.kill_switch_path == sim
 
 
-def test_read_trip_reports_trip_record(tmp_path: Path) -> None:
-    path = tmp_path / "KILL_SWITCH"
-    assert _read_trip(path) == {"tripped": False, "reason": None, "tripped_at": None}
+def test_tripping_run_reports_trip_count_and_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class AlwaysLosingStrategy:
+        # The engine reads the session clock for the pending order's expiry (session-end expiry).
+        sessions = SilverBulletStrategyEngine().sessions
 
-    path.write_text('{"reason": "Max daily loss limit reached", "tripped_at": "2026-01-02T15:00:00+00:00"}', encoding="utf-8")
-    assert _read_trip(path) == {
-        "tripped": True,
-        "reason": "Max daily loss limit reached",
-        "tripped_at": "2026-01-02T15:00:00+00:00",
-    }
+        def evaluate(self, history):
+            last = history[-1]
+            return SilverBulletSignal(
+                direction=SignalDirection.LONG,
+                symbol=last.symbol,
+                timeframe=last.timeframe,
+                generated_at=last.open_time,
+                reason=None,
+                explanation="scripted",
+                entry_price=100.0,
+                stop_loss=98.0,
+                take_profit=104.0,
+                risk_reward_ratio=2.0,
+                session_name="scripted",
+                setup_quality_score=90,
+            )
 
-    path.write_text("not json", encoding="utf-8")
-    assert _read_trip(path) == {"tripped": True, "reason": None, "tripped_at": None}
+    monkeypatch.setattr("silver_bot.backtest.engine.SilverBulletStrategyEngine", AlwaysLosingStrategy)
+    start = datetime(2026, 1, 2, 14, 0, tzinfo=UTC)
+    stopped_out = [
+        Candle(
+            symbol="BTCUSDT",
+            timeframe="1m",
+            open_time=start + timedelta(minutes=index),
+            close_time=start + timedelta(minutes=index + 1),
+            open=100,
+            high=101,
+            low=97,
+            close=100,
+            volume=1000,
+        )
+        for index in range(20)
+    ]
+
+    summary = run_backtest(backtest_settings(), stopped_out, tmp_path / "reports", inputs={})
+
+    run = json.loads(summary.report_paths["backtest_run"].read_text(encoding="utf-8"))
+    assert run["kill_switch"]["mode"] == "simulated_per_run_daily_reset"
+    assert run["kill_switch"]["trips"] >= 1
+    assert len(run["kill_switch"]["trip_log"]) == run["kill_switch"]["trips"]
+    first = run["kill_switch"]["trip_log"][0]
+    assert first["reason"] == "Max consecutive losses limit reached"
+    assert first["tripped_at"].startswith("2026-01-02T")
+    assert first["reset_at"] is None
+    oos = json.loads(summary.report_paths["out_of_sample_validation_report"].read_text(encoding="utf-8"))
+    assert oos["segments"]["training"]["kill_switch"]["trips"] >= 1
 
 
 def test_settings_reach_backtest_config(tmp_path: Path) -> None:
@@ -166,3 +213,154 @@ def test_settings_reach_backtest_config(tmp_path: Path) -> None:
 def test_empty_candles_raise(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="at least one candle"):
         run_backtest(backtest_settings(), [], tmp_path / "reports", inputs={})
+
+
+START = datetime(2026, 1, 2, 14, 0, tzinfo=UTC)
+FUNDING = FundingSchedule(
+    FundingRate(datetime(2026, 1, 2, 8, 0, tzinfo=UTC) + timedelta(hours=8 * k), 0.0) for k in range(3)
+)
+
+
+def read_report(summary, name: str) -> dict:
+    return json.loads(summary.report_paths[name].read_text(encoding="utf-8"))
+
+
+def spy_on_engine_runs(monkeypatch: pytest.MonkeyPatch) -> list[tuple[list[Candle], list[Candle], object]]:
+    """Record (candles, warmup, result) of every TopDownBacktestEngine.run, in call order: full, then segments."""
+    runs = []
+    original = TopDownBacktestEngine.run
+
+    def spy(self, run_candles, *, warmup=()):
+        result = original(self, run_candles, warmup=warmup)
+        runs.append((list(run_candles), list(warmup), result))
+        return result
+
+    monkeypatch.setattr(TopDownBacktestEngine, "run", spy)
+    return runs
+
+
+def script_strategy(monkeypatch: pytest.MonkeyPatch, entry_minutes: set[int]) -> list:
+    """Make the engine build a strategy that plans a long on the given minutes (offsets from START) when trading.
+
+    Returns the strategies built, one per engine run, each with a `calls` log of (open_time, trading).
+    """
+    built = []
+
+    class Scripted:
+        def __init__(self) -> None:
+            self.calls: list[tuple[datetime, bool]] = []
+            built.append(self)
+
+        def step(self, candle: Candle, *, trading: bool = True) -> StepResult:
+            self.calls.append((candle.open_time, trading))
+            minute = int((candle.open_time - START) / timedelta(minutes=1))
+            if not trading or minute not in entry_minutes:
+                return StepResult(None, None, ())
+            close = candle.close
+            plan = EntryPlan("long", candle.close_time, close, close - 5, close + 50, None, "scripted", None, "scripted")
+            return StepResult(plan, None, ())
+
+    monkeypatch.setattr("silver_bot.backtest.top_down_engine.TopDownOBStrategy", Scripted)
+    return built
+
+
+def test_default_strategy_is_silver_bullet_and_reports_name(tmp_path: Path) -> None:
+    summary = run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={})
+
+    assert read_report(summary, "out_of_sample_validation_report")["strategy"] == "silver_bullet"
+    run = read_report(summary, "backtest_run")
+    assert run["strategy"] == "silver_bullet"
+    assert run["funding_file"] is None
+
+
+def test_top_down_requires_funding(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="funding"):
+        run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy="top_down_ob")
+
+
+def test_unknown_strategy_raises(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="strategy"):
+        run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy="nope")
+
+
+def test_top_down_segments_get_warmup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runs = spy_on_engine_runs(monkeypatch)
+    data = candles()
+
+    summary = run_backtest(
+        backtest_settings(), data, tmp_path / "reports", inputs={"funding_file": "f.csv"},
+        strategy="top_down_ob", funding=FUNDING,
+    )
+
+    assert len(runs) == 4 + WALK_FORWARD_WINDOWS  # full, training, validation, final_test, then walk-forward
+    (full, no_warmup, _), training, validation, final = runs[:4]
+    assert (full, no_warmup) == (data, [])
+    assert [(len(c), len(w)) for c, w, _ in (training, validation, final)] == [(30, 0), (10, 30), (10, 40)]
+    assert final[1] == data[:40]
+    assert final[0] == data[40:]
+    assert validation[1] == data[:30]
+    assert read_report(summary, "out_of_sample_validation_report")["strategy"] == "top_down_ob"
+    run = read_report(summary, "backtest_run")
+    assert (run["strategy"], run["funding_file"]) == ("top_down_ob", "f.csv")
+
+
+def test_warmup_never_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runs = spy_on_engine_runs(monkeypatch)
+    built = script_strategy(monkeypatch, set(range(50)))  # would plan on every candle if it were called with trading=True
+    data = candles()
+
+    run_backtest(backtest_settings(), data, tmp_path / "reports", inputs={}, strategy="top_down_ob", funding=FUNDING)
+
+    assert len(built) == 4 + WALK_FORWARD_WINDOWS  # a fresh strategy per run
+    final_first_open = runs[3][0][0].open_time
+    for index, (strategy, (run_candles, warmup, result)) in enumerate(zip(built[2:], runs[2:]), start=2):
+        # every segment and walk-forward window: validation, final_test, then the windows
+        if index < 4:
+            assert warmup
+        first_open, first_close = run_candles[0].open_time, run_candles[0].close_time
+        assert all(c.open_time < first_open for c in warmup)
+        # Warm-up candles were fed with trading=False; only the run's own candles trade.
+        assert strategy.calls == [(c.open_time, False) for c in warmup] + [(c.open_time, True) for c in run_candles]
+        assert result.trades or result.rejected_signals  # the scripted strategy did act on the run itself
+        assert all(trade.entry_time >= first_close for trade in result.trades)
+        assert all(record.timestamp >= first_close for record in result.rejected_signals)
+        assert result.equity_curve[0].timestamp == first_close
+        assert len(result.equity_curve) in (len(run_candles), len(run_candles) + 1)  # +1 for an END_OF_DATA close
+        if index >= 4:  # walk-forward windows (and their warm-up) all precede the final test set
+            assert all(c.open_time < final_first_open for c in [*run_candles, *warmup])
+
+
+@pytest.mark.parametrize("strategy", ["silver_bullet", "top_down_ob"])
+def test_walk_forward_windows_report_simulated_kill_switch(tmp_path: Path, strategy: str) -> None:
+    summary = run_backtest(
+        backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy=strategy, funding=FUNDING
+    )
+
+    windows = read_report(summary, "out_of_sample_validation_report")["walk_forward"]["windows"]
+    assert len(windows) == WALK_FORWARD_WINDOWS
+    for window in windows:
+        assert window["kill_switch"]["mode"] == "simulated_per_run_daily_reset"
+
+
+def test_open_position_closed_at_segment_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runs = spy_on_engine_runs(monkeypatch)
+    script_strategy(monkeypatch, {28})  # entry at the close of candle 28, one candle before training ends
+    data = candles()
+
+    run_backtest(backtest_settings(), data, tmp_path / "reports", inputs={}, strategy="top_down_ob", funding=FUNDING)
+
+    training = runs[1]
+    assert training[0][-1] == data[29]
+    (trade,) = training[2].trades
+    assert trade.exit_reason == ExitReason.END_OF_DATA
+    assert trade.exit_time == data[29].open_time
+    assert [len(result.trades) for _, _, result in runs[2:4]] == [0, 0]  # the plan is warm-up history there
+    assert runs[0][2].trades[-1].exit_time == data[-1].open_time  # the full run holds it to the last candle
+
+
+def test_top_down_run_record_reports_no_ml_filter(tmp_path: Path) -> None:
+    # The top-down engine applies no ML filter, so the run record never claims one, whatever the settings say.
+    settings = backtest_settings(ml_filter_enabled=True, ml_registry_path=tmp_path / "registry.json")
+    summary = run_backtest(settings, candles(), tmp_path / "reports", inputs={}, strategy="top_down_ob", funding=FUNDING)
+
+    assert read_report(summary, "backtest_run")["ml_filter_enabled"] is False

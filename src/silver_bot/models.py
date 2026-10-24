@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
 
 
 class SignalDirection(str, Enum):
@@ -88,13 +87,3 @@ class Trade:
             raise ValueError("Trade quantity must be positive")
         if self.stop_loss == self.entry_price:
             raise ValueError("Stop loss cannot equal entry price")
-
-
-@dataclass(frozen=True, slots=True)
-class LogEvent:
-    """Structured operational log event for persistence."""
-
-    level: str
-    message: str
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    context: dict[str, Any] = field(default_factory=dict)

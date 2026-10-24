@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import html
 import http.client
@@ -11,9 +12,15 @@ from pathlib import Path
 import pytest
 
 from silver_bot.config import AppConfig
-from silver_bot.monitoring.dashboard_server import BIND_HOST, SECURITY_HEADERS, DashboardServer, main, render_page
+from silver_bot.monitoring.dashboard_server import (
+    BIND_HOST,
+    SECURITY_HEADERS,
+    DashboardServer,
+    is_loopback_host,
+    main,
+    render_page,
+)
 from silver_bot.monitoring.status import PANEL_TITLES, collect_status
-from silver_bot.storage.sqlite import SQLiteStorage
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
 SECRETS = {
@@ -25,9 +32,7 @@ SECRETS = {
 
 
 def make_config(root: Path, **overrides) -> AppConfig:
-    values = {"database_path": root / "data" / "silver_bot.sqlite3"}
-    values.update(overrides)
-    return AppConfig(**values)
+    return AppConfig(**overrides)
 
 
 def write_audit(root: Path, *events: dict) -> None:
@@ -92,7 +97,8 @@ def test_title_header_and_mark(tmp_path):
     assert "<title>Silverbot status</title>" in page
     assert "<svg" in header and "Silverbot" in header
     assert "xmlns" not in page
-    assert "status &middot; read-only &middot; 127.0.0.1" in header
+    assert "status &middot; read-only</span>" in header
+    assert "127.0.0.1" not in header
 
 
 def test_root_block_holds_exactly_the_ten_tokens():
@@ -215,20 +221,26 @@ def server(tmp_path):
     instance.server_close()
 
 
-def call(server, method: str = "GET", path: str = "/", host: str | None = None):
+def call(server, method: str = "GET", path: str = "/", host: str | None = None, auth: str | None = None):
     port = server.server_address[1]
     connection = http.client.HTTPConnection(BIND_HOST, port, timeout=5)
-    connection.request(method, path, headers={"Host": host or f"127.0.0.1:{port}"})
+    headers = {"Host": host or f"127.0.0.1:{port}"}
+    if auth is not None:
+        headers["Authorization"] = auth
+    connection.request(method, path, headers=headers)
     response = connection.getresponse()
     body = response.read().decode("utf-8")
     connection.close()
     return response, body
 
 
-def call_raw(server, path: str):
+def call_raw(server, path: str, auth: str | None = None):
     port = server.server_address[1]
     connection = http.client.HTTPConnection(BIND_HOST, port, timeout=5)
-    connection.request("GET", path, headers={"Host": f"127.0.0.1:{port}"})
+    headers = {"Host": f"127.0.0.1:{port}"}
+    if auth is not None:
+        headers["Authorization"] = auth
+    connection.request("GET", path, headers=headers)
     response = connection.getresponse()
     body = response.read()
     connection.close()
@@ -341,14 +353,12 @@ def test_server_binds_loopback_only(server):
 
 
 def test_serving_changes_no_source_file(server, tmp_path):
-    database = tmp_path / "data" / "silver_bot.sqlite3"
-    SQLiteStorage(database).initialize()
     report = tmp_path / "reports" / "backtest_report.json"
     report.parent.mkdir()
     report.write_text("{}")
     write_audit(tmp_path, {"context": {}, "created_at": "2026-10-09T11:00:00+00:00",
                            "event_type": "bot_started", "level": "INFO", "message": "m"})
-    tracked = [database, report, tmp_path / "logs" / "audit.jsonl"]
+    tracked = [report, tmp_path / "logs" / "audit.jsonl"]
     before = {path: (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns) for path in tracked}
     files_before = {path for path in tmp_path.rglob("*")}
 
@@ -358,7 +368,7 @@ def test_serving_changes_no_source_file(server, tmp_path):
     after = {path: (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns) for path in tracked}
     assert after == before
     new_files = {path.name for path in tmp_path.rglob("*")} - {path.name for path in files_before}
-    assert new_files <= {database.name + "-wal", database.name + "-shm"}
+    assert new_files == set()
 
 
 def test_main_exits_2_when_port_is_taken(capsys):
@@ -408,6 +418,195 @@ def test_page_footer_shows_the_escaped_root(tmp_path):
 
     assert f"reading {html.escape(str(root))}" in page
     assert "a&amp;b dir" in page
+
+
+PUBLIC_HOST = "bot.up.railway.app"
+
+
+def basic(password: str, user: str = "anyone") -> str:
+    return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
+
+
+@pytest.fixture
+def gated(tmp_path):
+    """Loopback-bound server with a password and a public Host, like Railway behind its edge."""
+
+    config = make_config(tmp_path)
+    instance = DashboardServer(0, root=tmp_path, load=lambda: config, allowed_host=PUBLIC_HOST, password="pw")
+    thread = threading.Thread(target=instance.serve_forever, daemon=True)
+    thread.start()
+    yield instance
+    instance.shutdown()
+    instance.server_close()
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.5", "example.com", "", "::"])
+def test_non_loopback_host_without_password_is_refused(tmp_path, host):
+    for password in (None, ""):
+        with pytest.raises(ValueError, match="DASHBOARD_PASSWORD"):
+            DashboardServer(0, root=tmp_path, host=host, password=password)
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2", "localhost", "LOCALHOST", "::1"])
+def test_is_loopback_host_accepts_loopback_names(host):
+    assert is_loopback_host(host)
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "10.0.0.1", "bot.up.railway.app", "not an ip", ""])
+def test_is_loopback_host_rejects_everything_else(host):
+    assert not is_loopback_host(host)
+
+
+def test_non_loopback_host_with_password_may_bind(tmp_path):
+    instance = DashboardServer(0, root=tmp_path, host="0.0.0.0", password="pw")
+    try:
+        assert instance.server_address[0] == "0.0.0.0"
+    finally:
+        instance.server_close()
+
+
+def test_main_exits_2_for_non_loopback_host_without_password(monkeypatch, capsys):
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+
+    assert main(["--host", "0.0.0.0", "--port", "0"]) == 2
+    assert "DASHBOARD_PASSWORD" in capsys.readouterr().err
+
+
+def test_main_treats_a_blank_password_as_unset(monkeypatch, capsys):
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "   ")
+
+    assert main(["--host", "0.0.0.0", "--port", "0"]) == 2
+    assert "DASHBOARD_PASSWORD" in capsys.readouterr().err
+
+
+def test_main_reads_the_password_from_the_environment_only(monkeypatch, capsys, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "SENTINEL-PW")
+    seen = []
+
+    def stop(self):
+        seen.append(self.password)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(DashboardServer, "serve_forever", stop)
+
+    assert main(["--host", "0.0.0.0", "--port", "0", "--allowed-host", PUBLIC_HOST]) == 0
+
+    assert seen == [b"SENTINEL-PW"]
+    out = capsys.readouterr()
+    assert "password required" in out.out
+    assert "SENTINEL-PW" not in out.out + out.err
+
+
+def test_unauthenticated_get_gets_401_with_challenge_and_security_headers(gated):
+    for path in ("/", "/nope", "/fonts/IBMPlexMono-Regular.woff2"):
+        response, body = call(gated, path=path)
+
+        assert response.status == 401
+        assert response.getheader("WWW-Authenticate") == 'Basic realm="silverbot", charset="UTF-8"'
+        assert "caption" not in body and "generated" not in body
+        for name, value in SECURITY_HEADERS.items():
+            assert response.getheader(name) == value
+            assert len(response.msg.get_all(name)) == 1
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        basic("wrong"),
+        basic(""),
+        basic("pw ", user="u"),
+        "Basic !!!",
+        "Basic ",
+        "Basic",
+        "Bearer x",
+        "Bearer " + base64.b64encode(b"u:pw").decode(),
+        "Basic " + base64.b64encode(b"nocolon").decode(),
+        "Basic " + base64.b64encode(b"\xff\xfe").decode(),
+    ],
+)
+def test_wrong_or_malformed_credentials_get_401(gated, header):
+    response, _ = call(gated, auth=header)
+
+    assert response.status == 401
+    assert response.getheader("WWW-Authenticate") is not None
+
+
+def test_correct_password_gets_the_page_with_any_user_name(gated):
+    for user in ("anyone", "", "admin"):
+        response, body = call(gated, auth=basic("pw", user=user))
+
+        assert response.status == 200
+        assert "<caption>MODE &amp; SAFETY</caption>" in body
+        assert response.getheader("Content-Security-Policy") == SECURITY_HEADERS["Content-Security-Policy"]
+
+
+def test_password_with_a_colon_and_non_ascii_round_trips(tmp_path):
+    config = make_config(tmp_path)
+    instance = DashboardServer(0, root=tmp_path, load=lambda: config, password="p:\u00e9w")
+    threading.Thread(target=instance.serve_forever, daemon=True).start()
+    try:
+        assert call(instance, auth=basic("p:\u00e9w"))[0].status == 200
+        assert call(instance, auth=basic("p"))[0].status == 401
+    finally:
+        instance.shutdown()
+        instance.server_close()
+
+
+def test_fonts_and_404_need_auth_and_then_work(gated):
+    font, body = call_raw(gated, "/fonts/IBMPlexMono-Bold.woff2", auth=basic("pw"))
+    missing, _ = call(gated, path="/nope", auth=basic("pw"))
+
+    assert font.status == 200 and hashlib.sha256(body).hexdigest() == FONT_SHA256["/fonts/IBMPlexMono-Bold.woff2"]
+    assert missing.status == 404
+    assert call_raw(gated, "/fonts/IBMPlexMono-Bold.woff2")[0].status == 401
+
+
+@pytest.mark.parametrize("host", [PUBLIC_HOST, "BOT.UP.RAILWAY.APP", "Bot.Up.Railway.App"])
+def test_public_host_is_accepted_with_or_without_port(gated, host):
+    port = gated.server_address[1]
+
+    for value in (host, f"{host}:{port}"):
+        response, _ = call(gated, host=value, auth=basic("pw"))
+
+        assert response.status == 200
+
+
+@pytest.mark.parametrize("host", ["evil.example", "bot.up.railway.app.evil.example", "xbot.up.railway.app"])
+def test_foreign_host_gets_400_even_with_correct_auth(gated, host):
+    assert call(gated, host=host, auth=basic("pw"))[0].status == 400
+    assert call(gated, host=host)[0].status == 400
+
+
+def test_wrong_port_on_the_public_host_gets_400(gated):
+    other = gated.server_address[1] + 1
+
+    assert call(gated, host=f"{PUBLIC_HOST}:{other}", auth=basic("pw"))[0].status == 400
+
+
+def test_loopback_host_headers_still_work_when_gated(gated):
+    port = gated.server_address[1]
+
+    assert call(gated, host=f"localhost:{port}", auth=basic("pw"))[0].status == 200
+    assert call(gated, host=f"localhost:{port}")[0].status == 401
+
+
+def test_public_host_is_rejected_when_no_allowed_host_is_set(server):
+    assert call(server, host=PUBLIC_HOST)[0].status == 400
+
+
+def test_post_to_a_gated_server_is_still_405(gated):
+    response, _ = call(gated, "POST", auth=basic("pw"))
+
+    assert response.status == 405
+    assert response.getheader("Allow") == "GET"
+
+
+def test_loopback_without_password_needs_no_auth(server):
+    assert server.password is None
+    assert call(server)[0].status == 200
+    assert call_raw(server, "/fonts/IBMPlexMono-Regular.woff2")[0].status == 200
+    assert call(server, auth="Bearer garbage")[0].status == 200
 
 
 def test_main_startup_line_names_the_directory(monkeypatch, capsys, tmp_path):

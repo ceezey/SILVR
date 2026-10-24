@@ -6,11 +6,6 @@ logs/
 data/
 models/
 reports/
-*.sqlite
-*.sqlite3
-*.db
-*.db-wal
-*.db-shm
 .git/
 .venv/
 .pytest_cache/
