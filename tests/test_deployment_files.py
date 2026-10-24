@@ -117,3 +117,12 @@ def test_compose_backtest_services_read_candles_directory() -> None:
     compose = read("docker-compose.yaml")
 
     assert compose.count('command: ["python", "-m", "silver_bot", "--candles", "/app/data/candles"]') == 2
+
+
+def test_windows_runner_restarts_on_failure_and_stops_on_bad_configuration() -> None:
+    script = read("deploy/windows/run-bot.ps1")
+
+    assert r"& $python -m silver_bot *>> logs\bot-console.log" in script
+    assert "if ($code -eq 2) { break }" in script
+    assert "Start-Sleep -Seconds 30" in script
+    assert "LIVE_TRADING" not in script and "TRADING_MODE" not in script
