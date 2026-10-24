@@ -6,6 +6,7 @@ import pytest
 
 import silver_bot
 from silver_bot.backtest import ExitReason, build_backtest_config, run_backtest
+from silver_bot.backtest import runner
 from silver_bot.backtest.runner import WALK_FORWARD_WINDOWS
 from silver_bot.backtest.top_down_engine import TopDownBacktestEngine
 from silver_bot.config import AppConfig, TradingMode
@@ -247,7 +248,7 @@ def script_strategy(monkeypatch: pytest.MonkeyPatch, entry_minutes: set[int]) ->
     built = []
 
     class Scripted:
-        def __init__(self) -> None:
+        def __init__(self, **_: object) -> None:
             self.calls: list[tuple[datetime, bool]] = []
             built.append(self)
 
@@ -260,7 +261,7 @@ def script_strategy(monkeypatch: pytest.MonkeyPatch, entry_minutes: set[int]) ->
             plan = EntryPlan("long", candle.close_time, close, close - 5, close + 50, None, "scripted", None, "scripted")
             return StepResult(plan, None, ())
 
-    monkeypatch.setattr("silver_bot.backtest.top_down_engine.TopDownOBStrategy", Scripted)
+    monkeypatch.setattr(runner, "TopDownOBStrategy", Scripted)
     return built
 
 
@@ -273,9 +274,10 @@ def test_default_strategy_is_silver_bullet_and_reports_name(tmp_path: Path) -> N
     assert run["funding_file"] is None
 
 
-def test_top_down_requires_funding(tmp_path: Path) -> None:
+@pytest.mark.parametrize("strategy", ["top_down_ob", "top_down_ob_any_hour"])
+def test_top_down_requires_funding(tmp_path: Path, strategy: str) -> None:
     with pytest.raises(ValueError, match="funding"):
-        run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy="top_down_ob")
+        run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy=strategy)
 
 
 def test_unknown_strategy_raises(tmp_path: Path) -> None:
@@ -283,13 +285,14 @@ def test_unknown_strategy_raises(tmp_path: Path) -> None:
         run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy="nope")
 
 
-def test_top_down_segments_get_warmup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("strategy", ["top_down_ob", "top_down_ob_any_hour"])
+def test_top_down_segments_get_warmup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strategy: str) -> None:
     runs = spy_on_engine_runs(monkeypatch)
     data = candles()
 
     summary = run_backtest(
         backtest_settings(), data, tmp_path / "reports", inputs={"funding_file": "f.csv"},
-        strategy="top_down_ob", funding=FUNDING,
+        strategy=strategy, funding=FUNDING,
     )
 
     assert len(runs) == 4 + WALK_FORWARD_WINDOWS  # full, training, validation, final_test, then walk-forward
@@ -299,9 +302,24 @@ def test_top_down_segments_get_warmup(tmp_path: Path, monkeypatch: pytest.Monkey
     assert final[1] == data[:40]
     assert final[0] == data[40:]
     assert validation[1] == data[:30]
-    assert read_report(summary, "out_of_sample_validation_report")["strategy"] == "top_down_ob"
+    assert read_report(summary, "out_of_sample_validation_report")["strategy"] == strategy
     run = read_report(summary, "backtest_run")
-    assert (run["strategy"], run["funding_file"]) == ("top_down_ob", "f.csv")
+    assert (run["strategy"], run["funding_file"]) == (strategy, "f.csv")
+
+
+@pytest.mark.parametrize(
+    ("strategy", "expected"), [("top_down_ob_any_hour", True), ("top_down_ob", False)]
+)
+def test_any_hour_flag_reaches_every_strategy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strategy: str, expected: bool
+) -> None:
+    seen: list[bool] = []
+    real = runner.TopDownOBStrategy
+    monkeypatch.setattr(runner, "TopDownOBStrategy", lambda **kw: seen.append(kw.get("any_hour", False)) or real(**kw))
+
+    run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy=strategy, funding=FUNDING)
+
+    assert seen and all(flag is expected for flag in seen)  # full run, three segments and every walk-forward window
 
 
 def test_warmup_never_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
