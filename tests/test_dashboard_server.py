@@ -160,6 +160,57 @@ def test_sidebar_is_sticky_below_the_navbar_on_wide_screens():
     assert ".sidebar{position:sticky;top:48px;z-index:2;background:var(--canvas)}" in narrow
 
 
+def test_wide_sidebar_fills_the_height_below_the_navbar():
+    from silver_bot.monitoring.dashboard_server import CSS
+
+    rule = css_rule(".sidebar")
+    wide = CSS[CSS.index("@media (min-width:1280px)") : CSS.index("@media (max-width:1279px)")].replace("\n", "")
+    narrow = CSS[CSS.index("@media (max-width:1279px)") : CSS.index("@media (max-width:959px)")].replace("\n", "")
+
+    assert "height:calc(100vh - 80px)" in rule and "max-height" not in rule
+    assert "overflow-y:auto" in rule
+    assert "display:flex" in rule and "flex-direction:column" in rule
+    assert ".sidebar .row{flex:1 1 auto;flex-direction:column" in wide
+    assert ".sidebar section{flex:1 1 auto;display:flex;flex-direction:column}" in wide
+    assert "height:" not in narrow and "display:flex" not in narrow
+
+
+def test_note_is_a_paragraph_after_the_banner_table_inside_the_sidebar(tmp_path):
+    page = page_for(tmp_path)
+    text = "settings as loaded by this page, not the state of a running bot (G-3)"
+    start = page.index('<aside class="sidebar">')
+    end = page.index("</aside>")
+    sidebar = page[start:end]
+
+    assert page.count(text) == 1 and text in sidebar
+    note = '<p class="note"><span class="label">NOTE</span> ' + html.escape(text) + "</p>"
+    assert sidebar.count(note) == 1
+    assert sidebar.index("</table>") < sidebar.index(note) < sidebar.index("</section>")
+    assert '<th scope="row">NOTE</th>' not in page
+    assert "NOTE" not in page[end:]
+
+
+def test_only_the_banner_panel_gets_the_separate_note():
+    from silver_bot.monitoring.dashboard_server import _render_panel
+
+    panel = {
+        "title": "OTHER",
+        "rows": [{"label": "NOTE", "state": "plain", "text": "<b>x</b>"}],
+    }
+
+    assert 'class="note"' not in _render_panel(panel)
+    assert '<th scope="row">NOTE</th>' in _render_panel(panel)
+    split = _render_panel(panel, note_last=True)
+    assert '<th scope="row">NOTE</th>' not in split
+    assert '<p class="note"><span class="label">NOTE</span> &lt;b&gt;x&lt;/b&gt;</p></section>' in split
+
+
+def test_note_sits_at_the_bottom_of_the_flex_column():
+    rule = css_rule(".note")
+
+    assert "margin-top:auto" in rule
+
+
 def test_root_block_holds_exactly_the_ten_tokens():
     from silver_bot.monitoring.dashboard_server import CSS
 
