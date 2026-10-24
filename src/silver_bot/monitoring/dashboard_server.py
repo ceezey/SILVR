@@ -59,9 +59,10 @@ font-weight:700;font-style:normal;font-display:swap}
 *{box-sizing:border-box}
 body{margin:0;background:var(--canvas);color:var(--ink);
 font:12px/24px "IBM Plex Mono",ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace}
-main{max-width:120ch;margin:0 auto;padding:0 24px}
+main{padding:16px 24px 0}
 a{color:var(--accent)}
-header{display:flex;align-items:center;gap:16px;height:48px}
+header{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:16px;height:48px;padding:0 24px;
+background:var(--surface);border-bottom:1px solid var(--border)}
 .wordmark{font-size:14px;font-weight:700;color:var(--brand)}
 .meta{color:var(--muted)}
 .m-brand{fill:var(--brand)}.m-head{fill:var(--surface);stroke:var(--brand);stroke-width:3}
@@ -69,7 +70,6 @@ header{display:flex;align-items:center;gap:16px;height:48px}
 .m-ok{fill:var(--success);opacity:.28}.m-err{fill:var(--danger);opacity:.38}
 caption,.label{font-size:10px;font-weight:700;text-transform:uppercase;text-align:left}
 .row{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:16px}
-.banner{position:sticky;top:0;z-index:1;background:var(--canvas)}
 section{flex:1 1 38ch;min-width:0;background:var(--surface);border:1px solid var(--border);
 border-radius:4px;padding:0 16px}
 table{width:100%;border-collapse:collapse}
@@ -85,12 +85,16 @@ td.ok,td.warn,td.err,td.off{white-space:nowrap}
 .degraded,.next-strip{margin:0 0 16px}
 .next-strip{color:var(--accent)}
 .ok{color:var(--success)}.warn{color:var(--warning)}.err{color:var(--danger)}.off{color:var(--muted)}
-@media (max-width:1279px){main{padding:0 16px}}
+@media (min-width:1280px){.layout{display:grid;grid-template-columns:clamp(38ch,24vw,44ch) minmax(0,1fr);
+gap:16px;align-items:start}
+.sidebar{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 80px);overflow-y:auto}}
+@media (max-width:1279px){main{padding:16px 16px 0}header{padding:0 16px}
+.sidebar{position:sticky;top:48px;z-index:2;background:var(--canvas)}}
 @media (max-width:959px){.row{flex-direction:column}section{flex:1 1 auto;width:100%}}
 """
-# One header for every HTML page: the S-tier mark (DSD 2.4), wordmark and context.
+# One sticky navbar for every HTML page: the S-tier mark (DSD 2.4), wordmark and context.
 HEADER = (
-    '<header><svg viewBox="0 0 160 160" width="28" height="28" role="img" aria-label="Silverbot mark">'
+    '<header><svg viewBox="0 0 160 160" width="28" height="28" role="img" aria-label="SILVR mark">'
     '<rect class="m-brand" x="40" y="0" width="5" height="16" rx="2"/>'
     '<rect class="m-brand" x="115" y="0" width="5" height="16" rx="2"/>'
     '<rect class="m-head" x="1.5" y="15.5" width="157" height="141" rx="12"/>'
@@ -99,7 +103,7 @@ HEADER = (
     '<rect class="m-err" x="84" y="77" width="56" height="12"/>'
     '<rect class="m-ink" x="20" y="75" width="120" height="2"/>'
     "</svg>"
-    '<span class="wordmark">Silverbot</span>'
+    '<span class="wordmark">SILVR</span>'
     '<span class="meta">status &middot; read-only</span></header>'
 )
 NOT_FOUND_PAGE = string.Template(
@@ -108,12 +112,12 @@ NOT_FOUND_PAGE = string.Template(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Silverbot &middot; not found</title>
+<title>SILVR &middot; not found</title>
 <style>$css</style>
 </head>
 <body>
-<main>
 $header
+<main>
 <p>not found</p>
 <p><a href="/">back to the status page</a></p>
 </main>
@@ -127,15 +131,21 @@ PAGE = string.Template(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Silverbot status</title>
+<title>SILVR status</title>
 <style>$css</style>
 </head>
 <body>
-<main>
 $header
+<main>
+<div class="layout">
+<aside class="sidebar">
 $banner
+</aside>
+<div class="content">
 $degraded$ladder
 $strip$panels
+</div>
+</div>
 <footer>generated $generated_at &middot; read-only; reading $root &middot; reload to refresh</footer>
 </main>
 </body>

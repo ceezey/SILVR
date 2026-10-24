@@ -4,6 +4,7 @@ import html
 import http.client
 import json
 import os
+import re
 import socket
 import threading
 from datetime import UTC, datetime, timedelta
@@ -94,11 +95,69 @@ def test_title_header_and_mark(tmp_path):
     page = page_for(tmp_path)
     header = page[page.index("<header>") : page.index("</header>")]
 
-    assert "<title>Silverbot status</title>" in page
-    assert "<svg" in header and "Silverbot" in header
+    assert "<title>SILVR status</title>" in page
+    assert "<svg" in header and 'aria-label="SILVR mark"' in header
+    assert '<span class="wordmark">SILVR</span>' in header
+    assert "Silverbot" not in page
     assert "xmlns" not in page
     assert "status &middot; read-only</span>" in header
     assert "127.0.0.1" not in header
+    assert "<a " not in header and "<button" not in header
+
+
+def css_rule(selector: str) -> str:
+    from silver_bot.monitoring.dashboard_server import CSS
+
+    found = re.search(r"(?:^|[}\n])" + re.escape(selector) + r"\{([^}]*)\}", CSS)
+    assert found, f"no CSS rule for {selector}"
+    return found.group(1).replace("\n", "")
+
+
+def test_navbar_is_a_sticky_full_width_bar_outside_main(tmp_path):
+    rule = css_rule("header")
+
+    assert "position:sticky" in rule and "top:0" in rule and "z-index:" in rule
+    assert "height:48px" in rule
+    assert "background:var(--surface)" in rule and "border-bottom:1px solid var(--border)" in rule
+    page = page_for(tmp_path)
+    assert page.index("</header>") < page.index("<main>")
+
+
+def test_content_spans_the_window_with_gutters():
+    from silver_bot.monitoring.dashboard_server import CSS
+
+    assert "max-width:120ch" not in CSS
+    assert "padding:16px 24px 0" in css_rule("main")
+    assert "@media (max-width:1279px){main{padding:16px 16px 0}" in CSS
+
+
+def test_mode_and_safety_is_first_and_inside_the_sidebar(tmp_path):
+    page = page_for(tmp_path)
+
+    start = page.index('<aside class="sidebar">')
+    end = page.index("</aside>")
+    mode = page.index("<caption>MODE &amp; SAFETY</caption>")
+    assert start < mode < end
+    assert page.count("<caption>") == 6
+    assert page[start:end].count("<caption>") == 1
+    assert end < page.index('class="ladder"') < page.index('class="next-strip"')
+    for title in PANEL_TITLES[1:]:
+        other = page.index(f"<caption>{title.replace('&', '&amp;')}</caption>")
+        assert mode < other and end < other
+
+
+def test_sidebar_is_sticky_below_the_navbar_on_wide_screens():
+    from silver_bot.monitoring.dashboard_server import CSS
+
+    rule = css_rule(".sidebar")
+
+    assert "position:sticky" in rule and "align-self:start" in rule
+    assert "top:64px" in rule
+    wide = CSS[CSS.index("@media (min-width:1280px)") : CSS.index("@media (max-width:1279px)")]
+    assert ".sidebar{position:sticky" in wide.replace("\n", "") and "display:grid" in wide
+    assert "clamp(38ch,24vw,44ch)" in wide
+    narrow = CSS[CSS.index("@media (max-width:1279px)") : CSS.index("@media (max-width:959px)")].replace("\n", "")
+    assert ".sidebar{position:sticky;top:48px;z-index:2;background:var(--canvas)}" in narrow
 
 
 def test_root_block_holds_exactly_the_ten_tokens():
@@ -295,6 +354,11 @@ def test_404_is_branded_html_without_status_data(server):
     assert "not found" in body
     assert "MODE &amp; SAFETY" not in body
     assert "generated " not in body
+    assert "<title>SILVR &middot; not found</title>" in body
+    assert "Silverbot" not in body
+    assert body.index("<header>") < body.index("<main>")
+    assert '<span class="wordmark">SILVR</span>' in body
+    assert "status &middot; read-only</span>" in body
 
 
 def test_csp_is_exact_on_200_404_405_and_400(server):
