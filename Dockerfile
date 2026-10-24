@@ -14,16 +14,14 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY main.py ./
 COPY src ./src
-COPY deploy/railway/start.sh ./deploy/railway/start.sh
 
+# uid 1000 matches the host user that runs the systemd unit, so bind-mounted folders stay writable.
 RUN pip install --no-cache-dir . \
-    && useradd --create-home --shell /usr/sbin/nologin silverbot \
-    && mkdir -p /app/data /app/logs /app/models /app/reports /app/var \
+    && useradd --uid 1000 --create-home --shell /usr/sbin/nologin silverbot \
+    && mkdir -p /app/data /app/logs /app/models /app/reports \
     && chown -R silverbot:silverbot /app
 
 USER silverbot
-
-# No VOLUME line: Railway rejects it. Compose bind-mounts the directories; Railway mounts its volume at /app/var.
 
 HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
     CMD python -m silver_bot.health

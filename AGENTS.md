@@ -70,7 +70,7 @@ Four safety reviewers run before merge on the paths each guards, and one standar
 
 ## 3. Stack Currency & Deprecations
 
-**Verified 2026-10-21** against `pyproject.toml`, `Dockerfile` and the code at commit `c523f04`. The `ccxt` row was checked against the installed package (`ccxt.__version__` is 4.5.89) and a Docker build on the same day. **Updated 2026-10-24** for PostgreSQL and Railway: `psycopg` 3.3.6 checked against the installed package; the Postgres major version follows Railway's Postgres template (18).
+**Verified 2026-10-21** against `pyproject.toml`, `Dockerfile` and the code at commit `c523f04`. The `ccxt` row was checked against the installed package (`ccxt.__version__` is 4.5.89) and a Docker build on the same day. **Updated 2026-10-24** for PostgreSQL and **2026-10-25** for Oracle Cloud hosting (Railway dropped: Binance answers its regions with HTTP 451): `psycopg` 3.3.6 checked against the installed package; PostgreSQL is `postgres:18` in `docker-compose.yaml`.
 
 | Component | Pinned value | Source |
 |-----------|--------------|--------|
@@ -78,8 +78,8 @@ Four safety reviewers run before merge on the paths each guards, and one standar
 | Runtime dependencies | `dependencies = ["ccxt>=4.5,<5", "psycopg[binary]>=3.3,<4"]` (two declared; everything else is standard library) | `pyproject.toml` |
 | ccxt | `>=4.5,<5`; 4.5.89 installed and verified 2026-10-21. Used for public candle history through `ccxt.async_support.binanceusdm`, plus funding-rate history; the ccxt client never carries an API key or secret | `pyproject.toml`; `src/silver_bot/exchange/binance_futures.py` |
 | psycopg | `>=3.3,<4` with the `binary` extra; 3.3.6 installed 2026-10-24. The only database driver: `PostgresStorage` and the dashboard's read-only query | `pyproject.toml`; `src/silver_bot/storage/postgres.py`; `src/silver_bot/monitoring/status.py` |
-| PostgreSQL | 18 (`postgres:18` in `docker-compose.yaml`, matching Railway's Postgres template). Paper and demo require `DATABASE_URL`; backtests use none | `docker-compose.yaml` |
-| Hosting | Railway: Dockerfile build, `ON_FAILURE` restart with 10 retries, one volume at `/app/var` | `railway.toml`; `deploy/railway/start.sh` |
+| PostgreSQL | 18 (`postgres:18` in `docker-compose.yaml`). Paper and demo require `DATABASE_URL`; backtests use none | `docker-compose.yaml` |
+| Hosting | Oracle Cloud Always Free VM (Ampere A1, Ubuntu, home region outside the US): `docker compose` run by a systemd unit (restart on exit 1, stop on exit 2), logrotate for `logs/` | `deploy/systemd/silver-bot.service`; `deploy/logrotate/silver-bot`; `deploy/scripts/prepare-host.sh` |
 | Dev dependency | `pytest>=8.0` (optional extra `dev`) | `pyproject.toml` |
 | Build backend | `setuptools>=68` | `pyproject.toml` |
 | scikit-learn | Optional and undeclared; used only for the RandomForest and GradientBoosting models if it imports | [aia-silverbot.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SilverBot/aia-silverbot.md>) section 1.2 |

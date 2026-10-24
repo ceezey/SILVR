@@ -40,7 +40,7 @@ Honest summary on `dev` after merging the PRD-F2 to PRD-F5 batch (2026-10-14) wi
 
 ## Quick Start
 
-Set up the environment and run the tests by following [runbook-local-dev](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/runbook-local-dev.md>). Paper and demo modes store their state in PostgreSQL (`DATABASE_URL`), and the tests need one too (`TEST_DATABASE_URL`, default `postgresql://silverbot:silverbot@localhost:5432/silverbot`; `docker compose up -d postgres` starts one). Backtests need no database. The bot runs 24/7 on Railway (`railway.toml`, `deploy/railway/start.sh`); setup steps are in [ops-silverbot](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/ops-silverbot.md>).
+Set up the environment and run the tests by following [runbook-local-dev](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/runbook-local-dev.md>). Paper and demo modes store their state in PostgreSQL (`DATABASE_URL`), and the tests need one too (`TEST_DATABASE_URL`, default `postgresql://silverbot:silverbot@localhost:5432/silverbot`; `docker compose up -d postgres` starts one). Backtests need no database. The bot runs 24/7 on an Oracle Cloud Always Free server with `docker compose` and the systemd unit in `deploy/`; setup steps are in [ops-silverbot](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/ops-silverbot.md>).
 
 Backtest on Binance USD-M futures klines (full steps, including checksums, in [runbook-backtest](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/runbook-backtest.md>)):
 
