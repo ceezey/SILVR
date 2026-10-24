@@ -14,7 +14,7 @@ from silver_bot.ml import (
     ModelRegistry,
 )
 from silver_bot.models import Candle
-from silver_bot.storage import SQLiteStorage
+from silver_bot.storage import PostgresStorage
 from silver_bot.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
 
 
@@ -163,11 +163,11 @@ def test_ml_filter_disabled_leaves_signal_unchanged() -> None:
     assert "disabled" in result.reason
 
 
-def test_ml_prediction_is_stored_in_database(tmp_path: Path) -> None:
+def test_ml_prediction_is_stored_in_database(tmp_path: Path, database_url: str) -> None:
     candles = valid_long_setup()
     signal = strategy().evaluate(candles)
     result = active_filter(tmp_path, 0.72).evaluate(signal=signal, candles_at_signal=candles)
-    storage = SQLiteStorage(tmp_path / "silver_bot.sqlite3")
+    storage = PostgresStorage(database_url)
 
     storage.initialize()
     storage.save_ml_prediction(result)

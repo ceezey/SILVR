@@ -1,5 +1,5 @@
 """Storage layer."""
 
-from silver_bot.storage.sqlite import SQLiteStorage
+from silver_bot.storage.postgres import PostgresStorage
 
-__all__ = ["SQLiteStorage"]
+__all__ = ["PostgresStorage"]

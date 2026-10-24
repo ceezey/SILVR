@@ -1,6 +1,6 @@
 ---
 name: restraint-guardian
-description: Use on any non-trivial diff to Silver Bot, including every diff touching risk, execution, exchange, config, readiness.py, demo_readiness.py, backtest or ml, and every diff touching the live-gate surfaces (Dockerfile, docker-compose.yaml, .env.example, config*.yaml, main.py, src/silver_bot/main.py, src/silver_bot/__main__.py, src/silver_bot/health.py or deploy/**). Flags scope creep, speculative abstraction, unused configuration, new dependencies and reimplementation of existing helpers, while protecting safety checks and tests from being cut in the name of minimalism.
+description: Use on any non-trivial diff to Silver Bot, including every diff touching risk, execution, exchange, config, readiness.py, demo_readiness.py, backtest or ml, and every diff touching the live-gate surfaces (Dockerfile, docker-compose.yaml, .env.example, config*.yaml, main.py, src/silver_bot/main.py, src/silver_bot/__main__.py, src/silver_bot/health.py, railway.toml or deploy/**). Flags scope creep, speculative abstraction, unused configuration, new dependencies and reimplementation of existing helpers, while protecting safety checks and tests from being cut in the name of minimalism.
 tools: Read, Grep, Glob
 model: sonnet
 ---

@@ -1,8 +1,0 @@
-/opt/silver-bot/logs/*.log /opt/silver-bot/logs/*.jsonl {
-    daily
-    rotate 14
-    missingok
-    notifempty
-    compress
-    copytruncate
-}

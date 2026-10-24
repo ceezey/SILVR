@@ -11,7 +11,7 @@ from silver_bot.exchange import binance_futures
 from silver_bot.main import main
 from silver_bot.readiness import evaluate_live_readiness
 
-MODE_KEYS = ("MODE", "TRADING_MODE", "PAPER_TRADING", "DEMO_TRADING", "LIVE_TRADING", "KILL_SWITCH_ENABLED")
+MODE_KEYS = ("MODE", "TRADING_MODE", "PAPER_TRADING", "DEMO_TRADING", "LIVE_TRADING", "KILL_SWITCH_ENABLED", "DATABASE_URL")
 START_MS = int(datetime(2026, 1, 2, 14, 0, tzinfo=UTC).timestamp() * 1000)
 
 
@@ -21,6 +21,12 @@ def workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     for key in MODE_KEYS:
         monkeypatch.delenv(key, raising=False)
     return tmp_path
+
+
+@pytest.fixture
+def db(database_url: str, monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    return database_url
 
 
 def backtest_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,7 +89,7 @@ def klines(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return urls
 
 
-def test_paper_mode_runs_on_market_data_and_writes_report(workdir: Path, klines: list[str]) -> None:
+def test_paper_mode_runs_on_market_data_and_writes_report(workdir: Path, db: str, klines: list[str]) -> None:
     assert main(["--max-candles", "2"]) == 0
 
     assert {urlsplit(url).hostname for url in klines} == {"fapi.binance.com"}
@@ -101,7 +107,7 @@ def test_paper_mode_runs_on_market_data_and_writes_report(workdir: Path, klines:
 
 
 def test_demo_mode_reads_testnet_market_data(
-    workdir: Path, monkeypatch: pytest.MonkeyPatch, klines: list[str]
+    workdir: Path, db: str, monkeypatch: pytest.MonkeyPatch, klines: list[str]
 ) -> None:
     for key, value in DEMO_ENV.items():
         monkeypatch.setenv(key, value)
@@ -115,7 +121,7 @@ def test_demo_mode_reads_testnet_market_data(
     assert report["candles_processed"] == 1
 
 
-def test_market_data_failure_exits_1_and_audits(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_market_data_failure_exits_1_and_audits(workdir: Path, db: str, monkeypatch: pytest.MonkeyPatch) -> None:
     def unreachable(url: str) -> bytes:
         raise urllib.error.URLError("no route")
 
@@ -126,6 +132,24 @@ def test_market_data_failure_exits_1_and_audits(workdir: Path, monkeypatch: pyte
     events = audit_events(workdir)
     assert [event["event_type"] for event in events] == ["bot_started", "market_data_unavailable", "bot_stopped"]
     assert events[-1]["context"]["exit_code"] == 1
+
+
+def test_paper_mode_without_database_url_exits_2(workdir: Path, klines: list[str]) -> None:
+    assert main([]) == 2
+    assert klines == []
+
+
+def test_unreachable_database_exits_1_and_audits(
+    workdir: Path, monkeypatch: pytest.MonkeyPatch, klines: list[str]
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://bot:pw@127.0.0.1:1/silverbot?connect_timeout=2")
+
+    assert main([]) == 1
+
+    events = audit_events(workdir)
+    assert [event["event_type"] for event in events] == ["bot_started", "database_unavailable", "bot_stopped"]
+    assert all("pw@" not in json.dumps(event) for event in events)
+    assert klines == []
 
 
 def test_paper_mode_rejects_a_non_binance_base_url(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:

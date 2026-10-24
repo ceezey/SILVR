@@ -13,6 +13,8 @@ import asyncio
 import signal
 from pathlib import Path
 
+import psycopg
+
 from silver_bot.backtest.runner import STRATEGIES, run_backtest
 from silver_bot.config import AppConfig, ConfigError, TradingMode, load_config
 from silver_bot.data.csv_loader import CandleDataError, load_binance_kline_csv
@@ -20,7 +22,7 @@ from silver_bot.data.funding import FundingDataError, FundingSchedule, load_fund
 from silver_bot.exchange import BinanceFuturesAdapter
 from silver_bot.execution.runtime import run_paper_session
 from silver_bot.monitoring import StructuredAuditLogger
-from silver_bot.storage import SQLiteStorage
+from silver_bot.storage import PostgresStorage
 from silver_bot.utils.logging import get_logger
 
 
@@ -81,8 +83,6 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("configuration rejected: %s", exc)
         return EXIT_USAGE
 
-    storage = SQLiteStorage(config.database_path)
-    storage.initialize()
     audit = StructuredAuditLogger("logs/audit.jsonl")
     audit.log(
         "bot_started",
@@ -90,14 +90,13 @@ def main(argv: list[str] | None = None) -> int:
         context={
             "mode": config.mode.value,
             "paper_trading": config.paper_trading,
-            "database_path": str(config.database_path),
             "ml_filter_enabled": config.ml_filter_enabled,
             "telegram_enabled": config.telegram_enabled,
         },
     )
     exit_code = 1  # reported if dispatch raises; matches Python's uncaught-exception exit
     try:
-        exit_code = _dispatch(config, args, audit, storage)
+        exit_code = _dispatch(config, args, audit)
     finally:
         audit.log("bot_stopped", "Silver bot stopped", context={"mode": config.mode.value, "exit_code": exit_code})
     return exit_code
@@ -107,7 +106,6 @@ def _dispatch(
     config: AppConfig,
     args: argparse.Namespace,
     audit: StructuredAuditLogger,
-    storage: SQLiteStorage,
 ) -> int:
     if config.mode == TradingMode.BACKTEST:
         if args.max_candles is not None:
@@ -123,14 +121,13 @@ def _dispatch(
     if args.max_candles is not None and args.max_candles < 1:
         logger.error("--max-candles must be at least 1")
         return EXIT_USAGE
-    return _run_market_mode(config, args, audit, storage)
+    return _run_market_mode(config, args, audit)
 
 
 def _run_market_mode(
     config: AppConfig,
     args: argparse.Namespace,
     audit: StructuredAuditLogger,
-    storage: SQLiteStorage,
 ) -> int:
     """Run paper or demo mode until stopped; SIGTERM stops it like Ctrl+C."""
 
@@ -139,6 +136,16 @@ def _run_market_mode(
     except ValueError as exc:
         logger.error("configuration rejected: %s", exc)
         return EXIT_USAGE
+    if config.database_url is None:
+        logger.error("configuration rejected: DATABASE_URL is required in %s mode", config.mode.value)
+        return EXIT_USAGE
+    storage = PostgresStorage(config.database_url)
+    try:
+        storage.initialize()
+    except psycopg.Error as exc:
+        logger.error("database unavailable: %s", exc)
+        audit.log("database_unavailable", str(exc), context={"mode": config.mode.value}, level="ERROR")
+        return EXIT_FAILURE
     previous_handler = signal.signal(signal.SIGTERM, _interrupt)
     try:
         asyncio.run(

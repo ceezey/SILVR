@@ -9,7 +9,7 @@ from silver_bot.risk.engine import RiskManagementEngine
 from silver_bot.risk.models import RiskConfig
 
 if TYPE_CHECKING:
-    from silver_bot.storage import SQLiteStorage
+    from silver_bot.storage import PostgresStorage
 
 
 def build_risk_config(config: AppConfig) -> RiskConfig:
@@ -23,7 +23,7 @@ def build_risk_config(config: AppConfig) -> RiskConfig:
     )
 
 
-def build_risk_engine(config: AppConfig, storage: SQLiteStorage | None = None) -> RiskManagementEngine:
+def build_risk_engine(config: AppConfig, storage: PostgresStorage | None = None) -> RiskManagementEngine:
     """Return a risk engine whose limits and kill switch come from settings.
 
     `storage` must already be initialized. When given, daily loss, loss streak,
