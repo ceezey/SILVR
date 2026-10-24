@@ -27,7 +27,7 @@ def test_env_file_overrides_defaults_without_enabling_live(tmp_path: Path) -> No
             [
                 "TRADING_MODE=backtest",
                 "PAPER_TRADING=false",
-                "DATABASE_PATH=custom.sqlite3",
+                "DATABASE_URL=postgresql://bot:pw@db.internal:5432/silverbot",
                 "SYMBOL=ethusdt",
             ]
         ),
@@ -38,7 +38,7 @@ def test_env_file_overrides_defaults_without_enabling_live(tmp_path: Path) -> No
 
     assert config.mode == TradingMode.BACKTEST
     assert config.paper_trading is False
-    assert config.database_path == Path("custom.sqlite3")
+    assert config.database_url == "postgresql://bot:pw@db.internal:5432/silverbot"
     assert config.symbol == "ETHUSDT"
 
 
@@ -75,22 +75,37 @@ def test_partial_binance_credentials_are_rejected(tmp_path: Path) -> None:
         load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
 
 
-def test_database_path_cannot_escape_workspace_by_parent_traversal(tmp_path: Path) -> None:
-    env_path = tmp_path / ".env"
-    env_path.write_text("DATABASE_PATH=../silver_bot.sqlite3\n", encoding="utf-8")
-
-    with pytest.raises(ConfigError, match="parent directories"):
-        load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+@pytest.mark.parametrize("url", ["sqlite:///silver_bot.sqlite3", "data/silver_bot.sqlite3", "mysql://db/silverbot"])
+def test_database_url_must_be_postgres(tmp_path: Path, url: str) -> None:
+    with pytest.raises(ConfigError, match="postgresql://"):
+        load_config(env_path=tmp_path / ".env", yaml_path=tmp_path / "missing.yaml", environ={"DATABASE_URL": url})
 
 
-def test_database_path_cannot_be_existing_directory(tmp_path: Path) -> None:
-    env_path = tmp_path / ".env"
-    database_dir = tmp_path / "database-dir"
-    database_dir.mkdir()
-    env_path.write_text(f"DATABASE_PATH={database_dir}\n", encoding="utf-8")
+def test_malformed_database_url_is_a_config_error(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="not a valid URL"):
+        load_config(
+            env_path=tmp_path / ".env",
+            yaml_path=tmp_path / "missing.yaml",
+            environ={"DATABASE_URL": "postgresql://[bad/silverbot"},
+        )
 
-    with pytest.raises(ConfigError, match="not a directory"):
-        load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+def test_database_url_accepts_postgres_scheme_and_defaults_to_none(tmp_path: Path) -> None:
+    def load(environ: dict[str, str]):
+        return load_config(env_path=tmp_path / ".env", yaml_path=tmp_path / "missing.yaml", environ=environ)
+
+    assert load({}).database_url is None
+    assert load({"DATABASE_URL": "postgres://bot:pw@db/silverbot"}).database_url == "postgres://bot:pw@db/silverbot"
+
+
+def test_database_url_is_not_in_config_repr(tmp_path: Path) -> None:
+    config = load_config(
+        env_path=tmp_path / ".env",
+        yaml_path=tmp_path / "missing.yaml",
+        environ={"DATABASE_URL": "postgresql://bot:secret-password@db/silverbot"},
+    )
+
+    assert "secret-password" not in repr(config)
 
 
 def test_ml_thresholds_must_be_valid(tmp_path: Path) -> None:

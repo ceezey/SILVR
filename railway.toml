@@ -1,0 +1,10 @@
+# Railway service: the bot and the read-only dashboard in one container (one volume at /app/var).
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "sh /app/deploy/railway/start.sh"
+# Exit 1 (crash, lost market data or database) restarts; exit 2 (bad config) gives up after the retries.
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

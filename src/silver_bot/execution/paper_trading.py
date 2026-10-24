@@ -14,7 +14,7 @@ from silver_bot.models import Candle, SignalDirection
 from silver_bot.monitoring import StructuredAuditLogger
 from silver_bot.monitoring.telegram import TelegramAlerter
 from silver_bot.risk import RiskManagementEngine, RiskRequest
-from silver_bot.storage import SQLiteStorage
+from silver_bot.storage import PostgresStorage
 from silver_bot.strategy import SilverBulletStrategyEngine
 
 
@@ -39,7 +39,7 @@ class PaperTradingEngine:
         strategy: SilverBulletStrategyEngine | None = None,
         risk: RiskManagementEngine | None = None,
         executor: PaperExecutionEngine | None = None,
-        storage: SQLiteStorage | None = None,
+        storage: PostgresStorage | None = None,
         alerter: TelegramAlerter | None = None,
         ml_filter: MLProbabilityFilter | None = None,
         audit_logger: StructuredAuditLogger | None = None,

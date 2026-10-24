@@ -13,7 +13,6 @@ import pytest
 from silver_bot.config import AppConfig
 from silver_bot.monitoring.dashboard_server import BIND_HOST, SECURITY_HEADERS, DashboardServer, main, render_page
 from silver_bot.monitoring.status import PANEL_TITLES, collect_status
-from silver_bot.storage.sqlite import SQLiteStorage
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
 SECRETS = {
@@ -25,9 +24,7 @@ SECRETS = {
 
 
 def make_config(root: Path, **overrides) -> AppConfig:
-    values = {"database_path": root / "data" / "silver_bot.sqlite3"}
-    values.update(overrides)
-    return AppConfig(**values)
+    return AppConfig(**overrides)
 
 
 def write_audit(root: Path, *events: dict) -> None:
@@ -341,14 +338,12 @@ def test_server_binds_loopback_only(server):
 
 
 def test_serving_changes_no_source_file(server, tmp_path):
-    database = tmp_path / "data" / "silver_bot.sqlite3"
-    SQLiteStorage(database).initialize()
     report = tmp_path / "reports" / "backtest_report.json"
     report.parent.mkdir()
     report.write_text("{}")
     write_audit(tmp_path, {"context": {}, "created_at": "2026-10-09T11:00:00+00:00",
                            "event_type": "bot_started", "level": "INFO", "message": "m"})
-    tracked = [database, report, tmp_path / "logs" / "audit.jsonl"]
+    tracked = [report, tmp_path / "logs" / "audit.jsonl"]
     before = {path: (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns) for path in tracked}
     files_before = {path for path in tmp_path.rglob("*")}
 
@@ -358,7 +353,7 @@ def test_serving_changes_no_source_file(server, tmp_path):
     after = {path: (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns) for path in tracked}
     assert after == before
     new_files = {path.name for path in tmp_path.rglob("*")} - {path.name for path in files_before}
-    assert new_files <= {database.name + "-wal", database.name + "-shm"}
+    assert new_files == set()
 
 
 def test_main_exits_2_when_port_is_taken(capsys):

@@ -12,7 +12,7 @@ from silver_bot.monitoring import (
 )
 from silver_bot.monitoring.reports import build_daily_paper_report
 from silver_bot.risk import RiskConfig, RiskManagementEngine
-from silver_bot.storage import SQLiteStorage
+from silver_bot.storage import PostgresStorage
 from silver_bot.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
 
 
@@ -56,9 +56,9 @@ def strategy() -> SilverBulletStrategyEngine:
     )
 
 
-def test_paper_trading_opens_closes_stores_and_alerts(tmp_path) -> None:
+def test_paper_trading_opens_closes_stores_and_alerts(database_url) -> None:
     candles = [*valid_long_setup(), candle(9, 112, 141, 105, 140)]
-    storage = SQLiteStorage(tmp_path / "paper.sqlite3")
+    storage = PostgresStorage(database_url)
     telegram_client = InMemoryTelegramClient()
     alerter = TelegramAlerter(
         TelegramAlertConfig(enabled=True, chat_id="chat"),

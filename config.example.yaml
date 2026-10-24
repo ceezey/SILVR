@@ -7,7 +7,6 @@ trading:
   paper_trading: true
   demo_trading: false
 
-database_path: data/silver_bot.sqlite3
 exchange_name: binance_futures
 
 exchange:

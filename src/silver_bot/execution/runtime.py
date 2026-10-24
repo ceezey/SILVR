@@ -32,7 +32,7 @@ from silver_bot.ml import MLProbabilityFilter
 from silver_bot.models import Candle
 from silver_bot.monitoring import StructuredAuditLogger
 from silver_bot.risk import build_risk_engine
-from silver_bot.storage import SQLiteStorage
+from silver_bot.storage import PostgresStorage
 
 WARMUP_CANDLES = 500
 RECONNECT_POLICY = ReconnectPolicy(max_reconnects=5, reconnect_delay_seconds=10.0)
@@ -43,7 +43,7 @@ async def run_paper_session(
     config: AppConfig,
     *,
     adapter: ExchangeAdapter,
-    storage: SQLiteStorage,
+    storage: PostgresStorage,
     audit: StructuredAuditLogger,
     output_dir: Path,
     max_candles: int | None = None,
