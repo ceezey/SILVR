@@ -16,6 +16,10 @@ have already marked that level taken, and snapshotting every level on every 15m 
 (StructureTracker.last_taken): by the 15m updates of k-1 and k, and on 4H by the marks of k-1 and k and any 4H
 update closing in that span. Those are passed as untaken copies; detect_order_block's own
 `time < sweep.open_time` check drops the levels recorded after k-1 opened.
+
+any_hour=True implements TD-6a and TD-6b of [[2026-10-25-top-down-ob-any-hour-design]]: there is no session
+window, so a touch lives as long as its order block is active (the OB dying removes it) and plans carry the
+session name "any_hour". The default keeps touches and MSS entries inside the Silver Bullet windows.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from silver_bot.strategy.top_down.targets import atr, final_target, stage2_level
 _ATR_PERIOD = 14
 _HTF_ORDER = ("1d", "4h", "15m")  # tie order for HTF candles closing at the same time
 _MARK_ORDER = 0.5  # a 15m candle's 4H mark: after the 1D candle, before a 4H candle closing at the same time
+_ANY_HOUR = "any_hour"
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,9 +66,10 @@ class StepResult:
 class TopDownOBStrategy:
     """Per-1m state machine. It never sees the engine's position; the engine decides whether a plan is taken."""
 
-    def __init__(self, *, stop_atr_multiple: float = 0.25, min_reward_r: float = 3.0) -> None:
+    def __init__(self, *, stop_atr_multiple: float = 0.25, min_reward_r: float = 3.0, any_hour: bool = False) -> None:
         self._stop_atr_multiple = stop_atr_multiple
         self._min_reward_r = min_reward_r
+        self._any_hour = any_hour
         self._resamplers = [(tf, Resampler(tf)) for tf in _HTF_ORDER]
         self._daily = StructureTracker("1d")
         self._h4 = StructureTracker("4h")
@@ -79,7 +85,7 @@ class TopDownOBStrategy:
         self._book = OrderBookOfBlocks()
         self._sessions = SilverBulletSessionEngine(sessions=DEFAULT_SESSIONS)
         self._window: tuple[str | None, datetime | None] | None = None  # (name, start_at) of the current session
-        self._touched: list[OrderBlock] = []  # OBs touched in the current session window
+        self._touched: list[OrderBlock] = []  # OBs touched in the current session window (any_hour: still active)
 
     def step(self, candle_1m: Candle, *, trading: bool = True) -> StepResult:
         """With trading=False (warm-up, TD-20) the touch and MSS bookkeeping still runs and an MSS still consumes
@@ -90,12 +96,16 @@ class TopDownOBStrategy:
         best = self._book.best_touched(candle_1m)
         if best is None and not self._touched:
             return StepResult(None, None, events_15m)  # nothing to touch or trigger: skip the session lookup
-        session = self._sessions.evaluate(candle_1m.open_time)
-        window = (session.name, session.start_at) if session.is_active else None
+        if self._any_hour:
+            session_name, window = _ANY_HOUR, (_ANY_HOUR, None)
+        else:
+            session = self._sessions.evaluate(candle_1m.open_time)
+            session_name, window = session.name, (session.name, session.start_at) if session.is_active else None
         if window != self._window:
             self._window, self._touched = window, []
         if window is None:
             return StepResult(None, None, events_15m)
+        self._touched = [ob for ob in self._touched if ob.active]  # an invalidated OB takes its touch with it
         if best is not None and not any(ob is best for ob in self._touched):
             self._touched.append(best)
         if mss is None:
@@ -109,7 +119,7 @@ class TopDownOBStrategy:
         self._touched.remove(ob)
         if not trading:
             return StepResult(None, None, events_15m)
-        plan = self._plan(ob, candle_1m, mss, session.name)
+        plan = self._plan(ob, candle_1m, mss, session_name)
         if isinstance(plan, str):
             return StepResult(None, plan, events_15m)
         return StepResult(plan, None, events_15m)
