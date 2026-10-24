@@ -186,9 +186,9 @@ def test_candles_flag_outside_backtest_is_usage_error(workdir: Path) -> None:
     assert main(["--candles", "x.csv"]) == 2
 
 
-def test_strategy_and_funding_flags_outside_backtest_are_usage_errors(workdir: Path) -> None:
-    assert main(["--strategy", "top_down_ob"]) == 2
-    assert main(["--funding", "f.csv"]) == 2
+@pytest.mark.parametrize("flags", [["--strategy", "top_down_ob"], ["--strategy", "top_down_ob_any_hour"], ["--funding", "f.csv"]])
+def test_strategy_and_funding_flags_outside_backtest_are_usage_errors(workdir: Path, flags: list[str]) -> None:
+    assert main(flags) == 2
 
 
 def test_backtest_without_candles_is_usage_error(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -309,6 +309,27 @@ def test_cli_strategy_flag_and_funding_errors(
     assert main([*base, "--funding", str(good)]) == 0
     run = json.loads((workdir / "reports" / "backtest_run.json").read_text(encoding="utf-8"))
     assert (run["strategy"], run["funding_file"]) == ("top_down_ob", str(good))
+
+
+def test_cli_any_hour_strategy_needs_funding_and_runs(
+    workdir: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    backtest_env(monkeypatch)
+    csv_path = write_klines(workdir / "a.csv")
+    good = write_funding(
+        workdir / "funding.csv",
+        datetime(2026, 1, 2, 8, tzinfo=UTC),
+        datetime(2026, 1, 2, 16, tzinfo=UTC),
+        datetime(2026, 1, 3, tzinfo=UTC),
+    )
+    base = ["--candles", str(csv_path), "--strategy", "top_down_ob_any_hour"]
+
+    assert main(base) == 2
+    assert "--funding" in caplog.text
+
+    assert main([*base, "--funding", str(good)]) == 0
+    run = json.loads((workdir / "reports" / "backtest_run.json").read_text(encoding="utf-8"))
+    assert (run["strategy"], run["funding_file"]) == ("top_down_ob_any_hour", str(good))
 
 
 def test_cli_default_strategy_is_silver_bullet_and_ignores_funding(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:

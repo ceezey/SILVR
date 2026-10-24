@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 import psycopg
 
-from silver_bot.backtest.runner import STRATEGIES, run_backtest
+from silver_bot.backtest.runner import STRATEGIES, TOP_DOWN_STRATEGIES, run_backtest
 from silver_bot.config import AppConfig, ConfigError, TradingMode, load_config
 from silver_bot.data.csv_loader import CandleDataError, load_binance_kline_csv
 from silver_bot.data.funding import FundingDataError, FundingSchedule, load_funding_csv
@@ -69,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--funding",
         metavar="PATH",
-        help="Funding-rate CSV; required with --strategy top_down_ob, ignored by silver_bullet.",
+        help="Funding-rate CSV; required with the top-down strategies, ignored by silver_bullet.",
     )
     return parser
 
@@ -182,9 +182,9 @@ def _run_backtest(config: AppConfig, args: argparse.Namespace) -> int:
     if not args.candles:
         logger.error("backtest mode needs --candles")
         return EXIT_USAGE
-    top_down = args.strategy == "top_down_ob"
+    top_down = args.strategy in TOP_DOWN_STRATEGIES
     if top_down and not args.funding:
-        logger.error("--strategy top_down_ob needs --funding PATH")
+        logger.error("--strategy %s needs --funding PATH", args.strategy)
         return EXIT_USAGE
     try:
         loaded = load_binance_kline_csv(args.candles, symbol=config.symbol, timeframe=config.timeframe)

@@ -329,3 +329,85 @@ def test_final_target_is_15m_high_beyond_unfilled_bearish_fvg() -> None:
 
         assert (plan.side, plan.raw_entry) == ("long", 105.7)
         assert plan.final_target == target
+
+
+# any_hour (TD-6a, TD-6b): no session window, so a touch lives as long as its OB.
+def test_any_hour_touch_and_mss_outside_session_triggers() -> None:
+    ones, _ = day_rows()
+    early = NY_AM - timedelta(hours=1)  # 09:00 New York: outside every window; 9 candles stay inside one 15m period,
+    # so no 15m candle closes before the MSS and the ATR (hence the stop) matches the in-session run
+    candles = ones + minutes(early, DESCENT + [MSS])
+    in_session = entries(run(ones + minutes(NY_AM, DESCENT + [MSS])))[0]
+
+    plans = entries(run(candles, strategy=TopDownOBStrategy(any_hour=True)))
+
+    assert len(plans) == 1
+    plan = plans[0]
+    assert plan.session_name == "any_hour"
+    assert plan.signal_time == candles[-1].close_time
+    assert (plan.raw_entry, plan.stop, plan.final_target) == (in_session.raw_entry, in_session.stop, in_session.final_target)
+    assert (plan.ob.zone_low, plan.ob.zone_high) == ZONE
+    assert "in any_hour" in plan.reason
+    assert entries(run(candles)) == []  # the default variant still ignores it
+
+
+def test_short_mirror_any_hour() -> None:
+    ones, _ = day_rows()
+    candles = mirror(ones + minutes(NY_AM - timedelta(hours=1), DESCENT + [MSS]))
+    plans = entries(run(candles, strategy=TopDownOBStrategy(any_hour=True)))
+    assert len(plans) == 1 and plans[0].side == "short" and plans[0].session_name == "any_hour"
+
+
+EARLY = NY_AM - timedelta(hours=5)  # 05:00 New York, on a 15m boundary: outside every window
+# A steep 1m descent whose last candle (low 107.4) touches the zone high 107.5. The 1m bullish trigger is then
+# 107.9 (the high of the candle holding the broken swing low), so a later MSS keeps the reward above 3R.
+TOUCH: list[Row] = [(110.0, 110.1, 109.4, 109.5), (109.5, 109.6, 108.4, 108.5), (107.8, 107.9, 107.6, 107.7),
+                    (107.7, 107.8, 107.4, 107.5)]
+
+
+def test_any_hour_touch_survives_hours_away_from_zone() -> None:
+    ones, _ = day_rows()
+    drift: list[Row] = [(107.7, 107.8, 107.6, 107.7)] * 130  # lows stay above 107.5; no bullish break
+    mss: Row = (107.7, 108.1, 107.7, 108.0)  # the first close above the 1m trigger 107.9
+    candles = ones + minutes(EARLY, TOUCH + drift + [mss])
+
+    assert [i for i in bullish_1m_breaks(candles) if i >= len(ones) + len(TOUCH)] == [len(candles) - 1]
+    plans = entries(run(candles, strategy=TopDownOBStrategy(any_hour=True)))
+    assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
+    assert entries(run(candles)) == []
+
+
+def invalidated_touch_candles() -> list[Candle]:
+    """A touch, a 15m candle closing below the zone low 104.5 (the OB dies), then a bullish 1m MSS."""
+    ones, _ = day_rows()
+    pad: list[Row] = [(107.5, 107.5, 107.5, 107.5)] * (15 - len(TOUCH))  # fill the 15m period holding the touch
+    crash = expand_15m(EARLY + M15, [(107.5, 107.6, 104.0, 104.2)])
+    after: list[Row] = [(104.2, 108.0, 104.1, 107.9)]  # closes above the 1m trigger: a bullish MSS
+    candles = ones + minutes(EARLY, TOUCH + pad) + crash + minutes(EARLY + 2 * M15, after)
+    assert len(candles) - 1 in bullish_1m_breaks(candles)
+    return candles
+
+
+def test_any_hour_touch_dies_with_its_ob() -> None:
+    plans = entries(run(invalidated_touch_candles(), strategy=TopDownOBStrategy(any_hour=True)))
+
+    assert all((p.ob.zone_low, p.ob.zone_high) != ZONE for p in plans)
+
+
+def test_any_hour_drops_inactive_touched_obs() -> None:
+    strategy = TopDownOBStrategy(any_hour=True)
+    run(invalidated_touch_candles(), strategy=strategy)
+
+    assert strategy._touched == []
+
+
+def test_any_hour_warmup_touch_carries_into_trading() -> None:
+    ones, _ = day_rows()
+    start = EARLY
+    strategy = TopDownOBStrategy(any_hour=True)
+    run(ones + minutes(start, TOUCH), trading=False, strategy=strategy)
+
+    mss_candles = minutes(start + len(TOUCH) * M1, [(107.5, 108.1, 107.4, 108.0)])
+    plans = entries(run(mss_candles, strategy=strategy))
+
+    assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE

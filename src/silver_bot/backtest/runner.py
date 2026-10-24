@@ -22,10 +22,12 @@ from silver_bot.ml import MLFilterConfig
 from silver_bot.models import Candle
 from silver_bot.monitoring import StructuredAuditLogger
 from silver_bot.risk import RiskManagementEngine, build_risk_config
+from silver_bot.strategy.top_down import TopDownOBStrategy
 
 TRAINING_FRACTION = 0.6
 VALIDATION_FRACTION = 0.2
-STRATEGIES = ("silver_bullet", "top_down_ob")
+STRATEGIES = ("silver_bullet", "top_down_ob", "top_down_ob_any_hour")
+TOP_DOWN_STRATEGIES = ("top_down_ob", "top_down_ob_any_hour")
 WALK_FORWARD_WINDOWS = 4
 MONTE_CARLO_RUNS = 1000
 MONTE_CARLO_SEED = 7
@@ -81,23 +83,26 @@ def run_backtest(
 ) -> BacktestRunSummary:
     """Run the full-period backtest and a chronological out-of-sample split.
 
-    `top_down_ob` needs `funding`. Its full run has no warm-up; each segment is warmed up on every
-    candle before it, so the strategy has history without trading on it. `silver_bullet` ignores
-    `funding` and keeps its cold start per segment.
+    The top-down strategies (`top_down_ob`, `top_down_ob_any_hour`) need `funding`. Their full run has
+    no warm-up; each segment is warmed up on every candle before it, so the strategy has history
+    without trading on it. `silver_bullet` ignores `funding` and keeps its cold start per segment.
     """
 
     if strategy not in STRATEGIES:
         raise ValueError(f"unknown strategy {strategy!r}; expected one of {', '.join(STRATEGIES)}")
-    if strategy == "top_down_ob" and funding is None:
-        raise ValueError("strategy top_down_ob needs funding data")
+    if strategy in TOP_DOWN_STRATEGIES and funding is None:
+        raise ValueError(f"strategy {strategy} needs funding data")
     if strategy == "silver_bullet":
         funding = None
+    any_hour = strategy == "top_down_ob_any_hour"
     if not candles:
         raise ValueError("run_backtest needs at least one candle")
     directory = Path(output_dir)
     ordered = sorted(candles, key=lambda candle: candle.open_time)
 
-    full, full_kill_switch, full_config = _simulate(config, ordered, export_dir=directory, funding=funding)
+    full, full_kill_switch, full_config = _simulate(
+        config, ordered, export_dir=directory, funding=funding, any_hour=any_hour
+    )
 
     suite = BacktestValidationSuite()
     split = suite.chronological_split(
@@ -106,14 +111,14 @@ def run_backtest(
         validation_fraction=VALIDATION_FRACTION,
     )
     full_criteria = _criteria(full.metrics, full_config)
-    training = _segment(config, split.training, funding, ordered)
-    validation = _segment(config, split.validation, funding, ordered)
-    final_test = _segment(config, split.final_test, funding, ordered)
+    training = _segment(config, split.training, funding, ordered, any_hour=any_hour)
+    validation = _segment(config, split.validation, funding, ordered, any_hour=any_hour)
+    final_test = _segment(config, split.final_test, funding, ordered, any_hour=any_hour)
     # Walk-forward covers the training and validation span only, so the final
     # test set is evaluated exactly once, in its own segment above.
     research = [*split.training, *split.validation]
     windows = suite.walk_forward_windows(research, windows=WALK_FORWARD_WINDOWS)
-    walk_forward = [_segment(config, window, funding, ordered) for window in windows]
+    walk_forward = [_segment(config, window, funding, ordered, any_hour=any_hour) for window in windows]
     oos_path = directory / "out_of_sample_validation_report.json"
     _write_json(
         oos_path,
@@ -187,6 +192,7 @@ def _simulate(
     export_dir: Path | None,
     funding: FundingSchedule | None,
     warmup: Sequence[Candle] = (),
+    any_hour: bool,
 ) -> tuple[BacktestResult, dict[str, Any], BacktestConfig]:
     """Run one engine with its own simulated kill switch (and, for top-down, its own fresh strategy).
 
@@ -205,13 +211,21 @@ def _simulate(
             ).run(candles)
         else:
             result = TopDownBacktestEngine(
-                config=backtest_config, risk_engine=risk_engine, funding=funding
+                config=backtest_config,
+                risk_engine=risk_engine,
+                funding=funding,
+                strategy=TopDownOBStrategy(any_hour=any_hour),
             ).run(candles, warmup=warmup)
         return result, kill_switch.report(), backtest_config
 
 
 def _segment(
-    config: AppConfig, candles: list[Candle], funding: FundingSchedule | None, ordered: list[Candle]
+    config: AppConfig,
+    candles: list[Candle],
+    funding: FundingSchedule | None,
+    ordered: list[Candle],
+    *,
+    any_hour: bool,
 ) -> dict[str, Any]:
     if not candles:
         # No run means no metrics; costs are the BacktestConfig defaults, which
@@ -220,7 +234,9 @@ def _segment(
         return {"candles": 0, "start": None, "end": None, "metrics": None, "kill_switch": None, "criteria": criteria}
     # `candles` is a slice of `ordered`; everything before its first candle is warm-up history.
     warmup = ordered[: ordered.index(candles[0])] if funding is not None else ()
-    result, kill_switch, backtest_config = _simulate(config, candles, export_dir=None, funding=funding, warmup=warmup)
+    result, kill_switch, backtest_config = _simulate(
+        config, candles, export_dir=None, funding=funding, warmup=warmup, any_hour=any_hour
+    )
     return {
         "candles": len(candles),
         "start": candles[0].open_time.isoformat(),
