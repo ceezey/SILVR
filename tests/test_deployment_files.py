@@ -54,37 +54,54 @@ def test_compose_bot_services_use_the_local_postgres() -> None:
     compose = read("docker-compose.yaml")
 
     assert "image: postgres:18" in compose
-    assert "DATABASE_URL: postgresql://silverbot:silverbot@postgres:5432/silverbot" in compose
-    assert compose.count("condition: service_healthy") == 3
+    assert "DATABASE_URL: postgresql://silverbot:${POSTGRES_PASSWORD:-silverbot}@postgres:5432/silverbot" in compose
+    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silverbot}" in compose
+    assert '"127.0.0.1:${POSTGRES_PORT:-5432}:5432"' in compose
+    assert compose.count("condition: service_healthy") == 4
     assert "DATABASE_PATH" not in compose
 
 
-def test_dockerfile_has_no_volume_line_and_ships_the_railway_start_script() -> None:
+def test_compose_dashboard_is_loopback_only_on_the_host_network() -> None:
+    compose = read("docker-compose.yaml")
+    block = compose.split("\n  dashboard:\n", 1)[1].split("\n  paper:\n", 1)[0]
+
+    assert "network_mode: host" in block
+    assert "ports:" not in block
+    assert "--host" not in block
+    assert 'command: ["python", "-m", "silver_bot.monitoring.dashboard_server", "--port", "8765"]' in block
+
+
+def test_dockerfile_runs_as_uid_1000_without_a_volume_line() -> None:
     dockerfile = read("Dockerfile")
 
+    assert "useradd --uid 1000" in dockerfile
     assert not any(line.startswith("VOLUME") for line in dockerfile.splitlines())
-    assert "COPY deploy/railway/start.sh ./deploy/railway/start.sh" in dockerfile
     assert "DATABASE_PATH" not in dockerfile
 
 
-def test_railway_builds_the_dockerfile_and_restarts_only_on_failure() -> None:
-    railway = read("railway.toml")
+def test_systemd_service_runs_compose_paper_bot_and_dashboard() -> None:
+    service = read("deploy/systemd/silver-bot.service")
 
-    assert 'builder = "DOCKERFILE"' in railway
-    assert 'startCommand = "sh /app/deploy/railway/start.sh"' in railway
-    assert 'restartPolicyType = "ON_FAILURE"' in railway
-    assert "restartPolicyMaxRetries = 10" in railway
-    assert "LIVE_TRADING" not in railway and "TRADING_MODE" not in railway
+    assert "docker compose" in service
+    assert "up bot dashboard" in service
+    assert "TRADING_MODE=live" not in service
+    assert "User=ubuntu" in service
 
 
-def test_railway_start_script_runs_from_the_volume_and_execs_the_bot() -> None:
-    script = read("deploy/railway/start.sh")
-    lines = [line for line in script.splitlines() if line and not line.startswith("#")]
+def test_systemd_propagates_exit_code_and_stops_on_bad_configuration() -> None:
+    service = read("deploy/systemd/silver-bot.service")
 
-    assert b"\r" not in (ROOT / "deploy/railway/start.sh").read_bytes()
-    assert "cd /app/var" in lines
-    assert lines[-1] == "exec python -m silver_bot"
-    assert "LIVE_TRADING" not in script and "TRADING_MODE" not in script
+    assert "up bot dashboard --exit-code-from bot" in service
+    assert "RestartPreventExitStatus=2 78" in service
+
+
+def test_logrotate_covers_the_audit_log() -> None:
+    assert "/opt/silver-bot/logs/*.jsonl" in read("deploy/logrotate/silver-bot")
+
+
+def test_no_railway_files_remain() -> None:
+    assert not (ROOT / "railway.toml").exists()
+    assert not (ROOT / "deploy" / "railway").exists()
 
 
 def test_compose_bot_does_not_self_restart() -> None:
