@@ -66,8 +66,9 @@ def test_compose_dashboard_is_loopback_only_on_the_host_network() -> None:
     block = compose.split("\n  dashboard:\n", 1)[1].split("\n  paper:\n", 1)[0]
 
     assert "network_mode: host" in block
-    assert "ports:" not in block
+    assert "    ports:" not in block.splitlines()
     assert "--host" not in block
+    assert block.count(":ro") == 4
     assert 'command: ["python", "-m", "silver_bot.monitoring.dashboard_server", "--port", "8765"]' in block
 
 
@@ -83,7 +84,7 @@ def test_systemd_service_runs_compose_paper_bot_and_dashboard() -> None:
     service = read("deploy/systemd/silver-bot.service")
 
     assert "docker compose" in service
-    assert "up bot dashboard" in service
+    assert "ExecStartPre=-/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up -d dashboard" in service
     assert "TRADING_MODE=live" not in service
     assert "User=ubuntu" in service
 
@@ -91,7 +92,7 @@ def test_systemd_service_runs_compose_paper_bot_and_dashboard() -> None:
 def test_systemd_propagates_exit_code_and_stops_on_bad_configuration() -> None:
     service = read("deploy/systemd/silver-bot.service")
 
-    assert "up bot dashboard --exit-code-from bot" in service
+    assert "ExecStart=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up bot --exit-code-from bot" in service
     assert "RestartPreventExitStatus=2 78" in service
 
 

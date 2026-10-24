@@ -1,5 +1,7 @@
 #!/usr/bin/env sh
 set -eu
+# Work in the repo root (run as the ubuntu user, never with sudo: the folders must stay uid 1000).
+cd "$(dirname "$0")/../.."
 
 mkdir -p data logs models reports
 

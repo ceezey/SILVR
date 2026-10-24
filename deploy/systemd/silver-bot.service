@@ -8,10 +8,12 @@ Requires=docker.service
 Type=simple
 WorkingDirectory=/opt/silver-bot
 Environment=COMPOSE_PROJECT_NAME=silver-bot
-ExecStart=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up bot dashboard --exit-code-from bot
+# The dashboard runs detached ("-" ignores its failure): it must never stop or block the bot.
+ExecStartPre=-/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up -d dashboard
+ExecStart=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up bot --exit-code-from bot
 ExecStop=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml down
 Restart=always
-RestartSec=10
+RestartSec=30
 RestartPreventExitStatus=2 78
 # uid 1000, the same as the container's silverbot user, so the bind-mounted folders stay writable
 # (ubuntu on Oracle's Ubuntu image, opc on Oracle Linux).

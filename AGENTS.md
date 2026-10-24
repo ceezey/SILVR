@@ -70,7 +70,7 @@ Four safety reviewers run before merge on the paths each guards, and one standar
 
 ## 3. Stack Currency & Deprecations
 
-**Verified 2026-10-21** against `pyproject.toml`, `Dockerfile` and the code at commit `c523f04`. The `ccxt` row was checked against the installed package (`ccxt.__version__` is 4.5.89) and a Docker build on the same day. **Updated 2026-10-24** for PostgreSQL and **2026-10-25** for Oracle Cloud hosting (Railway dropped: Binance answers its regions with HTTP 451): `psycopg` 3.3.6 checked against the installed package; the Postgres major version follows Railway's Postgres template (18).
+**Verified 2026-10-21** against `pyproject.toml`, `Dockerfile` and the code at commit `c523f04`. The `ccxt` row was checked against the installed package (`ccxt.__version__` is 4.5.89) and a Docker build on the same day. **Updated 2026-10-24** for PostgreSQL and **2026-10-25** for Oracle Cloud hosting (Railway dropped: Binance answers its regions with HTTP 451): `psycopg` 3.3.6 checked against the installed package; PostgreSQL is `postgres:18` in `docker-compose.yaml`.
 
 | Component | Pinned value | Source |
 |-----------|--------------|--------|
