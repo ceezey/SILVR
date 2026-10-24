@@ -31,6 +31,17 @@ def database_url():
         connection.execute(f"DROP SCHEMA {schema} CASCADE")
 
 
+@pytest.fixture
+def fast_connect_timeout(monkeypatch):
+    """Unreachable-database tests: Windows waits out the whole timeout on a refused port."""
+
+    import silver_bot.monitoring.status as status
+    import silver_bot.storage.postgres as postgres
+
+    monkeypatch.setattr(postgres, "CONNECT_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(status, "CONNECT_TIMEOUT_SECONDS", 1)
+
+
 def execute(database_url: str, sql: str, params: tuple = ()) -> None:
     """Run one statement and commit; tests use it to write rows the bot would not."""
 

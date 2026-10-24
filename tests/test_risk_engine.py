@@ -302,7 +302,7 @@ def test_restart_does_not_reset_consecutive_loss_limit(storage) -> None:
     assert second.evaluate(request()).reason == "Max consecutive losses limit reached"
 
 
-def test_unreachable_database_halts_trading() -> None:
+def test_unreachable_database_halts_trading(fast_connect_timeout) -> None:
     engine = RiskManagementEngine(state_store=PostgresStorage("postgresql://bot:pw@127.0.0.1:1/silverbot"))
 
     decision = engine.evaluate(request())

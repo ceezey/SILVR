@@ -142,7 +142,7 @@ def test_paper_mode_without_database_url_exits_2(workdir: Path, klines: list[str
 
 
 def test_unreachable_database_exits_1_and_audits(
-    workdir: Path, monkeypatch: pytest.MonkeyPatch, klines: list[str]
+    workdir: Path, monkeypatch: pytest.MonkeyPatch, klines: list[str], fast_connect_timeout: None
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://bot:pw@127.0.0.1:1/silverbot?connect_timeout=2")
 

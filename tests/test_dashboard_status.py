@@ -467,7 +467,7 @@ def test_database_panels_empty_when_tables_missing(tmp_path, database_url):
     assert rows(status, POSITIONS)[0]["text"] == "none recorded (no paper run, G-3)"
 
 
-def test_unreachable_database_degrades_only_its_panels(tmp_path):
+def test_unreachable_database_degrades_only_its_panels(tmp_path, fast_connect_timeout):
     status = collect_db(tmp_path, "postgresql://bot:pw@127.0.0.1:1/silverbot?connect_timeout=2")
 
     assert rows(status, RISK)[0]["label"] == "unreadable"
