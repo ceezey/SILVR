@@ -20,6 +20,10 @@ update closing in that span. Those are passed as untaken copies; detect_order_bl
 any_hour=True implements TD-6a and TD-6b of [[2026-10-25-top-down-ob-any-hour-design]]: there is no session
 window, so a touch lives as long as its order block is active (the OB dying removes it) and plans carry the
 session name "any_hour". The default keeps touches and MSS entries inside the Silver Bullet windows.
+
+skip_inside=True implements TD-6d and TD-6e: all four trackers ignore inside candles, and the OB pattern is the
+last three 15m candles that counted, so an inside candle is never k and may sit between any two of them. ATR(14),
+the FVG scan, OB invalidation and the 4H marks still use every closed 15m candle.
 """
 
 from __future__ import annotations
@@ -66,22 +70,34 @@ class StepResult:
 class TopDownOBStrategy:
     """Per-1m state machine. It never sees the engine's position; the engine decides whether a plan is taken."""
 
-    def __init__(self, *, stop_atr_multiple: float = 0.25, min_reward_r: float = 3.0, any_hour: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        stop_atr_multiple: float = 0.25,
+        min_reward_r: float = 3.0,
+        any_hour: bool = False,
+        skip_inside: bool = False,
+        first_touch_only: bool = False,
+    ) -> None:
         self._stop_atr_multiple = stop_atr_multiple
         self._min_reward_r = min_reward_r
         self._any_hour = any_hour
+        self._skip_inside = skip_inside
+        self._first_touch_only = first_touch_only
         self._resamplers = [(tf, Resampler(tf)) for tf in _HTF_ORDER]
-        self._daily = StructureTracker("1d")
-        self._h4 = StructureTracker("4h")
-        self._m15 = StructureTracker("15m")
-        self._m1 = StructureTracker("1m")
+        self._daily = StructureTracker("1d", skip_inside=skip_inside)
+        self._h4 = StructureTracker("4h", skip_inside=skip_inside)
+        self._m15 = StructureTracker("15m", skip_inside=skip_inside)
+        self._m1 = StructureTracker("1m", skip_inside=skip_inside)
         # (close_time, levels taken) of the latest 4H updates and marks / 15m updates, for the sweep's liquidity
         # rebuild. On 4H, k-1 and k each add a mark, and only the 4H candles holding k-1 and k can close after k-1
         # opens and by k's close (entries arrive in close-time order): four entries cover everything taken since
-        # k-1 opened.
-        self._taken_4h: deque[tuple[datetime, list[SwingLevel]]] = deque(maxlen=4)
+        # k-1 opened. With skip_inside, inside 15m candles between k-1 and k add marks too, so the 4H entries are
+        # pruned by time instead (_prune_taken_4h); 15m entries are kept for counted candles only.
+        self._taken_4h: deque[tuple[datetime, list[SwingLevel]]] = deque(maxlen=None if skip_inside else 4)
         self._taken_15m: deque[tuple[datetime, list[SwingLevel]]] = deque(maxlen=2)
-        self._candles_15m: list[Candle] = []
+        self._candles_15m: list[Candle] = []  # every closed 15m candle (ATR, FVGs, the default OB pattern)
+        self._counted_15m: deque[Candle] = deque(maxlen=3)  # skip_inside: the OB pattern's counted candles (TD-6e)
         self._book = OrderBookOfBlocks()
         self._sessions = SilverBulletSessionEngine(sessions=DEFAULT_SESSIONS)
         self._window: tuple[str | None, datetime | None] | None = None  # (name, start_at) of the current session
@@ -150,17 +166,36 @@ class TopDownOBStrategy:
                 event = self._m15.update(candle)
                 if event is not None:
                     events.append(event)
-                self._taken_15m.append((candle.close_time, self._m15.last_taken))
+                counted = self._m15.last_counted  # always True without skip_inside
+                if counted:
+                    self._taken_15m.append((candle.close_time, self._m15.last_taken))  # inside ones take nothing
+                    if self._skip_inside:
+                        self._counted_15m.append(candle)
                 self._candles_15m.append(candle)
-                self._book.on_15m_close(candle)
-                self._detect()
+                self._book.on_15m_close(candle)  # invalidation stays on every 15m close
+                if counted:
+                    self._detect()
+                    if self._skip_inside:
+                        self._prune_taken_4h(candle)
         return tuple(events)
+
+    def _prune_taken_4h(self, counted: Candle) -> None:
+        """Drop the 4H entries no later rebuild reads: the next sweep is `counted` or later, and the rebuild only
+        reads entries closing after the sweep opens.
+
+        The inside candles that follow `counted` sit within its range, and its own mark came first, so their marks
+        can only take levels recorded after it opened, which detect_order_block drops by time. They add nothing,
+        but they (and the 4H closes during a long run of them) would push its mark out of a fixed-length deque.
+        """
+        while self._taken_4h and self._taken_4h[0][0] <= counted.open_time:
+            self._taken_4h.popleft()
 
     def _detect(self) -> None:
         bias = self._daily.trend
-        if bias == "none" or len(self._candles_15m) < 3:
+        pattern = self._counted_15m if self._skip_inside else self._candles_15m
+        if bias == "none" or len(pattern) < 3:
             return
-        prev2, sweep, engulf = self._candles_15m[-3:]
+        prev2, sweep, engulf = pattern[-3], pattern[-2], pattern[-1]
         side, reach = ("low", sweep.low) if bias == "bullish" else ("high", sweep.high)
 
         def levels_at_sweep_open(tracker: StructureTracker, taken: deque) -> list[SwingLevel]:
