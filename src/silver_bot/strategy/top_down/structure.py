@@ -30,6 +30,11 @@ Bookkeeping
   caller can rebuild the levels that were untaken a few updates ago (the order-block sweep check of TD-18).
 * Candle history: the (high, low) of every candle since the candle that set the current protected level,
   pruned after each break, so memory is bounded by the longest stretch between breaks.
+* Inside candles (opt-in skip_inside, TD-6d of [[2026-10-25-top-down-ob-any-hour-design]]): a candle whose
+  high <= and low >= the last counted candle's is part of that bigger candle and is ignored: no index, no
+  history, no take, no break, and update returns None. Any candle whose wick or body goes outside counts and
+  becomes the new reference. last_counted tells whether the most recent update counted (always True when
+  skip_inside is off).
 """
 
 from __future__ import annotations
@@ -63,8 +68,11 @@ class StructureEvent:
 
 
 class StructureTracker:
-    def __init__(self, timeframe: str) -> None:
+    def __init__(self, timeframe: str, *, skip_inside: bool = False) -> None:
         self.timeframe = timeframe
+        self._skip_inside = skip_inside
+        self._reference: tuple[float, float] | None = None  # (high, low) of the last counted candle
+        self.last_counted = True  # False when the most recent update was an ignored inside candle
         self.trend: Trend = "none"
         self._count = 0  # candles seen; the next candle's absolute index
         self._base = 0  # absolute index of _bars[0]
@@ -123,9 +131,16 @@ class StructureTracker:
     def update(self, candle: Candle) -> StructureEvent | None:
         if candle.close_time is None:
             raise ValueError("StructureTracker needs candles with a close_time")
+        self.last_taken = []
+        if self._skip_inside and self._reference is not None:
+            high, low = self._reference
+            if candle.high <= high and candle.low >= low:
+                self.last_counted = False
+                return None
+        self._reference = (candle.high, candle.low)
+        self.last_counted = True
         index = self._count
         self._count += 1
-        self.last_taken = []
         self._bars.append((candle.high, candle.low))
         if index == 0:
             self._swing_high, self._swing_low = candle.high, candle.low

@@ -6,6 +6,8 @@ from silver_bot.data import resample
 from silver_bot.models import Candle
 from silver_bot.strategy.top_down import StepResult, StructureTracker, TopDownOBStrategy, atr
 from silver_bot.strategy.top_down import strategy as strategy_module
+from silver_bot.strategy.top_down.order_blocks import OrderBlock
+from silver_bot.strategy.top_down.structure import SwingLevel
 
 M1 = timedelta(minutes=1)
 M15 = timedelta(minutes=15)
@@ -63,12 +65,13 @@ MSS: Row = (106.0, 107.3, 105.9, 107.2)
 
 
 def day_rows(
-    day2_close: float = 110.0, day0_rows: list[Row] = DAY0_ROWS, decline: list[Row] = DECLINE
+    day2_close: float = 110.0, day0_rows: list[Row] = DAY0_ROWS, decline: list[Row] = DECLINE,
+    setup: list[Row] = SETUP,
 ) -> tuple[list[Candle], list[Candle]]:
     """(1m candles, intended 15m candles) for days 0 to 2. day2_close is the close of day 2's last 15m candle."""
     last = [(108.3, max(108.5, day2_close + 0.2), min(108.2, day2_close - 0.2), day2_close)]
     late = DAY2 + timedelta(hours=23, minutes=45)
-    blocks = [(DAY0, day0_rows), (DAY1, DAY1_ROWS), (DAY2, decline + SETUP), (late, last)]
+    blocks = [(DAY0, day0_rows), (DAY1, DAY1_ROWS), (DAY2, decline + setup), (late, last)]
     ones = [c for start, rows in blocks for c in expand_15m(start, rows)]
     fifteens = [c for start, rows in blocks for c in as_15m(start, rows)]
     return ones, fifteens
@@ -247,12 +250,17 @@ SWEEP_4H: Row = (112.0, 112.2, 108.5, 110.0)  # low 108.5 under 109, close back 
 ENGULF_4H: Row = (110.0, 113.0, 109.8, 112.8)  # bullish, closes above both earlier highs (112.5)
 
 
-def obs_after_4h_sweep(prev2_low: float, start: datetime = DAY2) -> list:
-    """The active OBs once k closes, with k-2's low at prev2_low and k-2 opening at start."""
+def obs_after_4h_sweep(
+    prev2_low: float, start: datetime = DAY2, inside: tuple[Row, ...] = (), skip_inside: bool = False,
+    strategy: TopDownOBStrategy | None = None,
+) -> list:
+    """The active OBs once k closes, with k-2's low at prev2_low and k-2 opening at start (inside: 15m rows
+    between k-1 and k)."""
     days = [c for begin, rows in ((DAY0, DAY0_ROWS), (DAY1, DAY1_ROWS)) for c in expand_15m(begin, rows)]
-    day2 = expand_15m(start, [(112.0, 112.5, prev2_low, 112.0), SWEEP_4H, ENGULF_4H])
-    strategy = TopDownOBStrategy()
-    run(days + day2 + [one_minute(start + 3 * M15, 112.8, 112.8, 112.8, 112.8)], strategy=strategy)  # emits k
+    day2 = expand_15m(start, [(112.0, 112.5, prev2_low, 112.0), SWEEP_4H, *inside, ENGULF_4H])
+    strategy = strategy or TopDownOBStrategy(skip_inside=skip_inside)
+    emit_k = one_minute(start + (3 + len(inside)) * M15, 112.8, 112.8, 112.8, 112.8)
+    run(days + day2 + [emit_k], strategy=strategy)
     return strategy._book._active
 
 
@@ -411,3 +419,168 @@ def test_any_hour_warmup_touch_carries_into_trading() -> None:
     plans = entries(run(mss_candles, strategy=strategy))
 
     assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
+
+
+# Inside candles (TD-6d, TD-6e): a candle inside the last counted candle is ignored by structure and by the OB
+# pattern.
+def test_v2_trackers_skip_inside_on_every_timeframe() -> None:
+    strategy = TopDownOBStrategy(skip_inside=True)
+    trackers = (strategy._daily, strategy._h4, strategy._m15, strategy._m1)
+
+    assert all(tracker._skip_inside for tracker in trackers)
+    assert not any(tracker._skip_inside for tracker in (TopDownOBStrategy()._m15, TopDownOBStrategy()._m1))
+
+
+def test_v2_mss_ignores_swings_inside_a_big_1m_candle() -> None:
+    # A rally to 110.4 makes the 1m trend bullish (protected low 107.6) without touching the zone. The big candle
+    # wicks into the zone to 105 and closes back above 107.6; the next three sit inside it. Read on every candle,
+    # they make a bearish ChoCh and BoS, then close above 107.75, a high only inside candles made: a bullish MSS.
+    ones, _ = day_rows()
+    rally: list[Row] = [(110.0, 110.1, 108.6, 108.7), (108.7, 108.8, 107.6, 107.7), (107.7, 110.5, 107.7, 110.4)]
+    big: Row = (107.8, 108.5, 105.0, 107.7)
+    inside: list[Row] = [(107.7, 107.75, 107.0, 107.1), (107.1, 107.2, 106.4, 106.5), (106.5, 107.9, 106.4, 107.8)]
+    candles = ones + minutes(EARLY, rally + [big] + inside)
+    assert len(candles) - 1 in bullish_1m_breaks(candles)
+
+    assert len(entries(run(candles, strategy=TopDownOBStrategy(any_hour=True)))) == 1
+    assert entries(run(candles, strategy=TopDownOBStrategy(any_hour=True, skip_inside=True))) == []
+
+
+def test_v2_inside_15m_candle_cannot_complete_an_ob() -> None:
+    # In place of the engulfing candle, a bullish candle inside the sweep; the next counted candle is bearish.
+    inside_k: Row = (106.0, 106.9, 104.8, 106.8)
+    ones, _ = day_rows(setup=SETUP[:3] + [inside_k, (107.2, 107.3, 106.9, 107.0)])
+    strategy = TopDownOBStrategy(any_hour=True, skip_inside=True)
+    run(ones, strategy=strategy)
+
+    assert strategy._book._active == []
+    assert entries(run(minutes(NY_AM, DESCENT + [MSS]), strategy=strategy)) == []
+    control, _ = long_scenario()
+    assert len(entries(run(control, strategy=TopDownOBStrategy(any_hour=True, skip_inside=True)))) == 1
+
+
+def test_v2_ob_forms_across_inside_15m_candles() -> None:
+    inside: list[Row] = [(106.0, 106.9, 104.8, 106.5), (106.5, 106.8, 105.0, 106.2)]  # within the sweep 104.5-107
+    ones, _ = day_rows(setup=SETUP[:3] + inside + SETUP[3:])
+    strategy = TopDownOBStrategy(any_hour=True, skip_inside=True)
+    run(ones, strategy=strategy)
+
+    (ob,) = strategy._book._active
+    assert (ob.zone_low, ob.zone_high) == ZONE
+    assert (ob.swept.price, ob.rank) == (105.2, 1)  # the 15m protected low the sweep took
+    plans = entries(run(minutes(NY_AM, DESCENT + [MSS]), strategy=strategy))
+    assert len(plans) == 1 and plans[0].ob is ob
+
+
+def test_v2_4h_sweep_across_inside_15m_candles_forms_rank_2_ob() -> None:
+    # Three inside candles between k-1 and k add three 4H marks: k-1's mark, the one holding the swept 4H level,
+    # must still be in the liquidity rebuild when k closes.
+    inside = ((110.0, 110.5, 109.0, 110.2),) * 3
+
+    strategy = TopDownOBStrategy(skip_inside=True)
+    (ob,) = obs_after_4h_sweep(prev2_low=109.5, inside=inside, skip_inside=True, strategy=strategy)
+
+    assert (ob.rank, ob.swept.price) == (2, 109)
+    # Pruned by time at every counted 15m candle: only the entries closing after the last counted candle (k, the
+    # engulfing one) opened remain, which is k's own mark. Unpruned, every mark since day 0 would be held.
+    assert len(strategy._taken_4h) == 1
+    assert ob.swept.time == DAY1 + timedelta(hours=4) - timedelta(milliseconds=1)
+    assert (ob.zone_low, ob.zone_high) == (108.5, 112.5)
+
+
+# First touch only (TD-6f): leaving the zone and coming back, judged on counted 1m candles, kills the OB.
+def v2() -> TopDownOBStrategy:
+    return TopDownOBStrategy(any_hour=True, skip_inside=True, first_touch_only=True)
+
+
+LEAVE: Row = (107.6, 107.85, 107.6, 107.8)  # counted (high above the touch candle's), low above the zone high 107.5
+RETURN: Row = (107.8, 107.85, 107.45, 107.5)  # counted (low under the leave candle's), back in the zone
+MSS_1M: Row = (107.5, 108.1, 107.5, 108.0)  # the first close above the 1m trigger 107.9
+
+
+def test_v2_mss_during_first_touch_enters() -> None:
+    ones, _ = day_rows()
+    plans = entries(run(ones + minutes(NY_AM - timedelta(hours=1), DESCENT + [MSS]), strategy=v2()))
+
+    assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
+
+
+def test_v2_second_touch_kills_the_ob() -> None:
+    ones, _ = day_rows()
+    after = minutes(EARLY, TOUCH + [LEAVE, RETURN, MSS_1M])
+    assert len(ones) + len(after) - 1 in bullish_1m_breaks(ones + after)
+    strategy = v2()
+    run(ones, strategy=strategy)
+    (ob,) = strategy._book._active
+
+    assert entries(run(after, strategy=strategy)) == []
+    assert not ob.active
+    control = TopDownOBStrategy(any_hour=True, skip_inside=True)
+    assert len(entries(run(ones + after, strategy=control))) == 1
+
+
+def test_v2_inside_1m_candles_neither_leave_nor_retouch() -> None:
+    # Candle A wicks into the zone; B sits above the zone and C back in it, both inside A; then a counted MSS.
+    ones, _ = day_rows()
+    big: Row = (107.7, 107.85, 107.0, 107.2)
+    inside: list[Row] = [(107.6, 107.8, 107.55, 107.7), (107.7, 107.8, 107.1, 107.3)]
+    mss: Row = (107.3, 108.1, 107.2, 108.0)
+    candles = ones + minutes(EARLY, TOUCH[:3] + [big] + inside + [mss])
+
+    plans = entries(run(candles, strategy=v2()))
+
+    assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
+    # Counted, B leaves and C touches again.
+    assert entries(run(candles, strategy=TopDownOBStrategy(any_hour=True, first_touch_only=True))) == []
+
+
+def test_v2_retouch_candle_that_makes_the_mss_does_not_enter() -> None:
+    ones, _ = day_rows()
+    retouch_mss: Row = (107.8, 108.1, 107.4, 108.0)  # back in the zone and closing above the 1m trigger 107.9
+    candles = ones + minutes(EARLY, TOUCH + [LEAVE, retouch_mss])
+    assert len(candles) - 1 in bullish_1m_breaks(candles)
+
+    assert entries(run(candles, strategy=v2())) == []
+    assert len(entries(run(candles, strategy=TopDownOBStrategy(any_hour=True, skip_inside=True)))) == 1
+
+
+def test_v2_warmup_leave_carries_into_trading_second_touch() -> None:
+    ones, _ = day_rows()
+    strategy = v2()
+    run(ones + minutes(EARLY, TOUCH + [LEAVE]), trading=False, strategy=strategy)
+    (ob,) = strategy._book.active
+
+    results = run(minutes(EARLY + 5 * M1, [RETURN, MSS_1M]), strategy=strategy)  # trading=True
+
+    assert entries(results) == []
+    assert not ob.active  # the warm-up state remembered the touch and the leave, so the return killed it
+
+
+def test_v2_warmup_touch_then_mss_without_leaving_enters() -> None:
+    ones, _ = day_rows()
+    strategy = v2()
+    run(ones + minutes(EARLY, TOUCH), trading=False, strategy=strategy)
+
+    plans = entries(run(minutes(EARLY + len(TOUCH) * M1, [MSS_1M]), strategy=strategy))
+
+    assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
+
+
+def test_v2_second_touch_kills_only_the_ob_that_was_left() -> None:
+    # Built with a second OrderBlock added to the book after the HTF setup: rank 2 and a zone wider than every 1m
+    # candle below, so it is touched at once and never left. The real rank 1 OB (zone 104.5-107.5) is touched,
+    # left and touched again, so it dies; the MSS then enters on the rank 2 OB alone.
+    ones, _ = day_rows()
+    strategy = v2()
+    run(ones, strategy=strategy)
+    (low_ob,) = strategy._book.active
+    swept = SwingLevel(109.0, DAY1, "low")
+    high_ob = OrderBlock("bullish", 100.0, 115.0, SWEEP_LOW, low_ob.formed_at, 2, swept)
+    strategy._book.add(high_ob)
+
+    results = run(minutes(EARLY, TOUCH + [LEAVE, RETURN, MSS_1M]), strategy=strategy)
+
+    assert not low_ob.active
+    assert high_ob.rank > low_ob.rank
+    plans = entries(results)
+    assert len(plans) == 1 and plans[0].ob is high_ob
