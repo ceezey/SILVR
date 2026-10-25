@@ -19,7 +19,8 @@ update closing in that span. Those are passed as untaken copies; detect_order_bl
 
 any_hour=True implements TD-6a and TD-6b of [[2026-10-25-top-down-ob-any-hour-design]]: there is no session
 window, so a touch lives as long as its order block is active (the OB dying removes it) and plans carry the
-session name "any_hour". The default keeps touches and MSS entries inside the Silver Bullet windows.
+session name "any_hour". The default keeps touches and MSS entries inside the Silver Bullet windows. With
+first_touch_only (TD-6f) a touch ends earlier: the OB is dead after a second touch by a counted 1m candle.
 
 skip_inside=True implements TD-6d and TD-6e: all four trackers ignore inside candles, and the OB pattern is the
 last three 15m candles that counted, so an inside candle is never k and may sit between any two of them. ATR(14),
@@ -29,6 +30,8 @@ first_touch_only=True implements TD-6f: an OB is touched by the first 1m candle 
 zone (counted or inside). Then a counted 1m candle off the zone leaves it, and a later counted one on the zone is a
 second touch that kills it (dropped from the book) before the MSS check, even on the MSS candle. Inside 1m
 candles neither leave nor touch again. Every active OB is tracked, not only the best-ranked one touched.
+first_touch_only is meant to be used with any_hour: a session window resets the touch lists when it changes, which
+would re-arm touches.
 """
 
 from __future__ import annotations
@@ -106,7 +109,10 @@ class TopDownOBStrategy:
         self._book = OrderBookOfBlocks()
         self._sessions = SilverBulletSessionEngine(sessions=DEFAULT_SESSIONS)
         self._window: tuple[str | None, datetime | None] | None = None  # (name, start_at) of the current session
-        self._touched: list[OrderBlock] = []  # OBs touched in the current session window (any_hour: still active)
+        # OBs touched in the current session window. any_hour: a touch lives while its OB is active (TD-6b); with
+        # first_touch_only an OB is dead after a second touch by a counted 1m candle (TD-6f). Use that flag only with
+        # any_hour: a session window resets this list and would re-arm touches.
+        self._touched: list[OrderBlock] = []
         self._left: list[OrderBlock] = []  # first_touch_only: touched OBs a counted 1m candle has since left
 
     def step(self, candle_1m: Candle, *, trading: bool = True) -> StepResult:

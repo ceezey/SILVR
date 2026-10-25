@@ -295,3 +295,20 @@ def test_inside_candle_takes_no_level() -> None:
     assert not tracker.last_counted
     assert tracker.last_taken == []
     assert [level.price for level in tracker.untaken_levels("high")] == [12]
+
+
+def test_inside_test_is_inclusive_on_both_sides() -> None:
+    # Reference after UP_LEG is (13, 10.5). A candle equal to it on one or both sides is inside (high <=, low >=).
+    for high, low in ((13, 10.5), (13, 11), (12, 10.5)):
+        tracker = StructureTracker("1d", skip_inside=True)
+        feed(tracker, UP_LEG)
+        before = (tracker.bullish_trigger, tracker.bearish_trigger, tracker.trend, tracker.untaken_levels("high"))
+
+        assert tracker.update(candle(5, high, low, 11.5)) is None
+        assert not tracker.last_counted
+        assert tracker.last_taken == []
+        assert (tracker.bullish_trigger, tracker.bearish_trigger, tracker.trend, tracker.untaken_levels("high")) == before
+
+        # The reference did not move: a candle inside (13, 10.5) but outside (high, low) is still skipped.
+        assert tracker.update(candle(6, 12.9, 10.6, 11.5)) is None
+        assert not tracker.last_counted
