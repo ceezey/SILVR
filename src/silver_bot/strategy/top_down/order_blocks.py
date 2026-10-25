@@ -75,6 +75,11 @@ def detect_order_block(
     return None
 
 
+def overlaps(ob: OrderBlock, candle: Candle) -> bool:
+    """The candle's range overlaps the OB's zone: a touch."""
+    return candle.low <= ob.zone_high and candle.high >= ob.zone_low
+
+
 class OrderBookOfBlocks:
     """Active order blocks. Inactive ones are dropped so best_touched, run on every 1m candle, stays cheap."""
 
@@ -96,11 +101,15 @@ class OrderBookOfBlocks:
     def consume(self, ob: OrderBlock) -> None:
         self._drop(lambda kept: kept is ob)
 
+    @property
+    def active(self) -> tuple[OrderBlock, ...]:
+        return tuple(self._active)
+
     def best_touched(self, candle_1m: Candle) -> OrderBlock | None:
         """Highest-rank active OB whose zone the candle's range overlaps; the newest formed_at at equal rank."""
         best = None
         for ob in self._active:
-            if candle_1m.low <= ob.zone_high and candle_1m.high >= ob.zone_low:
+            if overlaps(ob, candle_1m):
                 if best is None or (ob.rank, ob.formed_at) > (best.rank, best.formed_at):
                     best = ob
         return best

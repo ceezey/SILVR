@@ -479,3 +479,59 @@ def test_v2_4h_sweep_across_inside_15m_candles_forms_rank_2_ob() -> None:
     assert (ob.rank, ob.swept.price) == (2, 109)
     assert ob.swept.time == DAY1 + timedelta(hours=4) - timedelta(milliseconds=1)
     assert (ob.zone_low, ob.zone_high) == (108.5, 112.5)
+
+
+# First touch only (TD-6f): leaving the zone and coming back, judged on counted 1m candles, kills the OB.
+def v2() -> TopDownOBStrategy:
+    return TopDownOBStrategy(any_hour=True, skip_inside=True, first_touch_only=True)
+
+
+LEAVE: Row = (107.6, 107.85, 107.6, 107.8)  # counted (high above the touch candle's), low above the zone high 107.5
+RETURN: Row = (107.8, 107.85, 107.45, 107.5)  # counted (low under the leave candle's), back in the zone
+MSS_1M: Row = (107.5, 108.1, 107.5, 108.0)  # the first close above the 1m trigger 107.9
+
+
+def test_v2_mss_during_first_touch_enters() -> None:
+    ones, _ = day_rows()
+    plans = entries(run(ones + minutes(NY_AM - timedelta(hours=1), DESCENT + [MSS]), strategy=v2()))
+
+    assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
+
+
+def test_v2_second_touch_kills_the_ob() -> None:
+    ones, _ = day_rows()
+    after = minutes(EARLY, TOUCH + [LEAVE, RETURN, MSS_1M])
+    assert len(ones) + len(after) - 1 in bullish_1m_breaks(ones + after)
+    strategy = v2()
+    run(ones, strategy=strategy)
+    (ob,) = strategy._book._active
+
+    assert entries(run(after, strategy=strategy)) == []
+    assert not ob.active
+    control = TopDownOBStrategy(any_hour=True, skip_inside=True)
+    assert len(entries(run(ones + after, strategy=control))) == 1
+
+
+def test_v2_inside_1m_candles_neither_leave_nor_retouch() -> None:
+    # Candle A wicks into the zone; B sits above the zone and C back in it, both inside A; then a counted MSS.
+    ones, _ = day_rows()
+    big: Row = (107.7, 107.85, 107.0, 107.2)
+    inside: list[Row] = [(107.6, 107.8, 107.55, 107.7), (107.7, 107.8, 107.1, 107.3)]
+    mss: Row = (107.3, 108.1, 107.2, 108.0)
+    candles = ones + minutes(EARLY, TOUCH[:3] + [big] + inside + [mss])
+
+    plans = entries(run(candles, strategy=v2()))
+
+    assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
+    # Counted, B leaves and C touches again.
+    assert entries(run(candles, strategy=TopDownOBStrategy(any_hour=True, first_touch_only=True))) == []
+
+
+def test_v2_retouch_candle_that_makes_the_mss_does_not_enter() -> None:
+    ones, _ = day_rows()
+    retouch_mss: Row = (107.8, 108.1, 107.4, 108.0)  # back in the zone and closing above the 1m trigger 107.9
+    candles = ones + minutes(EARLY, TOUCH + [LEAVE, retouch_mss])
+    assert len(candles) - 1 in bullish_1m_breaks(candles)
+
+    assert entries(run(candles, strategy=v2())) == []
+    assert len(entries(run(candles, strategy=TopDownOBStrategy(any_hour=True, skip_inside=True)))) == 1

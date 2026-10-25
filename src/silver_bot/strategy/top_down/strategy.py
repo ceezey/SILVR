@@ -24,6 +24,11 @@ session name "any_hour". The default keeps touches and MSS entries inside the Si
 skip_inside=True implements TD-6d and TD-6e: all four trackers ignore inside candles, and the OB pattern is the
 last three 15m candles that counted, so an inside candle is never k and may sit between any two of them. ATR(14),
 the FVG scan, OB invalidation and the 4H marks still use every closed 15m candle.
+
+first_touch_only=True implements TD-6f: an OB is touched by the first 1m candle after it forms that overlaps its
+zone (counted or inside). Then a counted 1m candle off the zone leaves it, and a later counted one on the zone is a
+second touch that kills it (dropped from the book) before the MSS check, even on the MSS candle. Inside 1m
+candles neither leave nor touch again. Every active OB is tracked, not only the best-ranked one touched.
 """
 
 from __future__ import annotations
@@ -37,7 +42,7 @@ from silver_bot.data.resample import Resampler
 from silver_bot.models import Candle
 from silver_bot.strategy.models import FairValueGapDirection
 from silver_bot.strategy.sessions import DEFAULT_SESSIONS, SilverBulletSessionEngine
-from silver_bot.strategy.top_down.order_blocks import OrderBlock, OrderBookOfBlocks, detect_order_block
+from silver_bot.strategy.top_down.order_blocks import OrderBlock, OrderBookOfBlocks, detect_order_block, overlaps
 from silver_bot.strategy.top_down.structure import StructureEvent, StructureTracker, SwingLevel
 from silver_bot.strategy.top_down.targets import atr, final_target, stage2_level, unfilled_fvgs
 
@@ -102,6 +107,7 @@ class TopDownOBStrategy:
         self._sessions = SilverBulletSessionEngine(sessions=DEFAULT_SESSIONS)
         self._window: tuple[str | None, datetime | None] | None = None  # (name, start_at) of the current session
         self._touched: list[OrderBlock] = []  # OBs touched in the current session window (any_hour: still active)
+        self._left: list[OrderBlock] = []  # first_touch_only: touched OBs a counted 1m candle has since left
 
     def step(self, candle_1m: Candle, *, trading: bool = True) -> StepResult:
         """With trading=False (warm-up, TD-20) the touch and MSS bookkeeping still runs and an MSS still consumes
@@ -119,11 +125,13 @@ class TopDownOBStrategy:
             session_name = session.name
             window = (session.name, session.start_at) if session.is_active else None
         if window != self._window:
-            self._window, self._touched = window, []
+            self._window, self._touched, self._left = window, [], []
         if window is None:
             return StepResult(None, None, events_15m)
+        if self._first_touch_only:
+            self._track_touches(candle_1m)
         self._touched = [ob for ob in self._touched if ob.active]  # an invalidated OB takes its touch with it
-        if best is not None and not any(ob is best for ob in self._touched):
+        if not self._first_touch_only and best is not None and not any(ob is best for ob in self._touched):
             self._touched.append(best)
         if mss is None:
             return StepResult(None, None, events_15m)
@@ -178,6 +186,23 @@ class TopDownOBStrategy:
                     if self._skip_inside:
                         self._prune_taken_4h(candle)
         return tuple(events)
+
+    def _track_touches(self, candle_1m: Candle) -> None:
+        """TD-6f: first touch, leave and second touch for every active OB (see the module docstring)."""
+        counted = self._m1.last_counted
+        self._left = [ob for ob in self._left if ob.active]
+        for ob in self._book.active:
+            on_zone = overlaps(ob, candle_1m)
+            if not any(touched is ob for touched in self._touched):
+                if on_zone:
+                    self._touched.append(ob)
+            elif not counted:
+                continue  # an inside candle is part of the candle it sits in
+            elif any(left is ob for left in self._left):
+                if on_zone:
+                    self._book.consume(ob)  # second touch: dead for entries, dropped like a consumed OB
+            elif not on_zone:
+                self._left.append(ob)
 
     def _prune_taken_4h(self, counted: Candle) -> None:
         """Drop the 4H entries no later rebuild reads: the next sweep is `counted` or later, and the rebuild only
