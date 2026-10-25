@@ -26,8 +26,8 @@ from silver_bot.strategy.top_down import TopDownOBStrategy
 
 TRAINING_FRACTION = 0.6
 VALIDATION_FRACTION = 0.2
-STRATEGIES = ("silver_bullet", "top_down_ob", "top_down_ob_any_hour")
-TOP_DOWN_STRATEGIES = ("top_down_ob", "top_down_ob_any_hour")
+STRATEGIES = ("silver_bullet", "top_down_ob", "top_down_ob_v2")
+TOP_DOWN_STRATEGIES = ("top_down_ob", "top_down_ob_v2")
 WALK_FORWARD_WINDOWS = 4
 MONTE_CARLO_RUNS = 1000
 MONTE_CARLO_SEED = 7
@@ -83,7 +83,7 @@ def run_backtest(
 ) -> BacktestRunSummary:
     """Run the full-period backtest and a chronological out-of-sample split.
 
-    The top-down strategies (`top_down_ob`, `top_down_ob_any_hour`) need `funding`. Their full run has
+    The top-down strategies (`top_down_ob`, `top_down_ob_v2`) need `funding`. Their full run has
     no warm-up; each segment is warmed up on every candle before it, so the strategy has history
     without trading on it. `silver_bullet` ignores `funding` and keeps its cold start per segment.
     """
@@ -94,14 +94,14 @@ def run_backtest(
         raise ValueError(f"strategy {strategy} needs funding data")
     if strategy == "silver_bullet":
         funding = None
-    any_hour = strategy == "top_down_ob_any_hour"
+    v2 = strategy == "top_down_ob_v2"
     if not candles:
         raise ValueError("run_backtest needs at least one candle")
     directory = Path(output_dir)
     ordered = sorted(candles, key=lambda candle: candle.open_time)
 
     full, full_kill_switch, full_config = _simulate(
-        config, ordered, export_dir=directory, funding=funding, any_hour=any_hour
+        config, ordered, export_dir=directory, funding=funding, v2=v2
     )
 
     suite = BacktestValidationSuite()
@@ -111,14 +111,14 @@ def run_backtest(
         validation_fraction=VALIDATION_FRACTION,
     )
     full_criteria = _criteria(full.metrics, full_config)
-    training = _segment(config, split.training, funding, ordered, any_hour=any_hour)
-    validation = _segment(config, split.validation, funding, ordered, any_hour=any_hour)
-    final_test = _segment(config, split.final_test, funding, ordered, any_hour=any_hour)
+    training = _segment(config, split.training, funding, ordered, v2=v2)
+    validation = _segment(config, split.validation, funding, ordered, v2=v2)
+    final_test = _segment(config, split.final_test, funding, ordered, v2=v2)
     # Walk-forward covers the training and validation span only, so the final
     # test set is evaluated exactly once, in its own segment above.
     research = [*split.training, *split.validation]
     windows = suite.walk_forward_windows(research, windows=WALK_FORWARD_WINDOWS)
-    walk_forward = [_segment(config, window, funding, ordered, any_hour=any_hour) for window in windows]
+    walk_forward = [_segment(config, window, funding, ordered, v2=v2) for window in windows]
     oos_path = directory / "out_of_sample_validation_report.json"
     _write_json(
         oos_path,
@@ -192,7 +192,7 @@ def _simulate(
     export_dir: Path | None,
     funding: FundingSchedule | None,
     warmup: Sequence[Candle] = (),
-    any_hour: bool,
+    v2: bool,
 ) -> tuple[BacktestResult, dict[str, Any], BacktestConfig]:
     """Run one engine with its own simulated kill switch (and, for top-down, its own fresh strategy).
 
@@ -214,7 +214,7 @@ def _simulate(
                 config=backtest_config,
                 risk_engine=risk_engine,
                 funding=funding,
-                strategy=TopDownOBStrategy(any_hour=any_hour),
+                strategy=TopDownOBStrategy(any_hour=v2, skip_inside=v2, first_touch_only=v2),
             ).run(candles, warmup=warmup)
         return result, kill_switch.report(), backtest_config
 
@@ -225,7 +225,7 @@ def _segment(
     funding: FundingSchedule | None,
     ordered: list[Candle],
     *,
-    any_hour: bool,
+    v2: bool,
 ) -> dict[str, Any]:
     if not candles:
         # No run means no metrics; costs are the BacktestConfig defaults, which
@@ -235,7 +235,7 @@ def _segment(
     # `candles` is a slice of `ordered`; everything before its first candle is warm-up history.
     warmup = ordered[: ordered.index(candles[0])] if funding is not None else ()
     result, kill_switch, backtest_config = _simulate(
-        config, candles, export_dir=None, funding=funding, warmup=warmup, any_hour=any_hour
+        config, candles, export_dir=None, funding=funding, warmup=warmup, v2=v2
     )
     return {
         "candles": len(candles),

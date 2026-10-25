@@ -186,7 +186,7 @@ def test_candles_flag_outside_backtest_is_usage_error(workdir: Path) -> None:
     assert main(["--candles", "x.csv"]) == 2
 
 
-@pytest.mark.parametrize("flags", [["--strategy", "top_down_ob"], ["--strategy", "top_down_ob_any_hour"], ["--funding", "f.csv"]])
+@pytest.mark.parametrize("flags", [["--strategy", "top_down_ob"], ["--strategy", "top_down_ob_v2"], ["--funding", "f.csv"]])
 def test_strategy_and_funding_flags_outside_backtest_are_usage_errors(workdir: Path, flags: list[str]) -> None:
     assert main(flags) == 2
 
@@ -311,7 +311,7 @@ def test_cli_strategy_flag_and_funding_errors(
     assert (run["strategy"], run["funding_file"]) == ("top_down_ob", str(good))
 
 
-def test_cli_any_hour_strategy_needs_funding_and_runs(
+def test_cli_v2_strategy_needs_funding_and_runs(
     workdir: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     backtest_env(monkeypatch)
@@ -322,14 +322,14 @@ def test_cli_any_hour_strategy_needs_funding_and_runs(
         datetime(2026, 1, 2, 16, tzinfo=UTC),
         datetime(2026, 1, 3, tzinfo=UTC),
     )
-    base = ["--candles", str(csv_path), "--strategy", "top_down_ob_any_hour"]
+    base = ["--candles", str(csv_path), "--strategy", "top_down_ob_v2"]
 
     assert main(base) == 2
     assert "--funding" in caplog.text
 
     assert main([*base, "--funding", str(good)]) == 0
     run = json.loads((workdir / "reports" / "backtest_run.json").read_text(encoding="utf-8"))
-    assert (run["strategy"], run["funding_file"]) == ("top_down_ob_any_hour", str(good))
+    assert (run["strategy"], run["funding_file"]) == ("top_down_ob_v2", str(good))
 
 
 def test_cli_default_strategy_is_silver_bullet_and_ignores_funding(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
