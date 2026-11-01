@@ -80,6 +80,21 @@ def overlaps(ob: OrderBlock, candle: Candle) -> bool:
     return candle.low <= ob.zone_high and candle.high >= ob.zone_low
 
 
+def takes_previous_candle(prev2: Candle, sweep: Candle, bias: Trend) -> bool:
+    """TD-25: the sweep trades past the candle before it, so it did not take a level that candle already broke."""
+    return sweep.low < prev2.low if bias == "bullish" else sweep.high > prev2.high
+
+
+def leaves_gap(ob: OrderBlock, candle: Candle) -> bool:
+    """TD-26: the candle after the engulfing one stays clear of the zone: the imbalance."""
+    return candle.low > ob.zone_high if ob.direction == "bullish" else candle.high < ob.zone_low
+
+
+def closed_through(ob: OrderBlock, candle: Candle) -> bool:
+    """The candle closed beyond the OB's far side."""
+    return candle.close < ob.zone_low if ob.direction == "bullish" else candle.close > ob.zone_high
+
+
 class OrderBookOfBlocks:
     """Active order blocks. Inactive ones are dropped so best_touched, run on every 1m candle, stays cheap."""
 
@@ -91,9 +106,7 @@ class OrderBookOfBlocks:
 
     def on_15m_close(self, candle: Candle) -> None:
         """Invalidate OBs this closed 15m candle closed through on their far side."""
-        self._drop(
-            lambda ob: candle.close < ob.zone_low if ob.direction == "bullish" else candle.close > ob.zone_high
-        )
+        self._drop(lambda ob: closed_through(ob, candle))
 
     def on_bias(self, trend: Trend) -> None:
         self._drop(lambda ob: ob.direction != trend)

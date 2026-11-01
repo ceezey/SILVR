@@ -584,3 +584,105 @@ def test_v2_second_touch_kills_only_the_ob_that_was_left() -> None:
     assert high_ob.rank > low_ob.rank
     plans = entries(results)
     assert len(plans) == 1 and plans[0].ob is high_ob
+
+
+# TDOB v3 (TD-25 to TD-28): the sweep takes the previous candle, and the next counted candle leaves a gap.
+def v3() -> TopDownOBStrategy:
+    return TopDownOBStrategy(any_hour=True, skip_inside=True, first_touch_only=True, strict_ob=True)
+
+
+def test_v3_ob_is_not_tradeable_until_the_next_candle_closes() -> None:
+    ones, _ = day_rows()
+    engulf_applied = [c for c in ones if c.open_time <= DAY2 + 31 * M15]  # first 1m after the engulfing candle closes
+    next_applied = [c for c in ones if DAY2 + 31 * M15 < c.open_time <= DAY2 + 32 * M15]
+    strategy = v3()
+
+    run(engulf_applied, strategy=strategy)
+    assert strategy._book._active == []
+
+    run(next_applied, strategy=strategy)
+    (ob,) = strategy._book._active
+    assert (ob.zone_low, ob.zone_high) == ZONE
+
+
+def test_v3_plan_when_sweep_and_gap_hold() -> None:
+    candles, _ = long_scenario()
+
+    plans = entries(run(candles, strategy=v3()))
+
+    assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
+
+
+def test_v3_short_plan_mirrors_the_long() -> None:
+    candles, _ = long_scenario()
+
+    plans = entries(run(mirror(candles), strategy=v3()))
+
+    assert len(plans) == 1 and plans[0].side == "short"
+    assert (plans[0].ob.zone_low, plans[0].ob.zone_high) == (MIRROR - ZONE[1], MIRROR - ZONE[0])
+
+
+def test_v3_next_candle_into_the_zone_drops_the_ob_for_good() -> None:
+    wick_into_zone: Row = (108, 108.6, 107.4, 108.3)  # low under the zone top 107.5
+    ones, _ = day_rows(setup=SETUP[:4] + [wick_into_zone, SETUP[5]])
+    strategy = v3()
+
+    results = run(ones + minutes(NY_AM, DESCENT + [MSS]), strategy=strategy)
+
+    assert entries(results) == []
+    assert strategy._book._active == []
+
+
+def test_v3_rejects_a_level_the_previous_candle_broke_itself() -> None:
+    # The last decline candle (low 105.2) closes under the swing low 105.7, which records 105.7 at that close. The
+    # sweep only reaches 105.4, under 105.7 but above the previous candle's low: price already went further.
+    setup: list[Row] = [(105.5, 106.2, 105.4, 106.0), (106.0, 108.2, 105.9, 108.0), SETUP[4], SETUP[5]]
+    ones, _ = day_rows(setup=setup)
+    v2_reading = TopDownOBStrategy()
+    strict = TopDownOBStrategy(strict_ob=True)
+
+    run(ones, strategy=v2_reading)
+    run(ones, strategy=strict)
+
+    (ob,) = v2_reading._book._active
+    assert ob.swept.price == 105.7
+    assert strict._book._active == []
+
+
+def test_v3_inside_candle_before_the_next_candle_does_not_spend_the_first_touch() -> None:
+    # The inside candle wicks into the zone and closes back out. Were the OB active, that would be its first touch
+    # and the later descent its second touch, which kills it.
+    inside: Row = (107.0, 108.0, 106.5, 107.6)
+    ones, _ = day_rows(setup=SETUP[:4] + [inside] + SETUP[4:])
+
+    plans = entries(run(ones + minutes(NY_AM, DESCENT + [MSS]), strategy=v3()))
+
+    assert len(plans) == 1
+
+
+def test_v3_inside_close_through_the_far_side_kills_the_pending_ob() -> None:
+    engulf: Row = (106.0, 108.2, 104.0, 108.0)  # a low under the sweep's, so an inside candle can close below the zone
+    close_through: Row = (107.0, 108.0, 104.1, 104.2)
+    ones, _ = day_rows(setup=SETUP[:3] + [engulf, close_through] + SETUP[4:])
+    strategy = v3()
+
+    run(ones, strategy=strategy)
+
+    assert strategy._book._active == []
+
+
+def test_v3_bias_flip_kills_the_pending_ob() -> None:
+    # The engulfing candle closes at 23:30, then an inside candle ends the day at 108, under the daily protected low
+    # 109: bearish. The gap candle comes after midnight.
+    blocks = [
+        (DAY0, DAY0_ROWS), (DAY1, DAY1_ROWS), (DAY2, DECLINE + SETUP[:3]),
+        (DAY2 + timedelta(hours=23, minutes=30), [SETUP[3], (107.0, 108.1, 106.5, 108.0)]),
+        (DAY3, [SETUP[4], SETUP[5]]),
+    ]
+    strategy = TopDownOBStrategy(skip_inside=True, strict_ob=True)
+
+    run([c for start, rows in blocks for c in expand_15m(start, rows)], strategy=strategy)
+
+    assert strategy._daily.trend == "bearish"
+    assert not [ob for ob in strategy._book._active if ob.direction == "bullish"]
+
