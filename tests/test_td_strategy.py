@@ -686,3 +686,32 @@ def test_v3_bias_flip_kills_the_pending_ob() -> None:
     assert strategy._daily.trend == "bearish"
     assert not [ob for ob in strategy._book._active if ob.direction == "bullish"]
 
+
+
+def test_v3_daily_flip_at_the_gap_candles_close_kills_the_pending_ob() -> None:
+    # The gap candle itself ends the day at 108.3, under the daily protected low 109: the flip is applied first.
+    blocks = [
+        (DAY0, DAY0_ROWS), (DAY1, DAY1_ROWS), (DAY2, DECLINE + SETUP[:3]),
+        (DAY2 + timedelta(hours=23, minutes=30), [SETUP[3], SETUP[4]]),
+        (DAY3, [(108.3, 108.4, 108.2, 108.3)]),
+    ]
+    strategy = TopDownOBStrategy(skip_inside=True, strict_ob=True)
+
+    run([c for start, rows in blocks for c in expand_15m(start, rows)], strategy=strategy)
+
+    assert strategy._daily.trend == "bearish"
+    assert not [ob for ob in strategy._book._active if ob.direction == "bullish"]
+
+
+def test_v3_ob_pending_at_the_end_of_warmup_still_needs_its_gap() -> None:
+    ones, _ = day_rows()
+    engulf_applied = [c for c in ones if c.open_time <= DAY2 + 31 * M15]
+    rest = [c for c in ones if c.open_time > DAY2 + 31 * M15]
+    strategy = v3()
+
+    run(engulf_applied, trading=False, strategy=strategy)
+    assert strategy._book._active == []
+
+    plans = entries(run(rest + minutes(NY_AM, DESCENT + [MSS]), strategy=strategy))
+
+    assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
