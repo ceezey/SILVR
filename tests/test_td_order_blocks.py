@@ -1,7 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from silver_bot.models import Candle
 from silver_bot.strategy.top_down import OrderBlock, OrderBookOfBlocks, SwingLevel, detect_order_block
+from silver_bot.strategy.top_down.order_blocks import leaves_gap, takes_previous_candle
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 M15 = timedelta(minutes=15)
@@ -190,3 +193,42 @@ def test_newest_wins_at_equal_rank() -> None:
     book.add(older)
 
     assert book.best_touched(candle(5, 100, 101, 99.5, 100, "1m")) is newer
+
+
+# TD-25: the sweep trades past the candle before it; equal is not a take.
+@pytest.mark.parametrize(
+    ("bias", "prev2_extreme", "sweep_extreme", "expected"),
+    [
+        ("bullish", 101.0, 99.0, True),
+        ("bullish", 99.0, 99.0, False),
+        ("bullish", 98.0, 99.0, False),
+        ("bearish", 101.0, 103.0, True),
+        ("bearish", 103.0, 103.0, False),
+        ("bearish", 104.0, 103.0, False),
+    ],
+)
+def test_sweep_must_take_the_previous_candle(
+    bias: str, prev2_extreme: float, sweep_extreme: float, expected: bool
+) -> None:
+    prev2 = candle(0, 100, max(prev2_extreme, 100), min(prev2_extreme, 100), 100)
+    sweep = candle(1, 100, max(sweep_extreme, 100), min(sweep_extreme, 100), 100)
+
+    assert takes_previous_candle(prev2, sweep, bias) is expected
+
+
+# TD-26: the next candle stays clear of the zone 99-104; equal is no gap.
+@pytest.mark.parametrize(
+    ("direction", "next_high", "next_low", "expected"),
+    [
+        ("bullish", 108.0, 104.5, True),
+        ("bullish", 108.0, 104.0, False),
+        ("bullish", 108.0, 103.0, False),
+        ("bearish", 98.5, 95.0, True),
+        ("bearish", 99.0, 95.0, False),
+        ("bearish", 100.0, 95.0, False),
+    ],
+)
+def test_next_candle_must_leave_a_gap(direction: str, next_high: float, next_low: float, expected: bool) -> None:
+    ob = OrderBlock(direction, 99.0, 104.0, 99.0, START, 1, low_level(100))
+
+    assert leaves_gap(ob, candle(3, next_low, next_high, next_low, next_high)) is expected

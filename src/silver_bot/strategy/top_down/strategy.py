@@ -32,6 +32,11 @@ second touch that kills it (dropped from the book) before the MSS check, even on
 candles neither leave nor touch again. Every active OB is tracked, not only the best-ranked one touched.
 first_touch_only is meant to be used with any_hour: a session window resets the touch lists when it changes, which
 would re-arm touches.
+
+strict_ob=True implements TD-25 to TD-28 of [[2026-11-02-top-down-ob-v3-design]]: the sweep must trade past the
+candle before it, and a new OB stays pending until the next counted 15m candle closes. It joins the book only if
+that candle left a gap to the zone, so it can never be touched or traded on a candle that has not closed. A close
+beyond its far side or a daily bias flip while it waits kills it, as for an active OB.
 """
 
 from __future__ import annotations
@@ -45,7 +50,15 @@ from silver_bot.data.resample import Resampler
 from silver_bot.models import Candle
 from silver_bot.strategy.models import FairValueGapDirection
 from silver_bot.strategy.sessions import DEFAULT_SESSIONS, SilverBulletSessionEngine
-from silver_bot.strategy.top_down.order_blocks import OrderBlock, OrderBookOfBlocks, detect_order_block, overlaps
+from silver_bot.strategy.top_down.order_blocks import (
+    OrderBlock,
+    OrderBookOfBlocks,
+    closed_through,
+    detect_order_block,
+    leaves_gap,
+    overlaps,
+    takes_previous_candle,
+)
 from silver_bot.strategy.top_down.structure import StructureEvent, StructureTracker, SwingLevel
 from silver_bot.strategy.top_down.targets import atr, final_target, stage2_level, unfilled_fvgs
 
@@ -86,7 +99,10 @@ class TopDownOBStrategy:
         any_hour: bool = False,
         skip_inside: bool = False,
         first_touch_only: bool = False,
+        strict_ob: bool = False,
     ) -> None:
+        self._strict_ob = strict_ob
+        self._pending: OrderBlock | None = None  # strict_ob: the OB waiting for the next counted 15m candle
         self._stop_atr_multiple = stop_atr_multiple
         self._min_reward_r = min_reward_r
         self._any_hour = any_hour
@@ -173,6 +189,8 @@ class TopDownOBStrategy:
             elif tf == "1d":
                 self._daily.update(candle)
                 self._book.on_bias(self._daily.trend)
+                if self._pending is not None and self._pending.direction != self._daily.trend:
+                    self._pending = None
             elif tf == "4h":
                 self._h4.update(candle)
                 self._taken_4h.append((candle.close_time, self._h4.last_taken))
@@ -187,11 +205,24 @@ class TopDownOBStrategy:
                         self._counted_15m.append(candle)
                 self._candles_15m.append(candle)
                 self._book.on_15m_close(candle)  # invalidation stays on every 15m close
+                self._settle_pending(candle, counted)
                 if counted:
                     self._detect()
                     if self._skip_inside:
                         self._prune_taken_4h(candle)
         return tuple(events)
+
+    def _settle_pending(self, candle: Candle, counted: bool) -> None:
+        """TD-26, TD-27: the next counted 15m candle decides a pending OB; a close through it kills it sooner."""
+        ob = self._pending
+        if ob is None:
+            return
+        if closed_through(ob, candle):
+            self._pending = None
+        elif counted:
+            self._pending = None
+            if leaves_gap(ob, candle):
+                self._book.add(ob)
 
     def _track_touches(self, candle_1m: Candle) -> None:
         """TD-6f: first touch, leave and second touch for every active OB (see the module docstring)."""
@@ -227,6 +258,8 @@ class TopDownOBStrategy:
         if bias == "none" or len(pattern) < 3:
             return
         prev2, sweep, engulf = pattern[-3], pattern[-2], pattern[-1]
+        if self._strict_ob and not takes_previous_candle(prev2, sweep, bias):
+            return
         side, reach = ("low", sweep.low) if bias == "bullish" else ("high", sweep.high)
 
         def levels_at_sweep_open(tracker: StructureTracker, taken: deque) -> list[SwingLevel]:
@@ -244,7 +277,11 @@ class TopDownOBStrategy:
             levels_4h=levels_at_sweep_open(self._h4, self._taken_4h),
             levels_15m=levels_at_sweep_open(self._m15, self._taken_15m),
         )
-        if ob is not None:
+        if ob is None:
+            return
+        if self._strict_ob:
+            self._pending = ob
+        else:
             self._book.add(ob)
 
     def _plan(self, ob: OrderBlock, candle: Candle, mss: StructureEvent, session_name: str) -> EntryPlan | str:
