@@ -15,9 +15,9 @@ START = datetime(2026, 1, 1, tzinfo=UTC)
 FIXTURE = Path(__file__).parent / "fixtures" / "btcusdt_spot_1m_2026-10-30.csv"
 
 
-def bar(minute: int, high: float, low: float, close: float) -> Candle:
+def bar(minute: int, high: float, low: float, close: float, o: float | None = None) -> Candle:
     opened = START + timedelta(minutes=minute)
-    return Candle("BTCUSDT", "1m", opened, close, high, low, close, 1.0, opened + timedelta(minutes=1))
+    return Candle("BTCUSDT", "1m", opened, close if o is None else o, high, low, close, 1.0, opened + timedelta(minutes=1))
 
 
 def block(direction: str = "bullish", low: float = 90.0, high: float = 110.0) -> OrderBlock:
@@ -36,7 +36,7 @@ def test_without_an_earlier_swing_the_touch_candle_high_is_the_level() -> None:
     setup = RetestSetup(block(), bar(0, 108, 104, 105), swing_high=None, swing_low=None)
     assert setup.level == 108
     setup.update(bar(1, 112, 106, 111), counted=True)
-    assert setup.entry == 106
+    assert setup.entry == 108  # price never left the candle, so the box is all of it
 
 
 def test_swing_floor_holds_the_level_until_a_real_close_above_it() -> None:
@@ -58,7 +58,7 @@ def test_wick_through_the_level_is_not_a_choch() -> None:
     setup.update(bar(1, 112, 101, 110), counted=True)  # wick above, close equal: no break
     assert setup.entry is None
     setup.update(bar(2, 112, 102, 110.5), counted=True)
-    assert setup.entry == 101  # the lowest low since the OB candle
+    assert setup.entry == 108
 
 
 def test_new_low_cannot_be_the_choch_on_the_same_candle() -> None:
@@ -67,35 +67,70 @@ def test_new_low_cannot_be_the_choch_on_the_same_candle() -> None:
     assert setup.entry is None and setup.level == 120
 
 
-def test_box_top_is_the_candle_high_when_nothing_comes_back() -> None:
-    setup = RetestSetup(block(), bar(0, 104, 100, 103), swing_high=108, swing_low=None)
-    setup.update(bar(1, 112, 105, 111), counted=True)  # stays above the OB candle's high 104
+# The OB candle of the box tests: low 100, lower wick to the open 101, body to the close 103, upper wick to 104.
+def ob_setup() -> RetestSetup:
+    return RetestSetup(block(), bar(0, 104, 100, 103, o=101), swing_high=108, swing_low=None)
+
+
+LEAVE = bar(1, 107, 105, 106)  # low above the OB candle's high: price has left it
+CHOCH = bar(3, 110, 104.5, 109)
+
+
+@pytest.mark.parametrize(
+    ("touch_low", "box_top"),
+    [
+        (104.01, 104),  # no touch: the full candle
+        (104.0, 103),  # the upper wick, at its top: body and lower wick
+        (103.5, 103),
+        (103.0, 101),  # the body, at its top: the lower wick alone
+        (102.0, 101),
+        (100.5, 101),
+    ],
+)
+def test_box_is_a_whole_part_of_the_candle(touch_low: float, box_top: float) -> None:
+    setup = ob_setup()
+    for candle in (LEAVE, bar(2, 106, touch_low, 105), CHOCH):
+        setup.update(candle, counted=True)
+    assert setup.entry == box_top
+
+
+def test_box_of_a_red_ob_candle_uses_its_open_as_the_body_top() -> None:
+    setup = RetestSetup(block(), bar(0, 104, 100, 101, o=103), swing_high=108, swing_low=None)
+    for candle in (LEAVE, bar(2, 106, 103.5, 105), CHOCH):
+        setup.update(candle, counted=True)
+    assert setup.entry == 103
+
+
+def test_candles_before_price_leaves_do_not_count_as_touches() -> None:
+    setup = ob_setup()
+    setup.update(bar(1, 106, 100.5, 105), counted=True)  # overlaps the body, but price never left the candle
+    setup.update(bar(2, 107, 104, 106), counted=True)  # low equal to the candle's high: still not left
+    setup.update(bar(3, 106, 103.5, 105), counted=True)
+    setup.update(CHOCH, counted=True)
     assert setup.entry == 104
 
 
-def test_revisits_use_up_the_candle_from_the_top() -> None:
-    setup = RetestSetup(block(), bar(0, 104, 100, 103), swing_high=108, swing_low=None)
-    setup.update(bar(1, 106, 103, 105), counted=True)
-    setup.update(bar(2, 106, 101.5, 105), counted=True)
-    setup.update(bar(3, 107, 102, 106), counted=True)
-    assert setup.entry is None
-    setup.update(bar(4, 110, 103, 109), counted=True)
-    assert setup.entry == 101.5
+def test_box_never_grows_back() -> None:
+    setup = ob_setup()
+    for candle in (LEAVE, bar(2, 106, 102, 105), bar(3, 106, 103.5, 105), bar(4, 110, 104.5, 109)):
+        setup.update(candle, counted=True)
+    assert setup.entry == 101
 
 
 def test_new_low_restarts_the_box() -> None:
-    setup = RetestSetup(block(), bar(0, 104, 100, 103), swing_high=108, swing_low=None)
-    setup.update(bar(1, 106, 101, 105), counted=True)
-    setup.update(bar(2, 103, 99, 102), counted=True)  # new OB candle: the old revisit no longer counts
-    setup.update(bar(3, 110, 104, 109), counted=True)
+    setup = ob_setup()
+    setup.update(LEAVE, counted=True)
+    setup.update(bar(2, 106, 102, 105), counted=True)  # the body: the old box is the wick
+    setup.update(bar(3, 103, 99, 102, o=100), counted=True)  # new OB candle, not yet left
+    setup.update(bar(4, 110, 104, 109), counted=True)
     assert setup.entry == 103
 
 
 def test_equal_low_keeps_the_earlier_ob_candle() -> None:
-    setup = RetestSetup(block(), bar(0, 104, 100, 103), swing_high=108, swing_low=None)
-    setup.update(bar(1, 106, 100, 105), counted=True)  # equal low: a revisit of the OB candle, down to its low
-    setup.update(bar(2, 110, 103, 109), counted=True)
-    assert setup.entry == 100
+    setup = ob_setup()
+    setup.update(bar(1, 106, 100, 105), counted=True)  # equal low, before price leaves
+    setup.update(CHOCH, counted=True)
+    assert setup.entry == 104
 
 
 def test_inside_candles_change_nothing() -> None:
@@ -114,16 +149,14 @@ def test_fill_needs_price_strictly_through_the_entry() -> None:
 
 
 def test_short_mirrors_the_long() -> None:
-    long = RetestSetup(block(), bar(0, 104, 100, 103), swing_high=108, swing_low=None)
-    short = RetestSetup(block("bearish"), flip(bar(0, 104, 100, 103)), swing_high=None, swing_low=200 - 108)
-    path = [bar(1, 106, 103, 105), bar(2, 106, 101.5, 105), bar(3, 110, 103, 109)]
-    for candle in path:
+    long = ob_setup()
+    short = RetestSetup(block("bearish"), flip(bar(0, 104, 100, 103, o=101)), swing_high=None, swing_low=200 - 108)
+    for candle in (LEAVE, bar(2, 106, 103.5, 105), CHOCH):
         long.update(candle, counted=True)
         short.update(flip(candle), counted=True)
-    assert long.entry == 101.5 and short.entry == 200 - 101.5
+    assert long.entry == 103 and short.entry == 200 - 103
     assert short.level == 200 - long.level
-    assert short.fills(flip(bar(4, 112, 101, 110))) and not short.fills(flip(bar(4, 112, 102, 110)))
-
+    assert short.fills(flip(bar(4, 112, 102.9, 110))) and not short.fills(flip(bar(4, 112, 103, 110)))
 
 def test_swing_tracker_marks_the_candle_above_both_neighbours() -> None:
     swings = SwingTracker()
@@ -141,7 +174,8 @@ def at(hour: int, minute: int) -> datetime:
 
 
 def test_owner_trade_of_30_oct_is_reproduced() -> None:
-    """The owner's chart: ChoCh about 77,300 closed at 23:00 UTC+8, entry 76,685.54, filled before 03:00 UTC+8."""
+    """The owner's chart: ChoCh about 77,300 closed at 23:00 UTC+8, entry 76,685.54 (the body top drawn by hand),
+    filled before 03:00 UTC+8."""
     candles = owner_trade()
     tracker, swings = StructureTracker("1m", skip_inside=True), SwingTracker()
     setup = choch = fill = None
@@ -165,5 +199,5 @@ def test_owner_trade_of_30_oct_is_reproduced() -> None:
     assert setup is not None
     assert setup.level == pytest.approx(77304.01)
     assert choch == at(15, 0)
-    assert setup.entry == pytest.approx(76684.52)
+    assert setup.entry == pytest.approx(76686.94)  # the 21:52 candle's body top: price left it, then touched its wick
     assert fill == at(18, 48)
