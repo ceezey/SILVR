@@ -29,6 +29,15 @@ from silver_bot.backtest.models import EquityPoint
 from silver_bot.backtest.reporting import json_safe
 
 SEGMENTS = ("training", "validation", "final_test")
+FRACTIONS = {"training": 0.6, "validation": 0.2, "final_test": 0.2}
+# The symbol list fixed before any run (spec MS-1, section 5). Any other set is refused, so no symbol can be
+# dropped or added after a result has been seen.
+FROZEN_SYMBOLS = {
+    "top_down_ob_v4": (
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT",
+        "LINKUSDT", "DOTUSDT", "LTCUSDT", "TRXUSDT", "ATOMUSDT", "NEARUSDT", "BCHUSDT",
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,13 +61,19 @@ def pool(reports: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     strategies = {report.get("strategy") for report in reports}
     if len(strategies) != 1:
         raise GateInputError(f"the reports mix strategies: {', '.join(sorted(map(str, strategies)))}")
+    strategy = strategies.pop()
     symbols = [report.get("symbol") for report in reports]
     if None in symbols or len(set(symbols)) != len(symbols):
         raise GateInputError(f"each report needs its own symbol, got {symbols}; {RERUN_HINT}")
+    if sorted(symbols) != sorted(FROZEN_SYMBOLS.get(strategy, ())):
+        raise GateInputError(f"the symbols are not the frozen list for {strategy}: {symbols}")
+    for report in reports:
+        untouched = report.get("parameters_tuned") is False and report.get("method") == "chronological_split"
+        if not untouched or report.get("fractions") != FRACTIONS:
+            raise GateInputError(f"{report['symbol']} is not an untuned 60/20/20 chronological split; {RERUN_HINT}")
     return {
         "method": "pooled_chronological_split",
-        "parameters_tuned": False,
-        "strategy": strategies.pop(),
+        "strategy": strategy,
         "symbols": symbols,
         "segments": {name: _pool_segment([gate._segment(report, name) for report in reports], name) for name in SEGMENTS},
     }
@@ -68,8 +83,11 @@ def _pool_segment(segments: list[Mapping[str, Any]], name: str) -> dict[str, Any
     ranges = {(segment.get("start"), segment.get("end")) for segment in segments}
     if len(ranges) != 1:
         raise GateInputError(f"segment '{name}' covers different dates across the reports")
+    balances = {gate._number(segment.get("initial_balance"), f"{name}.initial_balance") for segment in segments}
+    if len(balances) != 1:
+        raise GateInputError(f"segment '{name}' starts the accounts with different balances")
+    balance = balances.pop()  # one account's: the 15 accounts' P&L lands on it as if it took every signal (MS-5)
     trades: list[_Trade] = []
-    balance = 0.0
     candles = 0
     trips = 0
     for segment in segments:
@@ -80,7 +98,6 @@ def _pool_segment(segments: list[Mapping[str, Any]], name: str) -> dict[str, Any
             trades += [_Trade(**row) for row in rows]
         except TypeError as exc:
             raise GateInputError(f"segment '{name}' has a malformed trade ({exc}); {RERUN_HINT}") from exc
-        balance += gate._number(segment.get("initial_balance"), f"{name}.initial_balance")
         candles += int(gate._number(segment.get("candles"), f"{name}.candles"))
         kill_switch = segment.get("kill_switch")
         trips += int(kill_switch.get("trips") or 0) if isinstance(kill_switch, Mapping) else 0
@@ -96,9 +113,10 @@ def _pool_segment(segments: list[Mapping[str, Any]], name: str) -> dict[str, Any
 
 
 def _metrics(trades: list[_Trade], balance: float) -> dict[str, Any]:
-    """One symbol's metrics, over the merged trades.
+    """The pooled metrics: one symbol's formulas, over the merged trades.
 
-    Drawdown runs on the merged realized P&L in exit-time order against the summed balances (MS-5).
+    Drawdown and return run on the merged realized P&L in exit-time order against one account's balance, as if
+    one account took every symbol's signals (MS-5). Summed balances would dilute the gate's drawdown limit.
     The real-edge t-stat is the lower of the trade t and the t of R summed per UTC entry day (MS-4),
     because setups on correlated symbols on the same day are not independent evidence.
     """
@@ -142,6 +160,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if output.resolve() in {source.resolve() for source in sources}:
             raise GateInputError(f"{output} is one of the input reports; choose another --output-dir")
+        if not (output.parent / gate.LOG_NAME).exists():
+            # Without the earlier runs' log the gate would count look 1 and lower its bar (MS-6).
+            raise GateInputError(f"no {gate.LOG_NAME} in {output.parent}; carry over the gate log of this data range")
         pooled = pool([gate._load(source) for source in sources])
     except GateInputError as exc:
         print(f"error: {exc}", file=sys.stderr)
