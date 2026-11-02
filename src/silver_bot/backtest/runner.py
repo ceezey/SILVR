@@ -14,7 +14,7 @@ from silver_bot.backtest.criteria import combine_verdicts, evaluate_evidence
 from silver_bot.backtest.models import BacktestConfig, BacktestResult
 from silver_bot.backtest.reporting import json_safe
 from silver_bot.backtest.sim_kill_switch import SimulatedKillSwitch
-from silver_bot.backtest.top_down_engine import TopDownBacktestEngine
+from silver_bot.backtest.top_down_engine import MIN_REWARD_R, TopDownBacktestEngine
 from silver_bot.backtest.validation import BacktestValidationSuite, monte_carlo_r
 from silver_bot.config import AppConfig
 from silver_bot.data.funding import FundingSchedule
@@ -28,6 +28,7 @@ TRAINING_FRACTION = 0.6
 VALIDATION_FRACTION = 0.2
 STRATEGIES = ("silver_bullet", "top_down_ob", "top_down_ob_v2", "top_down_ob_v3", "top_down_ob_v4")
 TOP_DOWN_STRATEGIES = ("top_down_ob", "top_down_ob_v2", "top_down_ob_v3", "top_down_ob_v4")
+V4_MIN_REWARD_R = 2.0  # TD-42: the owner lowered v4's floor to the risk engine's own minimum
 WALK_FORWARD_WINDOWS = 4
 MONTE_CARLO_RUNS = 1000
 MONTE_CARLO_SEED = 7
@@ -101,6 +102,7 @@ def run_backtest(
         "first_touch_only": v2_rules and strategy != "top_down_ob_v4",
         "strict_ob": strategy in ("top_down_ob_v3", "top_down_ob_v4"),
         "retest_entry": strategy == "top_down_ob_v4",
+        "min_reward_r": V4_MIN_REWARD_R if strategy == "top_down_ob_v4" else MIN_REWARD_R,
     }
     if not candles:
         raise ValueError("run_backtest needs at least one candle")
@@ -199,7 +201,7 @@ def _simulate(
     export_dir: Path | None,
     funding: FundingSchedule | None,
     warmup: Sequence[Candle] = (),
-    flags: Mapping[str, bool],
+    flags: Mapping[str, Any],
 ) -> tuple[BacktestResult, dict[str, Any], BacktestConfig]:
     """Run one engine with its own simulated kill switch (and, for top-down, its own fresh strategy).
 
@@ -222,6 +224,7 @@ def _simulate(
                 risk_engine=risk_engine,
                 funding=funding,
                 strategy=TopDownOBStrategy(**flags),
+                min_reward_r=flags["min_reward_r"],
             ).run(candles, warmup=warmup)
         return result, kill_switch.report(), backtest_config
 
@@ -232,7 +235,7 @@ def _segment(
     funding: FundingSchedule | None,
     ordered: list[Candle],
     *,
-    flags: Mapping[str, bool],
+    flags: Mapping[str, Any],
 ) -> dict[str, Any]:
     if not candles:
         # No run means no metrics; costs are the BacktestConfig defaults, which

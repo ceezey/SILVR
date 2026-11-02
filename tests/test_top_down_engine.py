@@ -480,3 +480,18 @@ def test_limit_entry_below_3r_is_rejected() -> None:
 
     assert result.trades == []
     assert result.rejected_signals[0].reason.startswith("Risk rejected") or "3R" in result.rejected_signals[0].reason
+
+
+def test_reward_floor_after_costs_is_configurable() -> None:
+    plan = {0: limit_plan(final=1025.0, stage2=None)}  # 2.5R at the limit price
+    candle = [bar(0, 1001, 1002, 999, 1000)]
+    config = BacktestConfig()
+
+    strict = engine(plan).run(candle)
+    loose = TopDownBacktestEngine(
+        config=config, risk_engine=RiskManagementEngine(config.risk), funding=ZERO_FUNDING,
+        strategy=FakeStrategy(plan), min_reward_r=2.0,
+    ).run(candle)
+
+    assert strict.trades == [] and strict.rejected_signals[0].reason == "reward below 3R after entry costs"
+    assert len(loose.trades) == 1
