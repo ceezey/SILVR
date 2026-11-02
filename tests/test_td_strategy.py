@@ -719,12 +719,12 @@ def test_v3_ob_pending_at_the_end_of_warmup_still_needs_its_gap() -> None:
 
 # TDOB v4 (TD-29 to TD-40): the first touch starts a setup, then a 1m CHoCH, then a limit fill on the retest.
 TO_ZONE = DESCENT  # touches at the 5th candle; the lowest low 105.9 is on the last, whose high is 106.6
-BACK: Row = (106.6, 108.0, 106.2, 107.8)  # revisits the OB candle down to 106.2
+BACK: Row = (106.6, 108.0, 106.2, 107.8)  # overlaps the OB candle before price has left it: not a touch
 CHOCH: Row = (107.8, 110.6, 107.7, 110.5)  # closes above the swing high 110.2, the last 15m candle's high
 AWAY: Row = (110.5, 111.0, 110.0, 110.8)
 RETEST: Row = (108.0, 108.1, 106.1, 107.0)
-ENTRY_V4 = 106.2
-STOP_V4 = 106.2 - 2 * (106.2 - SWEEP_LOW)
+ENTRY_V4 = 106.6  # the whole OB candle: nothing touched it after price left
+STOP_V4 = ENTRY_V4 - 2 * (ENTRY_V4 - SWEEP_LOW)
 
 
 def v4() -> TopDownOBStrategy:
@@ -781,14 +781,14 @@ def test_v4_price_at_the_box_before_the_choch_does_not_fill() -> None:
 def test_v4_the_choch_candle_never_fills() -> None:
     strategy = v4()
 
-    results = run(v4_path(*TO_ZONE, (106.6, 110.6, 106.0, 110.5)), strategy=strategy)
+    results = run(v4_path(*TO_ZONE, (106.6, 110.6, 106.0, 110.5)), strategy=strategy)  # its low is under the entry
 
-    assert entries(results) == [] and strategy._setup.entry == 106.0
+    assert entries(results) == [] and strategy._setup.entry == ENTRY_V4
 
 
 def test_v4_a_return_to_the_zone_does_not_kill_the_setup() -> None:
     leave: Row = (108.0, 109.5, 108.0, 109.0)  # off the zone top 107.5
-    back_in: Row = (107.0, 107.2, 105.9, 106.5)  # small enough that BACK is not an inside candle of it
+    back_in: Row = (106.0, 106.6, 105.9, 106.5)  # the OB candle again, small enough that BACK is not inside it
 
     (plan,) = entries(run(v4_path(*TO_ZONE[:5], leave, back_in, BACK, CHOCH, AWAY, RETEST), strategy=v4()))
 
