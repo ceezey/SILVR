@@ -367,7 +367,7 @@ class TopDownOBStrategy:
         self, ob: OrderBlock, candle: Candle, entry: float, stop: float, session_name: str, trigger: str,
         *, limit: bool = False,
     ) -> EntryPlan | str:
-        """The target, the 3R minimum and stage 2 for this entry and stop."""
+        """The target, the reward floor (min_reward_r) and stage 2 for this entry and stop."""
         long = ob.direction == "bullish"
         side: Literal["long", "short"] = "long" if long else "short"
         cap = self._h4.bullish_trigger if long else self._h4.bearish_trigger
