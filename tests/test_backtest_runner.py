@@ -273,7 +273,7 @@ def test_default_strategy_is_silver_bullet_and_reports_name(tmp_path: Path) -> N
     assert run["funding_file"] is None
 
 
-@pytest.mark.parametrize("strategy", ["top_down_ob", "top_down_ob_v2", "top_down_ob_v3"])
+@pytest.mark.parametrize("strategy", ["top_down_ob", "top_down_ob_v2", "top_down_ob_v3", "top_down_ob_v4"])
 def test_top_down_requires_funding(tmp_path: Path, strategy: str) -> None:
     with pytest.raises(ValueError, match="funding"):
         run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy=strategy)
@@ -284,7 +284,7 @@ def test_unknown_strategy_raises(tmp_path: Path) -> None:
         run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy="nope")
 
 
-@pytest.mark.parametrize("strategy", ["top_down_ob", "top_down_ob_v2", "top_down_ob_v3"])
+@pytest.mark.parametrize("strategy", ["top_down_ob", "top_down_ob_v2", "top_down_ob_v3", "top_down_ob_v4"])
 def test_top_down_segments_get_warmup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strategy: str) -> None:
     runs = spy_on_engine_runs(monkeypatch)
     data = candles()
@@ -307,10 +307,17 @@ def test_top_down_segments_get_warmup(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 @pytest.mark.parametrize(
-    ("strategy", "expected"), [("top_down_ob_v3", True), ("top_down_ob_v2", True), ("top_down_ob", False)]
+    ("strategy", "any_hour", "first_touch", "strict", "retest"),
+    [
+        ("top_down_ob_v4", True, False, True, True),
+        ("top_down_ob_v3", True, True, True, False),
+        ("top_down_ob_v2", True, True, False, False),
+        ("top_down_ob", False, False, False, False),
+    ],
 )
-def test_v2_flags_reach_every_strategy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strategy: str, expected: bool
+def test_flags_reach_every_strategy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strategy: str, any_hour: bool, first_touch: bool, strict: bool,
+    retest: bool,
 ) -> None:
     seen: list[dict[str, object]] = []
     real = runner.TopDownOBStrategy
@@ -323,10 +330,12 @@ def test_v2_flags_reach_every_strategy(
 
     run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy=strategy, funding=FUNDING)
 
-    flags = ("any_hour", "skip_inside", "first_touch_only")
+    expected = {
+        "any_hour": any_hour, "skip_inside": any_hour, "first_touch_only": first_touch, "strict_ob": strict,
+        "retest_entry": retest,
+    }
     # full run, three segments and every walk-forward window
-    assert seen and all(kw.get(flag) is expected for kw in seen for flag in flags)
-    assert all(kw.get("strict_ob") is (strategy == "top_down_ob_v3") for kw in seen)
+    assert seen and all(kw == expected for kw in seen)
 
 
 def test_warmup_never_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

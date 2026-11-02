@@ -145,6 +145,13 @@ class TopDownBacktestEngine:
                     self._reject(rejected, step.entry.signal_time, candle.symbol, "position already open")
                 else:
                     position = self._open(step.entry, candle, equity, rejected)
+                    # TD-39: a limit fills during this candle, whose range may already reach the stop. No target credit.
+                    if position is not None and step.entry.limit:
+                        position.mae = position.entry_price - candle.low if position.long else candle.high - position.entry_price
+                        if (close := self._stop_hit(position, candle)) is not None:
+                            trades.append(self._close(position, len(trades) + 1, candle, *close))
+                            equity += trades[-1].realized_pnl
+                            position = None
 
             previous_close = candle.close
             peak = max(peak, equity)
@@ -186,13 +193,8 @@ class TopDownBacktestEngine:
         position.mfe = max(position.mfe, candle.high - entry if long else entry - candle.low)
         position.mae = max(position.mae, entry - candle.low if long else candle.high - entry)
 
-        if (candle.low <= position.stop) if long else (candle.high >= position.stop):
-            # A candle opening beyond the stop fills at its open, never at a price that did not trade.
-            raw = min(position.stop, candle.open) if long else max(position.stop, candle.open)
-            price = costs.market_exit_price(raw, position.direction, **self._bps)
-            position.slippage += costs.slippage_value(raw, self.config.slippage_bps)
-            reason = ExitReason.BREAKEVEN_STOP if position.stage1 else ExitReason.STOP_LOSS
-            return price, reason, self.config.taker_fee, "stop"
+        if (stopped := self._stop_hit(position, candle)) is not None:
+            return stopped
 
         def reached(level: float) -> bool:
             return candle.high >= level if long else candle.low <= level
@@ -206,11 +208,21 @@ class TopDownBacktestEngine:
             return position.plan.final_target, ExitReason.TAKE_PROFIT, self.config.maker_fee, "s3"
         return None
 
+    def _stop_hit(self, position: _Position, candle: Candle) -> tuple[float, ExitReason, float, str] | None:
+        if (candle.low <= position.stop) if position.long else (candle.high >= position.stop):
+            # A candle opening beyond the stop fills at its open, never at a price that did not trade.
+            raw = min(position.stop, candle.open) if position.long else max(position.stop, candle.open)
+            price = costs.market_exit_price(raw, position.direction, **self._bps)
+            position.slippage += costs.slippage_value(raw, self.config.slippage_bps)
+            reason = ExitReason.BREAKEVEN_STOP if position.stage1 else ExitReason.STOP_LOSS
+            return price, reason, self.config.taker_fee, "stop"
+        return None
+
     def _open(self, plan: EntryPlan, candle: Candle, equity: float, rejected: list) -> _Position | None:
         if plan.side not in ("long", "short"):
             raise ValueError(f"unknown plan side {plan.side!r}")
         direction = SignalDirection.LONG if plan.side == "long" else SignalDirection.SHORT
-        entry = costs.entry_price(plan.raw_entry, direction, **self._bps)
+        entry = plan.raw_entry if plan.limit else costs.entry_price(plan.raw_entry, direction, **self._bps)
         long = direction == SignalDirection.LONG
         reward = plan.final_target - entry if long else entry - plan.final_target
         risk = entry - plan.stop if long else plan.stop - entry
@@ -249,8 +261,9 @@ class TopDownBacktestEngine:
             risk_amount=decision.risk_amount,
             stop=plan.stop,
             remaining=qty,
-            fees=costs.fee(entry, qty, self.config.taker_fee),  # TD-24: entries pay taker
-            slippage=costs.slippage_value(plan.raw_entry, self.config.slippage_bps),
+            # TD-24: market entries pay taker; TD-39: a limit entry is priced like the stage 2 and 3 limit fills
+            fees=costs.fee(entry, qty, self.config.maker_fee if plan.limit else self.config.taker_fee),
+            slippage=0.0 if plan.limit else costs.slippage_value(plan.raw_entry, self.config.slippage_bps),
             # 1m candles are minute-aligned and stamps have ms offsets, so this charges every stamp at or after
             # the entry instant (the signal candle's close) and none before it.
             funded_until=plan.signal_time - _MS,
@@ -277,7 +290,7 @@ class TopDownBacktestEngine:
             session_name=plan.session_name,
             direction=position.direction.value,
             entry_time=plan.signal_time,
-            exit_time=candle.open_time,
+            exit_time=max(candle.open_time, plan.signal_time),  # a limit can stop out on its own fill candle
             entry_price=position.entry_price,
             exit_price=exit_price,
             stop_loss=plan.stop,
