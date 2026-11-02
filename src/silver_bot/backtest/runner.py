@@ -140,6 +140,7 @@ def run_backtest(
             },
             "parameters_tuned": False,
             "strategy": strategy,
+            "symbol": config.symbol,
             "segments": {
                 "training": training,
                 "validation": validation,
@@ -240,8 +241,17 @@ def _segment(
     if not candles:
         # No run means no metrics; costs are the BacktestConfig defaults, which
         # build_backtest_config never changes.
-        criteria = _criteria({}, BacktestConfig())
-        return {"candles": 0, "start": None, "end": None, "metrics": None, "kill_switch": None, "criteria": criteria}
+        empty = BacktestConfig()
+        return {
+            "candles": 0,
+            "start": None,
+            "end": None,
+            "metrics": None,
+            "kill_switch": None,
+            "criteria": _criteria({}, empty),
+            "initial_balance": empty.initial_balance,
+            "trades": [],
+        }
     # `candles` is a slice of `ordered`; everything before its first candle is warm-up history.
     warmup = ordered[: ordered.index(candles[0])] if funding is not None else ()
     result, kill_switch, backtest_config = _simulate(
@@ -254,6 +264,20 @@ def _segment(
         "metrics": result.metrics,
         "kill_switch": kill_switch,
         "criteria": _criteria(result.metrics, backtest_config),
+        # What the pooled gate needs to judge several symbols' trades together.
+        "initial_balance": backtest_config.initial_balance,
+        "trades": [
+            {
+                "entry_time": trade.entry_time.isoformat(),
+                "exit_time": trade.exit_time.isoformat(),
+                "realized_r": trade.realized_r,
+                "realized_pnl": trade.realized_pnl,
+                "fees": trade.fees,
+                "funding": trade.funding,
+                "session_name": trade.session_name,
+            }
+            for trade in result.trades
+        ],
     }
 
 
