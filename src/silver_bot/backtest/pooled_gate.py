@@ -1,0 +1,158 @@
+"""Pooled promotion gate: one verdict over several symbols' backtests of the same strategy.
+
+Merges the per-symbol out-of-sample reports into one report of the same shape and runs the promotion gate
+on it, so the thresholds, the look counting and the audit log are the gate's own. Like the gate, it only
+reports: it unlocks nothing.
+
+Exit codes are the gate's; 2 also covers reports that do not belong together.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import statistics
+import sys
+from collections import defaultdict
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from silver_bot.backtest import gate
+from silver_bot.backtest.gate import RERUN_HINT, GateInputError
+from silver_bot.backtest.metrics import calculate_metrics
+from silver_bot.backtest.models import EquityPoint
+from silver_bot.backtest.reporting import json_safe
+
+SEGMENTS = ("training", "validation", "final_test")
+
+
+@dataclass(frozen=True, slots=True)
+class _Trade:
+    """One row of a segment's trade list: the fields `calculate_metrics` reads, and the two times."""
+
+    entry_time: str
+    exit_time: str
+    realized_r: float
+    realized_pnl: float
+    fees: float
+    funding: float
+    session_name: str
+
+
+def pool(reports: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Return one out-of-sample report over the union of the reports' trades, segment by segment."""
+
+    if not reports:
+        raise GateInputError("no reports to pool")
+    strategies = {report.get("strategy") for report in reports}
+    if len(strategies) != 1:
+        raise GateInputError(f"the reports mix strategies: {', '.join(sorted(map(str, strategies)))}")
+    symbols = [report.get("symbol") for report in reports]
+    if None in symbols or len(set(symbols)) != len(symbols):
+        raise GateInputError(f"each report needs its own symbol, got {symbols}; {RERUN_HINT}")
+    return {
+        "method": "pooled_chronological_split",
+        "parameters_tuned": False,
+        "strategy": strategies.pop(),
+        "symbols": symbols,
+        "segments": {name: _pool_segment([gate._segment(report, name) for report in reports], name) for name in SEGMENTS},
+    }
+
+
+def _pool_segment(segments: list[Mapping[str, Any]], name: str) -> dict[str, Any]:
+    ranges = {(segment.get("start"), segment.get("end")) for segment in segments}
+    if len(ranges) != 1:
+        raise GateInputError(f"segment '{name}' covers different dates across the reports")
+    trades: list[_Trade] = []
+    balance = 0.0
+    candles = 0
+    trips = 0
+    for segment in segments:
+        rows = segment.get("trades")
+        if not isinstance(rows, list):
+            raise GateInputError(f"segment '{name}' has no trade list; {RERUN_HINT}")
+        try:
+            trades += [_Trade(**row) for row in rows]
+        except TypeError as exc:
+            raise GateInputError(f"segment '{name}' has a malformed trade ({exc}); {RERUN_HINT}") from exc
+        balance += gate._number(segment.get("initial_balance"), f"{name}.initial_balance")
+        candles += int(gate._number(segment.get("candles"), f"{name}.candles"))
+        kill_switch = segment.get("kill_switch")
+        trips += int(kill_switch.get("trips") or 0) if isinstance(kill_switch, Mapping) else 0
+    start, end = ranges.pop()
+    return {
+        "candles": candles,
+        "start": start,
+        "end": end,
+        "initial_balance": balance,
+        "kill_switch": {"trips": trips},
+        "metrics": _metrics(trades, balance) if trades else None,
+    }
+
+
+def _metrics(trades: list[_Trade], balance: float) -> dict[str, Any]:
+    """One symbol's metrics, over the merged trades.
+
+    Drawdown runs on the merged realized P&L in exit-time order against the summed balances (MS-5).
+    The real-edge t-stat is the lower of the trade t and the t of R summed per UTC entry day (MS-4),
+    because setups on correlated symbols on the same day are not independent evidence.
+    """
+
+    trades = sorted(trades, key=lambda trade: datetime.fromisoformat(trade.exit_time))
+    curve = []
+    equity = peak = balance
+    for trade in trades:
+        equity += trade.realized_pnl
+        peak = max(peak, equity)
+        curve.append(EquityPoint(datetime.fromisoformat(trade.exit_time), equity, equity - balance, peak - equity))
+    metrics = calculate_metrics(trades, curve, initial_balance=balance)  # type: ignore[arg-type]
+    trade_t = metrics["r_t_stat"]
+    day_t = _day_t_stat(trades)
+    metrics.update(trade_r_t_stat=trade_t, day_r_t_stat=day_t, r_t_stat=min(trade_t, day_t))
+    return metrics
+
+
+def _day_t_stat(trades: list[_Trade]) -> float:
+    """t-stat of R summed per UTC entry day; 0.0 below two days or with no spread, as for trades."""
+
+    days: dict[Any, float] = defaultdict(float)
+    for trade in trades:
+        days[datetime.fromisoformat(trade.entry_time).astimezone(UTC).date()] += trade.realized_r
+    sums = list(days.values())
+    if len(sums) < 2:
+        return 0.0
+    spread = statistics.stdev(sums)
+    return statistics.fmean(sums) / (spread / math.sqrt(len(sums))) if spread else 0.0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Pool several symbols' out-of-sample reports and run the promotion gate on them. Unlocks nothing."
+    )
+    parser.add_argument("--report", action="append", required=True, help="one symbol's report JSON; repeat per symbol")
+    parser.add_argument("--output-dir", required=True, help="for the pooled report, the verdict and the gate's look log")
+    args = parser.parse_args(argv)
+    sources = [Path(path) for path in args.report]
+    output = Path(args.output_dir) / Path(gate.DEFAULT_REPORT).name
+    try:
+        if output.resolve() in {source.resolve() for source in sources}:
+            raise GateInputError(f"{output} is one of the input reports; choose another --output-dir")
+        pooled = pool([gate._load(source) for source in sources])
+    except GateInputError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    pooled["sources"] = [
+        {"report": str(source), "sha256": hashlib.sha256(source.read_bytes()).hexdigest()} for source in sources
+    ]
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(json_safe(pooled), indent=2), encoding="utf-8")
+    return gate.main(["--report", str(output)])
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

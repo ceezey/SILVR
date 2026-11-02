@@ -410,6 +410,25 @@ def test_open_position_closed_at_segment_end(tmp_path: Path, monkeypatch: pytest
     assert runs[0][2].trades[-1].exit_time == data[-1].open_time  # the full run holds it to the last candle
 
 
+def test_segments_list_their_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    script_strategy(monkeypatch, {28})  # a long one candle before training ends, closed at the segment end
+    summary = run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy="top_down_ob", funding=FUNDING)
+
+    segments = read_report(summary, "out_of_sample_validation_report")["segments"]
+    (trade,) = segments["training"]["trades"]
+    assert set(trade) == {"entry_time", "exit_time", "realized_r", "realized_pnl", "fees", "funding", "session_name"}
+    assert trade["realized_r"] == segments["training"]["metrics"]["average_r"]
+    for segment in segments.values():
+        assert len(segment["trades"]) == segment["metrics"]["total_trades"]
+        assert segment["initial_balance"] == 10_000.0
+
+
+def test_out_of_sample_report_names_its_symbol(tmp_path: Path) -> None:
+    summary = run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={})
+
+    assert read_report(summary, "out_of_sample_validation_report")["symbol"] == "BTCUSDT"
+
+
 def test_top_down_run_record_reports_no_ml_filter(tmp_path: Path) -> None:
     # The top-down engine applies no ML filter, so the run record never claims one, whatever the settings say.
     settings = backtest_settings(ml_filter_enabled=True, ml_registry_path=tmp_path / "registry.json")
