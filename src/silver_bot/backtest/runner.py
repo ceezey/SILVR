@@ -26,8 +26,8 @@ from silver_bot.strategy.top_down import TopDownOBStrategy
 
 TRAINING_FRACTION = 0.6
 VALIDATION_FRACTION = 0.2
-STRATEGIES = ("silver_bullet", "top_down_ob", "top_down_ob_v2", "top_down_ob_v3")
-TOP_DOWN_STRATEGIES = ("top_down_ob", "top_down_ob_v2", "top_down_ob_v3")
+STRATEGIES = ("silver_bullet", "top_down_ob", "top_down_ob_v2", "top_down_ob_v3", "top_down_ob_v4")
+TOP_DOWN_STRATEGIES = ("top_down_ob", "top_down_ob_v2", "top_down_ob_v3", "top_down_ob_v4")
 WALK_FORWARD_WINDOWS = 4
 MONTE_CARLO_RUNS = 1000
 MONTE_CARLO_SEED = 7
@@ -83,8 +83,8 @@ def run_backtest(
 ) -> BacktestRunSummary:
     """Run the full-period backtest and a chronological out-of-sample split.
 
-    The top-down strategies (`top_down_ob`, `top_down_ob_v2`, `top_down_ob_v3`) need `funding`. Their full run has
-    no warm-up; each segment is warmed up on every candle before it, so the strategy has history
+    The top-down strategies (`top_down_ob`, `top_down_ob_v2`, `top_down_ob_v3`, `top_down_ob_v4`) need `funding`. Their
+    full run has no warm-up; each segment is warmed up on every candle before it, so the strategy has history
     without trading on it. `silver_bullet` ignores `funding` and keeps its cold start per segment.
     """
 
@@ -94,12 +94,13 @@ def run_backtest(
         raise ValueError(f"strategy {strategy} needs funding data")
     if strategy == "silver_bullet":
         funding = None
-    v2_rules = strategy in ("top_down_ob_v2", "top_down_ob_v3")
+    v2_rules = strategy in ("top_down_ob_v2", "top_down_ob_v3", "top_down_ob_v4")
     flags = {
         "any_hour": v2_rules,
         "skip_inside": v2_rules,
-        "first_touch_only": v2_rules,
-        "strict_ob": strategy == "top_down_ob_v3",
+        "first_touch_only": v2_rules and strategy != "top_down_ob_v4",
+        "strict_ob": strategy in ("top_down_ob_v3", "top_down_ob_v4"),
+        "retest_entry": strategy == "top_down_ob_v4",
     }
     if not candles:
         raise ValueError("run_backtest needs at least one candle")

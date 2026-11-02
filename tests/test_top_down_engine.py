@@ -422,3 +422,61 @@ def test_warmup_must_end_before_trading_candles() -> None:
         with pytest.raises(ValueError, match="warm-up"):
             tdob.run([first, bar(2, 1000, 1001, 999, 1000)], warmup=[bar(-1, 1000, 1001, 999, 1000), warm])
         assert tdob.strategy.calls == []
+
+
+def limit_plan(minute: int = 0, *, side: str = "long", raw: float = 1000.0, stop: float = 990.0, final: float = 1040.0,
+               stage2: float | None = 1020.0) -> StepResult:
+    signal_time = START + timedelta(minutes=minute + 1)
+    plan = EntryPlan(side, signal_time, raw, stop, final, stage2, "any_hour", None, "test plan", limit=True)
+    return StepResult(plan, None, ())
+
+
+def test_limit_entry_fills_at_its_level_with_the_maker_fee_and_no_slippage() -> None:
+    trade = only_trade(engine({0: limit_plan()}).run([bar(0, 1001, 1002, 999, 1000)]))
+
+    # Entry exactly 1000, qty 50 / 10 = 5, maker fee 1000 * 5 * 0.0002 = 1.0; the taker exit at 999.35 adds 2.498375.
+    assert trade.entry_price == 1000.0
+    assert trade.position_size == pytest.approx(5.0)
+    assert trade.fees == pytest.approx(3.498375)
+    assert trade.slippage == pytest.approx(0.5)  # the end-of-data exit's only
+    assert trade.entry_time == START + timedelta(minutes=1)
+    assert trade.max_adverse_excursion == pytest.approx(1.0)
+
+
+def test_limit_fill_candle_reaching_the_stop_stops_out_on_that_candle() -> None:
+    tdob = engine({0: limit_plan()})
+
+    result = tdob.run([bar(0, 1001, 1002, 989, 995), bar(1, 995, 1050, 995, 1000)])
+
+    trade = only_trade(result)
+    assert trade.exit_reason == ExitReason.STOP_LOSS
+    assert trade.exit_price == pytest.approx(990 * (1 - 0.00065))  # market fill at the stop
+    assert trade.exit_time >= trade.entry_time
+    assert trade.max_adverse_excursion == pytest.approx(11.0)
+    assert tdob.risk.state.open_positions == 0
+    assert result.equity_curve[0].equity == pytest.approx(10_000 + trade.realized_pnl)
+
+
+def test_short_limit_fill_candle_reaching_the_stop_stops_out_on_that_candle() -> None:
+    trade = only_trade(
+        engine({0: limit_plan(side="short", stop=1010.0, final=960.0, stage2=None)}).run([bar(0, 999, 1011, 998, 1005)])
+    )
+
+    assert trade.direction == "SHORT"
+    assert trade.exit_reason == ExitReason.STOP_LOSS
+    assert trade.exit_price == pytest.approx(1010 * (1 + 0.00065))
+
+
+def test_limit_fill_candle_gets_no_credit_for_targets() -> None:
+    trade = only_trade(engine({0: limit_plan()}).run([bar(0, 1001, 1050, 999, 1000), bar(1, 1000, 1001, 999, 1000)]))
+
+    assert trade.exit_reason == ExitReason.END_OF_DATA
+    assert "s2" not in trade.notes and "s3" not in trade.notes
+    assert trade.max_favorable_excursion == pytest.approx(1.0)  # the next candle's high only
+
+
+def test_limit_entry_below_3r_is_rejected() -> None:
+    result = engine({0: limit_plan(final=1020.0, stage2=None)}).run([bar(0, 1001, 1002, 999, 1000)])
+
+    assert result.trades == []
+    assert result.rejected_signals[0].reason.startswith("Risk rejected") or "3R" in result.rejected_signals[0].reason

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -715,3 +716,271 @@ def test_v3_ob_pending_at_the_end_of_warmup_still_needs_its_gap() -> None:
     plans = entries(run(rest + minutes(NY_AM, DESCENT + [MSS]), strategy=strategy))
 
     assert len(plans) == 1 and (plans[0].ob.zone_low, plans[0].ob.zone_high) == ZONE
+
+# TDOB v4 (TD-29 to TD-40): the first touch starts a setup, then a 1m CHoCH, then a limit fill on the retest.
+TO_ZONE = DESCENT  # touches at the 5th candle; the lowest low 105.9 is on the last, whose high is 106.6
+BACK: Row = (106.6, 108.0, 106.2, 107.8)  # revisits the OB candle down to 106.2
+CHOCH: Row = (107.8, 110.6, 107.7, 110.5)  # closes above the swing high 110.2, the last 15m candle's high
+AWAY: Row = (110.5, 111.0, 110.0, 110.8)
+RETEST: Row = (108.0, 108.1, 106.1, 107.0)
+ENTRY_V4 = 106.2
+STOP_V4 = 106.2 - 2 * (106.2 - SWEEP_LOW)
+
+
+def v4() -> TopDownOBStrategy:
+    return TopDownOBStrategy(any_hour=True, skip_inside=True, strict_ob=True, retest_entry=True)
+
+
+def v4_path(*rows: Row) -> list[Candle]:
+    ones, _ = day_rows()
+    return ones + minutes(NY_AM, list(rows))
+
+
+def test_v4_long_plan_fills_at_the_box_top_on_the_retest() -> None:
+    candles = v4_path(*TO_ZONE, BACK, CHOCH, AWAY, RETEST)
+
+    results = run(candles, strategy=v4())
+
+    (plan,) = entries(results)
+    assert results[-1].entry is plan
+    assert plan.side == "long" and plan.limit
+    assert plan.raw_entry == ENTRY_V4
+    assert plan.stop == pytest.approx(STOP_V4)
+    assert plan.final_target == CAP
+    assert plan.signal_time == candles[-1].close_time
+    assert plan.session_name == "any_hour"
+    assert "retest" in plan.reason
+    assert not plan.ob.active
+
+
+def test_v4_short_plan_mirrors_the_long() -> None:
+    (plan,) = entries(run(mirror(v4_path(*TO_ZONE, BACK, CHOCH, AWAY, RETEST)), strategy=v4()))
+
+    assert plan.side == "short" and plan.limit
+    assert plan.raw_entry == pytest.approx(MIRROR - ENTRY_V4)
+    assert plan.stop == pytest.approx(MIRROR - STOP_V4)
+    assert plan.final_target == MIRROR - CAP
+
+
+def test_v4_level_starts_at_the_swing_high_at_the_touch() -> None:
+    strategy = v4()
+
+    run(v4_path(*TO_ZONE, BACK), strategy=strategy)
+
+    assert strategy._setup.level == 110.2 and strategy._setup.entry is None
+
+
+def test_v4_price_at_the_box_before_the_choch_does_not_fill() -> None:
+    strategy = v4()
+
+    results = run(v4_path(*TO_ZONE, BACK, (107.8, 108.0, 106.2, 107.0), CHOCH), strategy=strategy)
+
+    assert entries(results) == [] and strategy._setup.entry == ENTRY_V4
+
+
+def test_v4_the_choch_candle_never_fills() -> None:
+    strategy = v4()
+
+    results = run(v4_path(*TO_ZONE, (106.6, 110.6, 106.0, 110.5)), strategy=strategy)
+
+    assert entries(results) == [] and strategy._setup.entry == 106.0
+
+
+def test_v4_a_return_to_the_zone_does_not_kill_the_setup() -> None:
+    leave: Row = (108.0, 109.5, 108.0, 109.0)  # off the zone top 107.5
+    back_in: Row = (107.0, 107.2, 105.9, 106.5)  # small enough that BACK is not an inside candle of it
+
+    (plan,) = entries(run(v4_path(*TO_ZONE[:5], leave, back_in, BACK, CHOCH, AWAY, RETEST), strategy=v4()))
+
+    assert plan.raw_entry == ENTRY_V4
+
+
+def test_v4_far_side_close_before_the_choch_ends_the_setup() -> None:
+    strategy = v4()
+    candles = v4_path(*TO_ZONE, (106.0, 106.1, 103.0, 104.0)) + [one_minute(NY_AM + M15, 104, 104, 104, 104)]
+
+    results = run(candles, strategy=strategy)
+
+    assert entries(results) == []
+    assert strategy._setup is None and strategy._book.active == ()
+
+
+def test_v4_bias_flip_after_the_choch_ends_the_setup() -> None:
+    strategy = v4()
+    run(v4_path(*TO_ZONE, BACK, CHOCH), strategy=strategy)
+    assert strategy._setup.entry == ENTRY_V4
+
+    strategy._book.on_bias("bearish")
+    result = strategy.step(one_minute(NY_AM + 10 * M1, *RETEST))
+
+    assert result.entry is None and result.skipped is None and strategy._setup is None
+
+
+def test_v4_price_running_far_above_the_entry_does_not_cancel_it() -> None:
+    far: Row = (110.8, 130.0, 110.5, 129.0)  # through the 4H cap of 120
+
+    (plan,) = entries(run(v4_path(*TO_ZONE, BACK, CHOCH, far, RETEST), strategy=v4()))
+
+    assert plan.raw_entry == ENTRY_V4
+
+
+@pytest.mark.parametrize("box_top", [104.4, SWEEP_LOW])  # beyond, then exactly at the far side 104.5
+def test_v4_entry_at_or_beyond_the_far_side_is_skipped_with_a_reason(box_top: float) -> None:
+    swept_through: Row = (104.2, box_top, 104.0, 104.2)  # the OB candle sits under the zone
+    above: Row = (104.6, 108.0, 104.6, 107.9)  # stays above it: the box is the whole candle
+    retest: Row = (106.0, 106.0, 104.3, 105.0)
+    strategy = v4()
+
+    results = run(v4_path(*TO_ZONE, swept_through, above, CHOCH, AWAY, retest), strategy=strategy)
+
+    assert entries(results) == []
+    assert "far side" in results[-1].skipped
+    assert strategy._book.active == () and strategy._setup is None
+
+
+def test_v4_reward_below_3r_at_the_fill_is_skipped_and_the_ob_used_up() -> None:
+    choch: Row = (108.0, 110.6, 108.0, 110.5)  # box top 108.0: stop 101.0, risk 7, reward 12: 1.71R
+    strategy = v4()
+
+    results = run(v4_path(*TO_ZONE[:5], choch, AWAY, (108.0, 108.0, 107.9, 107.95)), strategy=strategy)
+
+    assert entries(results) == []
+    assert "below the 3R minimum" in results[-1].skipped
+    assert strategy._book.active == ()
+
+
+def test_v4_target_is_only_worked_out_at_the_fill(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+    real = strategy_module.final_target
+    monkeypatch.setattr(strategy_module, "final_target", lambda **kw: calls.append(kw["entry"]) or real(**kw))
+    strategy = v4()
+
+    run(v4_path(*TO_ZONE, BACK, CHOCH, AWAY), strategy=strategy)
+    assert calls == []
+
+    strategy.step(one_minute(NY_AM + 11 * M1, *RETEST))
+    assert calls == [ENTRY_V4]
+
+
+def test_v4_one_setup_at_a_time_and_another_ob_is_not_spent() -> None:
+    strategy = v4()
+    run(v4_path(*TO_ZONE), strategy=strategy)
+    first = strategy._setup.ob
+    other = OrderBlock("bullish", 100.0, 107.0, 100.0, DAY2, 1, SwingLevel(100.0, DAY2, "low"))
+    strategy._book.add(other)
+
+    for offset, row in enumerate((BACK, CHOCH, RETEST), start=8):
+        strategy.step(one_minute(NY_AM + offset * M1, *row))
+
+    assert not first.active and other.active and strategy._setup is None
+    strategy.step(one_minute(NY_AM + 11 * M1, 107.0, 107.0, 106.5, 106.8))
+    assert strategy._setup.ob is other
+
+
+def test_v4_warmup_fill_uses_up_the_ob_without_a_plan() -> None:
+    strategy = v4()
+
+    results = run(v4_path(*TO_ZONE, BACK, CHOCH, AWAY, RETEST), strategy=strategy, trading=False)
+
+    assert entries(results) == [] and results[-1].skipped is None
+    assert strategy._book.active == () and strategy._setup is None
+
+
+def test_v4_setup_started_in_warmup_carries_into_trading() -> None:
+    strategy = v4()
+    run(v4_path(*TO_ZONE, BACK, CHOCH), strategy=strategy, trading=False)
+
+    result = strategy.step(one_minute(NY_AM + 10 * M1, *RETEST))
+
+    assert result.entry is not None and result.entry.raw_entry == ENTRY_V4
+
+
+# TD-40: a day's extreme counts as liquidity when no recorded level was swept.
+def no_recorded_levels(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The scenario's recorded levels are hidden, as if the sell-off had already taken them."""
+    real = strategy_module.detect_order_block
+
+    def detect(prev2, sweep, engulf, *, bias, levels_4h, levels_15m):
+        kept = [level for level in levels_15m if level.time == prev2.open_time]
+        return real(prev2, sweep, engulf, bias=bias, levels_4h=[], levels_15m=kept)
+
+    monkeypatch.setattr(strategy_module, "detect_order_block", detect)
+
+
+DAY_EXTREME_SETUP: list[Row] = [SETUP[0], SETUP[1], (106.8, 107.0, 104.5, 106.8), *SETUP[3:]]  # closes over 106.6
+
+
+def test_v4_sweep_of_the_days_low_forms_an_ob(monkeypatch: pytest.MonkeyPatch) -> None:
+    no_recorded_levels(monkeypatch)
+    ones, _ = day_rows(day0_rows=DAY0_ROWS * 5, setup=DAY_EXTREME_SETUP)  # enough 15m candles for a full day behind it
+    strategy = v4()
+
+    run(ones, strategy=strategy)
+
+    (ob,) = strategy._book.active
+    assert (ob.zone_low, ob.zone_high, ob.rank, ob.swept.price) == (*ZONE, 1, 106.6)
+
+
+def test_v4_days_low_needs_a_full_day_of_candles(monkeypatch: pytest.MonkeyPatch) -> None:
+    no_recorded_levels(monkeypatch)
+    ones, _ = day_rows(setup=DAY_EXTREME_SETUP)
+    strategy = v4()
+
+    run(ones, strategy=strategy)
+
+    assert strategy._book.active == ()
+
+
+def test_days_low_rule_is_v4_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    no_recorded_levels(monkeypatch)
+    ones, _ = day_rows(day0_rows=DAY0_ROWS * 5, setup=DAY_EXTREME_SETUP)
+    strategy = v3()
+
+    run(ones, strategy=strategy)
+
+    assert strategy._book.active == ()
+
+
+def test_v4_keeps_a_recorded_level_when_one_was_swept() -> None:
+    ones, _ = day_rows(day0_rows=DAY0_ROWS * 5, setup=DAY_EXTREME_SETUP)
+    strategy = v4()
+
+    run(ones, strategy=strategy)
+
+    (ob,) = strategy._book.active
+    assert ob.swept.price == 105.2
+
+
+def _fifteens(*lows: float) -> list[Candle]:
+    return as_15m(DAY0, [(200.0, 201.0, low, 200.0) for low in lows])
+
+
+@pytest.mark.parametrize(
+    ("lows", "expected"),
+    [
+        ([150.0] * 96, True),
+        ([150.0] * 95, False),  # under a full day
+        ([100.0] + [150.0] * 95, False),  # equal to the sweep's low, at the far end of the window
+        ([90.0] + [150.0] * 96, True),  # a lower low, older than the window
+        ([150.0] * 95 + [99.0], False),
+    ],
+)
+def test_clears_day_counts_the_96_candles_before_the_sweep(lows: list[float], expected: bool) -> None:
+    candles = _fifteens(*lows, 100.0, 150.0)  # the sweep at low 100, then one candle after it
+    strategy = v4()
+    strategy._candles_15m = candles
+
+    assert strategy._clears_day(candles[-2], "bullish") is expected
+
+
+def test_clears_day_mirrors_for_a_short() -> None:
+    candles = [
+        Candle("BTCUSDT", "15m", c.open_time, 300 - c.open, 300 - c.low, 300 - c.high, 300 - c.close, 15.0, c.close_time)
+        for c in _fifteens(*[150.0] * 96, 100.0)
+    ]
+    strategy = v4()
+    strategy._candles_15m = candles
+
+    assert strategy._clears_day(candles[-1], "bearish") is True
+    strategy._candles_15m = [*candles[:50], replace(candles[50], high=200.0), *candles[51:]]
+    assert strategy._clears_day(candles[-1], "bearish") is False
