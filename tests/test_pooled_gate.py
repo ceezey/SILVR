@@ -201,6 +201,16 @@ def test_a_run_without_the_carried_over_look_log_is_refused(tmp_path: Path) -> N
     assert not out.exists()
 
 
+def test_a_look_log_without_this_data_range_is_refused(tmp_path: Path) -> None:
+    out = tmp_path / "pooled"
+    out.mkdir()
+    other = {"data_start": "2020-01-01T00:00:00+00:00", "data_end": RANGES["final_test"][1], "passed": False}
+    (out / "promotion_gate_log.jsonl").write_text(json.dumps(other) + "\n", encoding="utf-8")
+
+    assert main(_write(tmp_path, *reports()) + ["--output-dir", str(out)]) == 2
+    assert not (out / "promotion_gate.json").exists()
+
+
 def test_output_never_overwrites_an_input_report(tmp_path: Path) -> None:
     args = _write(tmp_path, *reports())
     _pooled_dir(tmp_path, tmp_path / "BTCUSDT")

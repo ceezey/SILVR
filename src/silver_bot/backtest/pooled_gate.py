@@ -160,10 +160,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if output.resolve() in {source.resolve() for source in sources}:
             raise GateInputError(f"{output} is one of the input reports; choose another --output-dir")
-        if not (output.parent / gate.LOG_NAME).exists():
-            # Without the earlier runs' log the gate would count look 1 and lower its bar (MS-6).
-            raise GateInputError(f"no {gate.LOG_NAME} in {output.parent}; carry over the gate log of this data range")
         pooled = pool([gate._load(source) for source in sources])
+        segments = pooled["segments"]
+        data_range = {"data_start": segments["training"]["start"], "data_end": segments["final_test"]["end"]}
+        if not gate._count_looks(output.parent / gate.LOG_NAME, data_range):
+            # Without the earlier runs on this data range the gate would count look 1 and lower its bar (MS-6).
+            raise GateInputError(f"{output.parent / gate.LOG_NAME} has no earlier run on this data range; carry it over")
     except GateInputError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
