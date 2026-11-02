@@ -80,7 +80,7 @@ _DAY_15M = 96  # 15m candles in the 24 hours a sweep must clear (TD-40)
 @dataclass(frozen=True, slots=True)
 class EntryPlan:
     side: Literal["long", "short"]
-    signal_time: datetime  # close_time of the 1m MSS candle
+    signal_time: datetime  # close_time of the 1m MSS candle, or of the fill candle for a limit plan
     raw_entry: float  # that candle's close, before costs
     stop: float
     final_target: float
@@ -150,7 +150,7 @@ class TopDownOBStrategy:
         its OB (TD-22), but no plan or skip is ever returned."""
         events_15m = self._apply_htf(candle_1m)
         mss = self._m1.update(candle_1m)
-        if self._retest_entry:
+        if self._retest_entry:  # uses the tracker's last_counted, not its MSS
             return self._step_retest(candle_1m, events_15m, trading)
 
         best = self._book.best_touched(candle_1m)
@@ -345,7 +345,8 @@ class TopDownOBStrategy:
     def _retest_plan(self, ob: OrderBlock, candle: Candle, entry: float) -> EntryPlan | str:
         """TD-36: the stop is twice the distance from the entry to the OB's far side."""
         extreme = ob.sweep_extreme
-        if entry <= extreme if ob.direction == "bullish" else entry >= extreme:
+        beyond_far_side = entry <= extreme if ob.direction == "bullish" else entry >= extreme
+        if beyond_far_side:
             return f"entry {entry:g} is at or beyond the OB's far side {extreme:g}"
         stop = entry - 2 * (entry - extreme)
         return self._priced_plan(ob, candle, entry, stop, _ANY_HOUR, "1m retest after a CHoCH", limit=True)
