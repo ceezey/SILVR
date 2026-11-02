@@ -78,8 +78,10 @@ class TopDownBacktestEngine:
         risk_engine: RiskManagementEngine,
         funding: FundingSchedule,
         strategy: TopDownOBStrategy | None = None,
+        min_reward_r: float = MIN_REWARD_R,
     ) -> None:
         self.config = config
+        self._min_reward_r = min_reward_r  # the strategy's own floor, held again after entry costs
         self.risk = risk_engine
         self.funding = funding
         self.strategy = strategy or TopDownOBStrategy()
@@ -226,8 +228,8 @@ class TopDownBacktestEngine:
         long = direction == SignalDirection.LONG
         reward = plan.final_target - entry if long else entry - plan.final_target
         risk = entry - plan.stop if long else plan.stop - entry
-        if reward < MIN_REWARD_R * risk:  # the strategy's 3R filter used the raw close
-            self._reject(rejected, plan.signal_time, candle.symbol, "reward below 3R after entry costs")
+        if reward < self._min_reward_r * risk:  # the strategy's filter used the raw entry
+            self._reject(rejected, plan.signal_time, candle.symbol, f"reward below {self._min_reward_r:g}R after entry costs")
             return None
         decision = self.risk.evaluate(
             RiskRequest(

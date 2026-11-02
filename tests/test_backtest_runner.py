@@ -332,10 +332,28 @@ def test_flags_reach_every_strategy(
 
     expected = {
         "any_hour": any_hour, "skip_inside": any_hour, "first_touch_only": first_touch, "strict_ob": strict,
-        "retest_entry": retest,
+        "retest_entry": retest, "min_reward_r": 2.0 if retest else 3.0,
     }
     # full run, three segments and every walk-forward window
     assert seen and all(kw == expected for kw in seen)
+
+
+@pytest.mark.parametrize(("strategy", "floor"), [("top_down_ob_v4", 2.0), ("top_down_ob_v3", 3.0)])
+def test_engine_gets_the_strategys_reward_floor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strategy: str, floor: float
+) -> None:
+    seen: list[float] = []
+    real = runner.TopDownBacktestEngine
+
+    def spy(**kw: object):
+        seen.append(kw["min_reward_r"])
+        return real(**kw)
+
+    monkeypatch.setattr(runner, "TopDownBacktestEngine", spy)
+
+    run_backtest(backtest_settings(), candles(), tmp_path / "reports", inputs={}, strategy=strategy, funding=FUNDING)
+
+    assert seen and set(seen) == {floor}
 
 
 def test_warmup_never_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
