@@ -9,7 +9,7 @@ $python = Join-Path $Root '.venv\Scripts\python.exe'
 if (-not (Test-Path $python)) { throw "missing $python; create the venv and pip install . first" }
 New-Item -ItemType Directory -Force logs | Out-Null
 while ($true) {
-    & $python -m silver_bot *>> logs\bot-console.log
+    & $python -m silvr *>> logs\bot-console.log
     $code = $LASTEXITCODE
     "$(Get-Date -Format o) bot exited with code $code" | Add-Content logs\bot-console.log
     if ($code -eq 2) { break }

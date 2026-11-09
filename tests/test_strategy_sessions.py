@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, time
 
-from silver_bot.strategy import SessionWindow, SilverBulletSessionEngine
+from silvr.strategy import SessionWindow, SilverBulletSessionEngine
 
 
 def test_new_york_session_detection_is_timezone_aware() -> None:

@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
-from silver_bot.backtest.gate import GateInputError
-from silver_bot.backtest.pooled_gate import FROZEN_SYMBOLS, main, pool
+from silvr.backtest.gate import GateInputError
+from silvr.backtest.pooled_gate import FROZEN_SYMBOLS, main, pool
 
 SYMBOLS = FROZEN_SYMBOLS["top_down_ob_v4"]
 RANGES = {

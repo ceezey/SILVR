@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
-from silver_bot.models import Candle, SignalDirection
-from silver_bot.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
+from silvr.models import Candle, SignalDirection
+from silvr.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
 
 
 def candle(index: int, open_: float, high: float, low: float, close: float) -> Candle:

@@ -1,4 +1,4 @@
-# Silver Bot
+# SILVR
 
 An ICT Silver Bullet trading bot for crypto futures (Binance Futures), written in Python 3.11+ for personal use by its owner. It is built as a rule-based strategy engine behind a mandatory risk engine, with backtesting, paper trading and testnet readiness checks, and an optional ML filter that can only approve, reject or reduce risk on a rule-based signal.
 
@@ -24,36 +24,36 @@ Live trading is blocked: the config loader rejects `LIVE_TRADING=true`, and orde
 6. API withdrawals are disabled.
 7. The owner accepts the risk.
 
-Full proposal conditions: [RFC-004 §7.1](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-readiness-gates.md>).
+Full proposal conditions: [RFC-004 §7.1](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>).
 
 ## Current Status
 
-Honest summary on `dev` after merging the PRD-F2 to PRD-F5 batch (2026-10-14) with the ccxt data and promotion gate (2026-10-21, `c523f04`) (2026-10-22; the bullets below name the commit of each item) (see [prd-silverbot](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/prd-silverbot.md>) section 3 for the per-feature table):
+Honest summary on `dev` after merging the PRD-F2 to PRD-F5 batch (2026-10-14) with the ccxt data and promotion gate (2026-10-21, `c523f04`) (2026-10-22; the bullets below name the commit of each item) (see [prd-silvr](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/prd-silvr.md>) section 3 for the per-feature table):
 
 - Built and tested: signal engine, risk engine, config loading, readiness checkers, backtest from the command line (`python -m pytest -q`: 400 passed at commit `c523f04`, 2026-10-21).
-- HIGH safety fixes batch 1 (2026-10-09): a NaN or out-of-range ML probability now rejects; the testnet URL guard is an exact `https` host match; `.env.example` loads as paper mode; readiness rejects empty or non-JSON reports; backtests default to 5 bps slippage and 3 bps spread; risk per trade is capped at 0.5% everywhere; the kill switch fails closed and trips itself on the daily-loss and consecutive-loss limits; risk state can persist in SQLite. Backtests use the settings caps and a simulated per-run kill switch; no paper bot uses the real kill switch or the persisted state until a paper runtime builds its engine with `build_risk_engine` (G-3). Details: [scrutiny-silverbot](<C:/AI Agentic Memory/01_Projects/SilverBot/Planning/scrutiny-silverbot.md>) section 3.
+- HIGH safety fixes batch 1 (2026-10-09): a NaN or out-of-range ML probability now rejects; the testnet URL guard is an exact `https` host match; `.env.example` loads as paper mode; readiness rejects empty or non-JSON reports; backtests default to 5 bps slippage and 3 bps spread; risk per trade is capped at 0.5% everywhere; the kill switch fails closed and trips itself on the daily-loss and consecutive-loss limits; risk state can persist in SQLite. Backtests use the settings caps and a simulated per-run kill switch; no paper bot uses the real kill switch or the persisted state until a paper runtime builds its engine with `build_risk_engine` (G-3). Details: [scrutiny-silvr](<C:/AI Agentic Memory/01_Projects/SILVR/Planning/scrutiny-silvr.md>) section 3.
 - Partial: backtester, paper trading, demo/testnet mode, ML filter, monitoring, market data, deployment files.
-- Entrypoint (G-3 entrypoint batch 2, 2026-10-09): `python -m silver_bot` runs the mode from configuration. Backtest mode loads Binance kline CSV files given with `--candles` and writes seven reports, including a chronological out-of-sample report with walk-forward windows, a Monte Carlo summary and BRD pass or fail criteria, and a run record (exit 0; 2 on bad input). Since the PRD-F2 to PRD-F5 batch (2026-10-14), paper mode reads closed candles from the Binance Futures public klines endpoint and demo mode reads them from the testnet; both fill trades locally (simulated), send no order anywhere and write `reports/paper_trading_report.json` (exit 0 on stop, 1 when market data is unreachable, 2 on bad input). Testnet order placement is not built (G-17).
-- ccxt data and promotion gate (2026-10-21, `c523f04`): `python -m silver_bot.data.download` fetches public Binance Futures candles through ccxt (the first runtime dependency, `ccxt>=4.5,<5`) into monthly CSV files with no API key, and `python -m silver_bot.backtest.gate` prints PASS or FAIL for six promotion criteria on the out-of-sample report. The gate only reports; it unlocks nothing, and live trading stays `Planned, blocked`. A backtest-only simulated kill switch clears at the next UTC day and logs each trip.
+- Entrypoint (G-3 entrypoint batch 2, 2026-10-09): `python -m silvr` runs the mode from configuration. Backtest mode loads Binance kline CSV files given with `--candles` and writes seven reports, including a chronological out-of-sample report with walk-forward windows, a Monte Carlo summary and BRD pass or fail criteria, and a run record (exit 0; 2 on bad input). Since the PRD-F2 to PRD-F5 batch (2026-10-14), paper mode reads closed candles from the Binance Futures public klines endpoint and demo mode reads them from the testnet; both fill trades locally (simulated), send no order anywhere and write `reports/paper_trading_report.json` (exit 0 on stop, 1 when market data is unreachable, 2 on bad input). Testnet order placement is not built (G-17).
+- ccxt data and promotion gate (2026-10-21, `c523f04`): `python -m silvr.data.download` fetches public Binance Futures candles through ccxt (the first runtime dependency, `ccxt>=4.5,<5`) into monthly CSV files with no API key, and `python -m silvr.backtest.gate` prints PASS or FAIL for six promotion criteria on the out-of-sample report. The gate only reports; it unlocks nothing, and live trading stays `Planned, blocked`. A backtest-only simulated kill switch clears at the next UTC day and logs each trip.
 - No evidence: `reports/backtest_report.json`, `reports/out_of_sample_validation_report.json` and `reports/paper_trading_report.json` are empty until the owner runs a backtest on real data, and `reports/` is git-ignored. Nothing here supports any claim about strategy performance.
-- Known safety hazards are listed in [audit-docs-drift](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>) and [scrutiny-silverbot](<C:/AI Agentic Memory/01_Projects/SilverBot/Planning/scrutiny-silverbot.md>).
+- Known safety hazards are listed in [audit-docs-drift](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>) and [scrutiny-silvr](<C:/AI Agentic Memory/01_Projects/SILVR/Planning/scrutiny-silvr.md>).
 
 ## Quick Start
 
-Set up the environment and run the tests by following [runbook-local-dev](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/runbook-local-dev.md>). Paper and demo modes store their state in PostgreSQL (`DATABASE_URL`), and the tests need one too (`TEST_DATABASE_URL`, default `postgresql://silverbot:silverbot@localhost:5432/silverbot`; `docker compose up -d postgres` starts one). Backtests need no database. The bot runs 24/7 on an Oracle Cloud Always Free server with `docker compose` and the systemd unit in `deploy/`; setup steps are in [ops-silverbot](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/ops-silverbot.md>).
+Set up the environment and run the tests by following [runbook-local-dev](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SILVR/runbook-local-dev.md>). Paper and demo modes store their state in PostgreSQL (`DATABASE_URL`), and the tests need one too (`TEST_DATABASE_URL`, default `postgresql://silvr:silvr@localhost:5432/silvr`; `docker compose up -d postgres` starts one). Backtests need no database. The bot runs 24/7 on an Oracle Cloud Always Free server with `docker compose` and the systemd unit in `deploy/`; setup steps are in [ops-silvr](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SILVR/ops-silvr.md>).
 
-Backtest on Binance USD-M futures klines (full steps, including checksums, in [runbook-backtest](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/runbook-backtest.md>)):
+Backtest on Binance USD-M futures klines (full steps, including checksums, in [runbook-backtest](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SILVR/runbook-backtest.md>)):
 
-1. Download the candles: `python -m silver_bot.data.download --start 2022-01-01 --end 2026-10-21` writes monthly CSV files into `data/candles/` from the Binance public API (no API key; rerun it to resume). Or download monthly files by hand from `https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/`, for example `BTCUSDT-1m-2026-01.zip`, and unzip the CSVs into `data/candles/`.
+1. Download the candles: `python -m silvr.data.download --start 2022-01-01 --end 2026-10-21` writes monthly CSV files into `data/candles/` from the Binance public API (no API key; rerun it to resume). Or download monthly files by hand from `https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/`, for example `BTCUSDT-1m-2026-01.zip`, and unzip the CSVs into `data/candles/`.
 2. In `.env` set `MODE=` (blank), `TRADING_MODE=backtest` and `PAPER_TRADING=false`; `SYMBOL` and `TIMEFRAME` must match the files.
-3. Run `python -m silver_bot --candles data/candles`. Expected: exit 0 and seven files in `reports/`.
-4. Run `python -m silver_bot.backtest.gate`. Expected: one PASS or FAIL row per criterion and `GATE: PASS` or `GATE: FAIL` (exit 0, 1; 2 if the report is missing or malformed). Change no strategy setting between looks at the result: the runbook explains why.
+3. Run `python -m silvr --candles data/candles`. Expected: exit 0 and seven files in `reports/`.
+4. Run `python -m silvr.backtest.gate`. Expected: one PASS or FAIL row per criterion and `GATE: PASS` or `GATE: FAIL` (exit 0, 1; 2 if the report is missing or malformed). Change no strategy setting between looks at the result: the runbook explains why.
 
-The reports are not committed (`reports/` is git-ignored), and no number from them is a performance claim. Paper and demo modes run on live market data with simulated fills; demo steps are in [runbook-demo-testnet](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/runbook-demo-testnet.md>).
+The reports are not committed (`reports/` is git-ignored), and no number from them is a performance claim. Paper and demo modes run on live market data with simulated fills; demo steps are in [runbook-demo-testnet](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SILVR/runbook-demo-testnet.md>).
 
 ## Safe Defaults
 
-These are the `load_config` defaults (`src/silver_bot/config/settings.py:69-91`); the shipped `.env.example` keeps them:
+These are the `load_config` defaults (`src/silvr/config/settings.py:69-91`); the shipped `.env.example` keeps them:
 
 ```text
 LIVE_TRADING=false
@@ -64,19 +64,19 @@ STOP_LOSS_REQUIRED=true
 MAX_RISK_PER_TRADE=0.005
 ```
 
-The risk engine requires a stop loss whatever `STOP_LOSS_REQUIRED` says, and there is no market-order setting (no order code exists). Risk limits: maximum risk per trade 0.5%, enforced at config load in every mode and by `RiskConfig` itself; maximum daily loss 2%, maximum consecutive losses 3, maximum trades per day 3, maximum leverage 3x. D-11 is partly resolved: `build_risk_config` maps the settings limits and kill-switch path into `RiskConfig`, and command-line backtests use it with a simulated per-run kill switch; the paper engine still uses `RiskConfig` defaults with no kill-switch path because no paper runtime exists (G-3). See [sdd-silverbot](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/sdd-silverbot.md>) section 3.4 for the exact configuration keys and [rfc-silverbot-risk-kill-switch](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-risk-kill-switch.md>) for the risk gates.
+The risk engine requires a stop loss whatever `STOP_LOSS_REQUIRED` says, and there is no market-order setting (no order code exists). Risk limits: maximum risk per trade 0.5%, enforced at config load in every mode and by `RiskConfig` itself; maximum daily loss 2%, maximum consecutive losses 3, maximum trades per day 3, maximum leverage 3x. D-11 is partly resolved: `build_risk_config` maps the settings limits and kill-switch path into `RiskConfig`, and command-line backtests use it with a simulated per-run kill switch; the paper engine still uses `RiskConfig` defaults with no kill-switch path because no paper runtime exists (G-3). See [sdd-silvr](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/sdd-silvr.md>) section 3.4 for the exact configuration keys and [rfc-silvr-risk-kill-switch](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>) for the risk gates.
 
 ## Documentation Map
 
-Project docs live in the owner's Obsidian vault (the AI Memory Vault at `C:\AI Agentic Memory`), not in this repo. The vault syncs to a private GitHub repo. Start at [docs/index.md](docs/index.md), which points to the vault project index `01_Projects/SilverBot/00_Project_Index.md`. That index lists every document, its status and the open items. The links below are local vault paths.
+Project docs live in the owner's Obsidian vault (the AI Memory Vault at `C:\AI Agentic Memory`), not in this repo. The vault syncs to a private GitHub repo. Start at [docs/index.md](docs/index.md), which points to the vault project index `01_Projects/SILVR/00_Project_Index.md`. That index lists every document, its status and the open items. The links below are local vault paths.
 
-- What and why: [prd-silverbot](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/prd-silverbot.md>), [brd-silverbot](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/brd-silverbot.md>)
-- How it is built: [sdd-silverbot](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/sdd-silverbot.md>), [AGENTS.md](AGENTS.md) (build guide)
-- Tech stack: [sdd-silverbot](<C:/AI Agentic Memory/03_Resources/Blueprints/SilverBot/sdd-silverbot.md>) section 2.4; version pins in [AGENTS.md](AGENTS.md) section 3
-- Strategy, risk, ML and readiness: [RFC-001](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-signal-engine.md>), [RFC-002](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-risk-kill-switch.md>), [RFC-003](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-ml-filter-gate.md>), [RFC-004](<C:/AI Agentic Memory/03_Resources/RFCs/SilverBot/rfc-silverbot-readiness-gates.md>)
-- Testing and gates: [qad-silverbot](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SilverBot/qad-silverbot.md>)
-- Operations: [ops-silverbot](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SilverBot/ops-silverbot.md>)
-- What is wrong today: [scrutiny-silverbot](<C:/AI Agentic Memory/01_Projects/SilverBot/Planning/scrutiny-silverbot.md>), [audit-docs-drift](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>)
+- What and why: [prd-silvr](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/prd-silvr.md>), [brd-silvr](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/brd-silvr.md>)
+- How it is built: [sdd-silvr](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/sdd-silvr.md>), [AGENTS.md](AGENTS.md) (build guide)
+- Tech stack: [sdd-silvr](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/sdd-silvr.md>) section 2.4; version pins in [AGENTS.md](AGENTS.md) section 3
+- Strategy, risk, ML and readiness: [RFC-001](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>), [RFC-002](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>), [RFC-003](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>), [RFC-004](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>)
+- Testing and gates: [qad-silvr](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>)
+- Operations: [ops-silvr](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SILVR/ops-silvr.md>)
+- What is wrong today: [scrutiny-silvr](<C:/AI Agentic Memory/01_Projects/SILVR/Planning/scrutiny-silvr.md>), [audit-docs-drift](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>)
 
 ## Non-Negotiable Rules
 

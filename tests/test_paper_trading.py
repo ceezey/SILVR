@@ -2,18 +2,18 @@ import json
 import asyncio
 from datetime import UTC, datetime, timedelta
 
-from silver_bot.data import MockMarketDataStream, ReconnectPolicy, ReconnectingMarketDataStream
-from silver_bot.execution import PaperEventType, PaperTradingEngine
-from silver_bot.models import Candle
-from silver_bot.monitoring import (
+from silvr.data import MockMarketDataStream, ReconnectPolicy, ReconnectingMarketDataStream
+from silvr.execution import PaperEventType, PaperTradingEngine
+from silvr.models import Candle
+from silvr.monitoring import (
     InMemoryTelegramClient,
     TelegramAlertConfig,
     TelegramAlerter,
 )
-from silver_bot.monitoring.reports import build_daily_paper_report
-from silver_bot.risk import RiskConfig, RiskManagementEngine
-from silver_bot.storage import PostgresStorage
-from silver_bot.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
+from silvr.monitoring.reports import build_daily_paper_report
+from silvr.risk import RiskConfig, RiskManagementEngine
+from silvr.storage import PostgresStorage
+from silvr.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
 
 
 def candle(index: int, open_: float, high: float, low: float, close: float) -> Candle:
@@ -235,8 +235,8 @@ def test_history_seeds_the_strategy_without_evaluating_it() -> None:
 
 
 def test_on_trade_closed_and_report_writer(tmp_path) -> None:
-    from silver_bot.config import AppConfig
-    from silver_bot.execution.runtime import write_paper_report
+    from silvr.config import AppConfig
+    from silvr.execution.runtime import write_paper_report
 
     seen = []
     engine = PaperTradingEngine(

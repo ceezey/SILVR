@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.backtest import BacktestConfig, BacktestEngine, build_backtest_config, run_backtest
-from silver_bot.backtest.sim_kill_switch import SimulatedKillSwitch
-from silver_bot.config import AppConfig, TradingMode
-from silver_bot.models import Candle
-from silver_bot.monitoring import StructuredAuditLogger
-from silver_bot.risk import RiskManagementEngine
-from silver_bot.strategy import SilverBulletSignal, SilverBulletStrategyEngine
+from silvr.backtest import BacktestConfig, BacktestEngine, build_backtest_config, run_backtest
+from silvr.backtest.sim_kill_switch import SimulatedKillSwitch
+from silvr.config import AppConfig, TradingMode
+from silvr.models import Candle
+from silvr.monitoring import StructuredAuditLogger
+from silvr.risk import RiskManagementEngine
+from silvr.strategy import SilverBulletSignal, SilverBulletStrategyEngine
 
 # Deterministic synthetic series for the equivalence test. SYNTHETIC_SEED was chosen
 # by scanning seeds until the 3-day series produced several trades, so the window is

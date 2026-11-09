@@ -1,10 +1,10 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from silver_bot.backtest import BacktestConfig, BacktestEngine, ExitReason
-from silver_bot.models import Candle
-from silver_bot.risk import RiskConfig
-from silver_bot.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
+from silvr.backtest import BacktestConfig, BacktestEngine, ExitReason
+from silvr.models import Candle
+from silvr.risk import RiskConfig
+from silvr.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
 
 
 def candle(index: int, open_: float, high: float, low: float, close: float) -> Candle:

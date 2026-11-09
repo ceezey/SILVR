@@ -3,8 +3,8 @@ from datetime import date
 import pytest
 
 from conftest import execute
-from silver_bot.risk import RiskState, RiskStateError
-from silver_bot.storage import PostgresStorage
+from silvr.risk import RiskState, RiskStateError
+from silvr.storage import PostgresStorage
 
 
 def initialized(database_url: str) -> PostgresStorage:
@@ -33,7 +33,7 @@ def test_initialize_is_idempotent(database_url: str) -> None:
 
 
 def test_repr_hides_the_database_url() -> None:
-    assert "secret-password" not in repr(PostgresStorage("postgresql://bot:secret-password@db/silverbot"))
+    assert "secret-password" not in repr(PostgresStorage("postgresql://bot:secret-password@db/silvr"))
 
 
 def test_risk_state_round_trip(database_url: str) -> None:

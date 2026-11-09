@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import silver_bot.risk.kill_switch as kill_switch_module
+import silvr.risk.kill_switch as kill_switch_module
 from conftest import execute
-from silver_bot.config import load_config
-from silver_bot.risk import KillSwitch, RiskConfig, RiskManagementEngine, RiskRequest, RiskState, build_risk_engine
-from silver_bot.storage import PostgresStorage
+from silvr.config import load_config
+from silvr.risk import KillSwitch, RiskConfig, RiskManagementEngine, RiskRequest, RiskState, build_risk_engine
+from silvr.storage import PostgresStorage
 
 
 def request(
@@ -303,7 +303,7 @@ def test_restart_does_not_reset_consecutive_loss_limit(storage) -> None:
 
 
 def test_unreachable_database_halts_trading(fast_connect_timeout) -> None:
-    engine = RiskManagementEngine(state_store=PostgresStorage("postgresql://bot:pw@127.0.0.1:1/silverbot"))
+    engine = RiskManagementEngine(state_store=PostgresStorage("postgresql://bot:pw@127.0.0.1:1/silvr"))
 
     decision = engine.evaluate(request())
 
@@ -361,15 +361,15 @@ def test_risk_state_load_error_is_logged(storage, caplog) -> None:
     storage.save_risk_state(RiskState(current_day=date(2026, 1, 2)))
     execute(storage.database_url, "UPDATE risk_state SET trades_today = -1")
 
-    with caplog.at_level("ERROR", logger="silver_bot.risk.engine"):
+    with caplog.at_level("ERROR", logger="silvr.risk.engine"):
         RiskManagementEngine(state_store=storage)
 
     assert "risk state could not be loaded" in caplog.text
     assert "trades_today" in caplog.text
 
 
-from silver_bot.config import AppConfig, TradingMode
-from silver_bot.risk import build_risk_config
+from silvr.config import AppConfig, TradingMode
+from silvr.risk import build_risk_config
 
 
 def test_build_risk_config_maps_settings(tmp_path) -> None:

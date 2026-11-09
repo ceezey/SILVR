@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.ml import build_calibration_report, export_calibration_report
+from silvr.ml import build_calibration_report, export_calibration_report
 
 
 def test_calibration_report_calculates_brier_bins_and_ece() -> None:

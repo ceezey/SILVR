@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from silver_bot.ml import (
+from silvr.ml import (
     LEAKAGE_COLUMN_KEYWORDS,
     FeatureEngineeringPipeline,
     MLDataset,
@@ -11,8 +11,8 @@ from silver_bot.ml import (
     time_based_split,
     validate_no_future_leakage_columns,
 )
-from silver_bot.models import Candle, SignalDirection
-from silver_bot.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
+from silvr.models import Candle, SignalDirection
+from silvr.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
 
 
 def candle(index: int, open_: float, high: float, low: float, close: float) -> Candle:

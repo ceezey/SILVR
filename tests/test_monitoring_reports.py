@@ -3,9 +3,9 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from silver_bot.backtest import EquityPoint, ExitReason, TradeRecord
-from silver_bot.backtest.models import RejectedSignalRecord
-from silver_bot.monitoring import (
+from silvr.backtest import EquityPoint, ExitReason, TradeRecord
+from silvr.backtest.models import RejectedSignalRecord
+from silvr.monitoring import (
     InMemoryTelegramClient,
     StructuredAuditLogger,
     TelegramAlertConfig,
@@ -14,7 +14,7 @@ from silver_bot.monitoring import (
     export_dashboard_data,
     redact_secrets,
 )
-from silver_bot.monitoring.reports import (
+from silvr.monitoring.reports import (
     build_daily_performance_report,
     build_trade_journal,
     build_weekly_performance_report,

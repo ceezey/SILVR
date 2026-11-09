@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from silver_bot.ml import (
+from silvr.ml import (
     PromotionDecision,
     PromotionPolicyConfig,
     evaluate_model_promotion,

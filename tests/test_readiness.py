@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.readiness import evaluate_live_readiness, export_readiness_report
+from silvr.readiness import evaluate_live_readiness, export_readiness_report
 
 
 def required_env() -> dict[str, str]:

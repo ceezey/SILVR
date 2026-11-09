@@ -1,8 +1,8 @@
-name: silver-bot
+name: silvr
 
 x-safe-environment: &safe-environment
   LIVE_TRADING: "false"
-  DATABASE_URL: postgresql://silverbot:${POSTGRES_PASSWORD:-silverbot}@postgres:5432/silverbot
+  DATABASE_URL: postgresql://silvr:${POSTGRES_PASSWORD:-silvr}@postgres:5432/silvr
   ML_REGISTRY_PATH: /app/models/model_registry.json
   TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-false}"
   ML_FILTER_ENABLED: "${ML_FILTER_ENABLED:-false}"
@@ -10,7 +10,7 @@ x-safe-environment: &safe-environment
 x-bot-common: &bot-common
   build:
     context: .
-  image: silver-bot:local
+  image: silvr:local
   env_file:
     - path: .env
       required: false
@@ -25,15 +25,15 @@ services:
   postgres:
     image: postgres:18
     environment:
-      POSTGRES_USER: silverbot
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silverbot}
-      POSTGRES_DB: silverbot
+      POSTGRES_USER: silvr
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silvr}
+      POSTGRES_DB: silvr
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U silverbot -d silverbot"]
+      test: ["CMD-SHELL", "pg_isready -U silvr -d silvr"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -41,12 +41,12 @@ services:
 
   bot:
     <<: *bot-common
-    container_name: silver-bot-paper
+    container_name: silvr-paper
     environment:
       <<: *safe-environment
       TRADING_MODE: paper
       PAPER_TRADING: "true"
-    command: ["python", "-m", "silver_bot"]
+    command: ["python", "-m", "silvr"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,8 +65,8 @@ services:
       - ./reports:/app/reports:ro
     environment:
       <<: *safe-environment
-      DATABASE_URL: postgresql://silverbot:${POSTGRES_PASSWORD:-silverbot}@127.0.0.1:${POSTGRES_PORT:-5432}/silverbot
-    command: ["python", "-m", "silver_bot.monitoring.dashboard_server", "--port", "8765"]
+      DATABASE_URL: postgresql://silvr:${POSTGRES_PASSWORD:-silvr}@127.0.0.1:${POSTGRES_PORT:-5432}/silvr
+    command: ["python", "-m", "silvr.monitoring.dashboard_server", "--port", "8765"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,7 +79,7 @@ services:
       <<: *safe-environment
       TRADING_MODE: paper
       PAPER_TRADING: "true"
-    command: ["python", "-m", "silver_bot"]
+    command: ["python", "-m", "silvr"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,7 +103,7 @@ services:
       MAX_RISK_PER_TRADE: "0.005"
       MAX_DAILY_LOSS: "0.02"
       MAX_LEVERAGE: "3"
-    command: ["python", "-m", "silver_bot"]
+    command: ["python", "-m", "silvr"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -117,7 +117,7 @@ services:
       TRADING_MODE: backtest
       PAPER_TRADING: "false"
       ML_FILTER_ENABLED: "${ML_FILTER_ENABLED:-false}"
-    command: ["python", "-m", "silver_bot", "--candles", "/app/data/candles"]
+    command: ["python", "-m", "silvr", "--candles", "/app/data/candles"]
     restart: "no"
 
   research:
@@ -128,7 +128,7 @@ services:
       TRADING_MODE: backtest
       PAPER_TRADING: "false"
       ML_FILTER_ENABLED: "false"
-    command: ["python", "-m", "silver_bot", "--candles", "/app/data/candles"]
+    command: ["python", "-m", "silvr", "--candles", "/app/data/candles"]
     restart: "no"
 
 volumes:

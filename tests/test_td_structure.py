@@ -1,8 +1,8 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
-from silver_bot.models import Candle
-from silver_bot.strategy.top_down import StructureEvent, StructureTracker
+from silvr.models import Candle
+from silvr.strategy.top_down import StructureEvent, StructureTracker
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 DAY = timedelta(days=1)

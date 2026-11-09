@@ -17,13 +17,13 @@ COPY src ./src
 
 # uid 1000 matches the host user that runs the systemd unit, so bind-mounted folders stay writable.
 RUN pip install --no-cache-dir . \
-    && useradd --uid 1000 --create-home --shell /usr/sbin/nologin silverbot \
+    && useradd --uid 1000 --create-home --shell /usr/sbin/nologin silvr \
     && mkdir -p /app/data /app/logs /app/models /app/reports \
-    && chown -R silverbot:silverbot /app
+    && chown -R silvr:silvr /app
 
-USER silverbot
+USER silvr
 
 HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -m silver_bot.health
+    CMD python -m silvr.health
 
-CMD ["python", "-m", "silver_bot"]
+CMD ["python", "-m", "silvr"]

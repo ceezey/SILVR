@@ -4,17 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.backtest import BacktestValidationSuite, run_backtest
-from silver_bot.backtest.criteria import (
+from silvr.backtest import BacktestValidationSuite, run_backtest
+from silvr.backtest.criteria import (
     FAIL,
     PASS,
     PASS_PENDING_OWNER_INPUT,
     combine_verdicts,
     evaluate_evidence,
 )
-from silver_bot.backtest.validation import monte_carlo_r
-from silver_bot.config import AppConfig, TradingMode
-from silver_bot.models import Candle
+from silvr.backtest.validation import monte_carlo_r
+from silvr.config import AppConfig, TradingMode
+from silvr.models import Candle
 
 
 def candles(count: int) -> list[Candle]:

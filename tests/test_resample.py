@@ -3,9 +3,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from silver_bot.data.csv_loader import timeframe_interval
-from silver_bot.data.resample import HtfCandle, Resampler
-from silver_bot.models import Candle
+from silvr.data.csv_loader import timeframe_interval
+from silvr.data.resample import HtfCandle, Resampler
+from silvr.models import Candle
 
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 DAY = datetime(2026, 1, 5, tzinfo=UTC)

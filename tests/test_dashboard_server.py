@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.config import AppConfig
-from silver_bot.monitoring.dashboard_server import (
+from silvr.config import AppConfig
+from silvr.monitoring.dashboard_server import (
     BIND_HOST,
     SECURITY_HEADERS,
     DashboardServer,
@@ -21,7 +21,7 @@ from silver_bot.monitoring.dashboard_server import (
     main,
     render_page,
 )
-from silver_bot.monitoring.status import PANEL_TITLES, collect_status
+from silvr.monitoring.status import PANEL_TITLES, collect_status
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
 SECRETS = {
@@ -106,7 +106,7 @@ def test_title_header_and_mark(tmp_path):
 
 
 def css_rule(selector: str) -> str:
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     found = re.search(r"(?:^|[}\n])" + re.escape(selector) + r"\{([^}]*)\}", CSS)
     assert found, f"no CSS rule for {selector}"
@@ -124,7 +124,7 @@ def test_navbar_is_a_sticky_full_width_bar_outside_main(tmp_path):
 
 
 def test_content_spans_the_window_with_gutters():
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     assert "max-width:120ch" not in CSS
     assert "padding:16px 24px 0" in css_rule("main")
@@ -147,7 +147,7 @@ def test_mode_and_safety_is_first_and_inside_the_sidebar(tmp_path):
 
 
 def test_sidebar_is_sticky_below_the_navbar_on_wide_screens():
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     rule = css_rule(".sidebar")
 
@@ -161,7 +161,7 @@ def test_sidebar_is_sticky_below_the_navbar_on_wide_screens():
 
 
 def test_wide_sidebar_fills_the_height_below_the_navbar():
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     rule = css_rule(".sidebar")
     wide = CSS[CSS.index("@media (min-width:1280px)") : CSS.index("@media (max-width:1279px)")].replace("\n", "")
@@ -191,7 +191,7 @@ def test_note_is_a_paragraph_after_the_banner_table_inside_the_sidebar(tmp_path)
 
 
 def test_only_the_banner_panel_gets_the_separate_note():
-    from silver_bot.monitoring.dashboard_server import _render_panel
+    from silvr.monitoring.dashboard_server import _render_panel
 
     panel = {
         "title": "OTHER",
@@ -212,7 +212,7 @@ def test_note_sits_at_the_bottom_of_the_flex_column():
 
 
 def test_root_block_holds_exactly_the_ten_tokens():
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     block = CSS[CSS.index(":root{") + 6 : CSS.index("}", CSS.index(":root{"))]
     tokens = dict(item.split(":", 1) for item in block.replace("\n", "").split(";") if item.strip())
@@ -223,7 +223,7 @@ def test_root_block_holds_exactly_the_ten_tokens():
 
 
 def test_pages_carry_no_url(tmp_path):
-    from silver_bot.monitoring.dashboard_server import render_not_found
+    from silvr.monitoring.dashboard_server import render_not_found
 
     for page in (page_for(tmp_path), render_not_found()):
         assert "http:" not in page and "https:" not in page
@@ -618,7 +618,7 @@ def test_unauthenticated_get_gets_401_with_challenge_and_security_headers(gated)
         response, body = call(gated, path=path)
 
         assert response.status == 401
-        assert response.getheader("WWW-Authenticate") == 'Basic realm="silverbot", charset="UTF-8"'
+        assert response.getheader("WWW-Authenticate") == 'Basic realm="silvr", charset="UTF-8"'
         assert "caption" not in body and "generated" not in body
         for name, value in SECURITY_HEADERS.items():
             assert response.getheader(name) == value
