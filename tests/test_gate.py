@@ -409,3 +409,34 @@ def test_unparseable_log_line_fails_closed(tmp_path, capsys, bad):
     assert "promotion_gate_log.jsonl" in capsys.readouterr().err
     assert log.read_bytes() == before
     assert not (path.parent / "promotion_gate.json").exists()
+
+
+def test_trend_drawdown_limit_030():
+    data = report(max_drawdown_percent=0.25)
+    data["strategy"] = "trend_ensemble"
+    verdict = evaluate_gate(data)
+    assert 5 not in failed_numbers(verdict)
+    assert "<= 0.3" in _criterion(verdict, 5).threshold
+    data["strategy"] = "top_down_ob"
+    assert 5 in failed_numbers(evaluate_gate(data))
+    assert gate.MAX_DRAWDOWN_PERCENT_BY_STRATEGY == {"trend_ensemble": 0.30}
+
+
+def test_trend_drawdown_above_030_fails():
+    data = report(max_drawdown_percent=0.31)
+    data["strategy"] = "trend_ensemble"
+    assert 5 in failed_numbers(evaluate_gate(data))
+
+
+def test_default_drawdown_limit_unchanged():
+    assert gate.MAX_DRAWDOWN_PERCENT == 0.10
+    assert "<= 0.1" in _criterion(evaluate_gate(report()), 5).threshold
+
+
+def test_skipped_final_test_is_input_error(tmp_path, capsys):
+    data = report()
+    data["segments"]["final_test"] = {"skipped": True}
+    with pytest.raises(GateInputError, match="final_test"):
+        evaluate_gate(data)
+    code, _ = run(tmp_path, data)
+    assert code == 2
