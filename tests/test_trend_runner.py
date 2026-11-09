@@ -2,6 +2,7 @@
 
 import json
 from collections import Counter
+from itertools import chain
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -41,26 +42,29 @@ def write_month(path: Path, start: datetime, minutes: int, price: float = 100.0)
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
-def write_data(tmp_path: Path) -> tuple[Path, Path]:
+def write_data(tmp_path: Path, minutes: int = DAYS * 1440) -> tuple[Path, Path]:
     candles, funding = tmp_path / "candles", tmp_path / "funding"
     funding.mkdir()
     rates = [FundingRate(START - timedelta(days=1) + k * timedelta(hours=8), 0.0) for k in range(3 * (DAYS + 3))]
     for symbol in SYMBOLS:
-        write_month(candles / symbol / f"{symbol}-1m-2024-03.csv", START, DAYS * 1440)
+        write_month(candles / symbol / f"{symbol}-1m-2024-03.csv", START, minutes)
         write_funding_csv(funding / f"{symbol}-funding.csv", rates)
     return candles, funding
 
 
-def test_segment_bounds_real_data_range() -> None:
+def test_trend_report_data_range_matches_log() -> None:
+    """Pins the look-count range: the gate counts looks by (training start, final_test end) strings."""
     first, last = datetime(2022, 1, 1, tzinfo=UTC), datetime(2026, 10, 20, 23, 59, tzinfo=UTC)
     bounds = segment_bounds(first, last)
     assert bounds["training"][0].isoformat() == "2022-01-01T00:00:00+00:00"
     assert bounds["final_test"][1].isoformat() == "2026-10-20T23:59:00+00:00"
     assert bounds["validation"][0] == bounds["training"][1] + MINUTE
     assert bounds["final_test"][0] == bounds["validation"][1] + MINUTE
+    assert bounds["validation"][0].isoformat() == "2024-11-18T09:36:00+00:00"
+    assert bounds["final_test"][0].isoformat() == "2025-11-04T04:48:00+00:00"
 
 
-def test_trend_report_data_range_matches_log(tiny_universe: None, tmp_path: Path) -> None:
+def test_report_start_and_end_come_from_the_data(tiny_universe: None, tmp_path: Path) -> None:
     candles, funding = write_data(tmp_path)
     path = run_trend_backtest(
         candles_root=candles, funding_root=funding, output_dir=tmp_path / "out", segments=("training", "validation", "final_test"), k=1.0
@@ -139,6 +143,41 @@ def test_later_segment_gets_warmup_history_ending_the_day_before(
     for symbol in SYMBOLS:
         days = [bar.day for bar in history[symbol]]
         assert len(days) == 6 and days[-1] == (START + timedelta(days=5)).date()
+
+
+@pytest.mark.parametrize("segment", ["validation", "final_test"])
+def test_mid_day_segment_start_runs_with_history_ending_the_day_before(
+    tiny_universe: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, segment: str
+) -> None:
+    count = DAYS * 1440 + 1000  # training ends 6d 10:00 in, validation ends 8d 13:20 in: both later starts are mid-day
+    candles, funding = write_data(tmp_path, count)
+    start, _ = segment_bounds(START, START + (count - 1) * MINUTE)[segment]
+    assert start.hour or start.minute
+    seen: dict[str, object] = {}
+    real_engine = trend_runner.TrendPortfolioEngine
+
+    class SpyEngine(real_engine):  # type: ignore[valid-type, misc]
+        def __init__(self, config, *, funding, history, k) -> None:
+            seen["history"] = history
+            super().__init__(config, funding=funding, history=history, k=k)
+
+        def run(self, minutes):
+            minutes = iter(minutes)
+            first = next(minutes)
+            seen["first"] = {s: c.open_time for s, c in first.items()}
+            return super().run(chain([first], minutes))
+
+    monkeypatch.setattr(trend_runner, "TrendPortfolioEngine", SpyEngine)
+    path = run_trend_backtest(
+        candles_root=candles, funding_root=funding, output_dir=tmp_path / "out", segments=(segment,), k=1.0
+    )
+    day_before = start.date() - timedelta(days=1)
+    for symbol in SYMBOLS:
+        days = [bar.day for bar in seen["history"][symbol]]
+        assert days[-1] == day_before and len(days) == (day_before - START.date()).days + 1
+        assert seen["first"][symbol] == start
+    done = json.loads(path.read_text(encoding="utf-8"))["segments"][segment]
+    assert done["start"] == start.isoformat() and done["metrics"] is not None
 
 
 def test_minutes_are_fresh_dicts(tiny_universe: None, tmp_path: Path) -> None:
