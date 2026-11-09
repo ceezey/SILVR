@@ -132,7 +132,7 @@ Excerpted from real code, verified 2026-11-10 against commit `492c4b8`. Copy the
         return queued
 ```
 
-A risk-engine rejection is counted under its own reason (golden path (b)), and a slice below the exchange minimum under `below exchange minimum`. Pinned by `tests/test_trend_engine.py::test_risk_rejection_reason_counted`.
+A risk-engine rejection is counted under its own reason (golden path (b)), a slice the 2x gross cap leaves no room for under `gross cap`, and a slice below the exchange minimum under `below exchange minimum`. Pinned by `tests/test_trend_engine.py::test_risk_rejection_reason_counted` and `::test_gross_cap_and_exchange_minimum_skips`.
 
 ### (b) An order request passes through the risk engine and kill switch
 
@@ -364,9 +364,10 @@ Each strategy selects a named risk profile, validated at startup (`RiskConfig.pr
 
 Notes on the `trend` profile:
 
+- Overrides of `RiskConfig.trend()` may tighten the values above but never loosen them: a looser leverage, daily loss, trade or position count, or minimum stop fraction raises `ValueError` (`src/silvr/risk/models.py`).
 - The 2% daily-loss check runs on every entry but cannot bind in the trend engine: entries happen only at a day's first minute, right after the daily counter resets. The drawdown kill switch is the binding protection.
 - In the backtest the drawdown kill switch is never cleared automatically: once it trips, that segment flattens and trades no more, and the report says so. Each segment (training, validation, final test) starts with a fresh $15,000 account, a fresh kill switch and no open positions.
-- Sizing: slice notional = k x (0.25 / 90-day annualized volatility) / 15 / 9 x equity, with `SCALE_K` = 4.011 calibrated on the training segment only (to realized volatility, never to returns). The 0.5% risk cap, then the total notional cap of 2x equity (the day's new slices shrink pro rata) and the Binance minimums (skip, never round up) apply after it.
+- Sizing: slice notional = k x (0.25 / 90-day annualized volatility) / 15 / 9 x equity, with `SCALE_K` = 4.011 calibrated on the training segment only (to realized volatility, never to returns); k = 1.0 is the paper's per-slice weight, so 4.011 is about 4x it. The 0.5% risk cap, then the total notional cap of 2x equity (the day's new slices shrink pro rata) and the Binance minimums (skip, never round up) apply after it.
 - Promotion gate criterion 5 allows a drawdown of 0.30 for `trend_ensemble` only (`src/silvr/backtest/gate.py:30`); every other strategy keeps 0.10, and every other threshold is unchanged.
 
 ### Testing Requirements
