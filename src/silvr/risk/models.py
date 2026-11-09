@@ -27,8 +27,32 @@ class RiskConfig:
     max_open_positions: int = 1
     max_leverage: float = 3.0
     kill_switch_path: Path | None = None
+    profile: str = "default"
+    minimum_stop_fraction: float | None = None
+
+    @classmethod
+    def trend(cls, **overrides: object) -> RiskConfig:
+        """The `trend` profile: many small slices, relative minimum stop, no take-profit."""
+
+        values: dict[str, object] = {
+            "profile": "trend",
+            "max_trades_per_day": 135,
+            "max_open_positions": 135,
+            "minimum_stop_fraction": 0.001,
+            "max_daily_loss": 0.02,
+            "max_leverage": 3.0,
+            "risk_per_trade": 0.005,
+        }
+        values.update(overrides)
+        return cls(**values)  # type: ignore[arg-type]
 
     def __post_init__(self) -> None:
+        if self.profile not in ("default", "trend"):
+            raise ValueError("profile must be 'default' or 'trend'")
+        if self.profile == "trend" and self.minimum_stop_fraction is None:
+            raise ValueError("minimum_stop_fraction is required for the trend profile")
+        if self.minimum_stop_fraction is not None and self.minimum_stop_fraction <= 0:
+            raise ValueError("minimum_stop_fraction must be positive")
         if not 0 < self.risk_per_trade <= MAX_RISK_PER_TRADE:
             raise ValueError("risk_per_trade must be greater than 0 and no more than 0.5%")
         if self.minimum_stop_distance <= 0:
@@ -88,6 +112,7 @@ class RiskRequest:
     take_profit: float | None
     direction: str
     signal_day: date
+    requested_size: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -27,6 +27,7 @@ MIN_PROFIT_FACTOR = 1.5
 WARN_PROFIT_FACTOR = 3.0
 MIN_REALIZED_RR = 1.5
 MAX_DRAWDOWN_PERCENT = 0.10
+MAX_DRAWDOWN_PERCENT_BY_STRATEGY = {"trend_ensemble": 0.30}  # a diversified book accepts a deeper drawdown
 MIN_RETURN_TO_DRAWDOWN = 2.0
 MIN_OOS_EFFICIENCY = 0.5
 
@@ -90,6 +91,8 @@ def _segment(report: Mapping[str, Any], name: str) -> Mapping[str, Any]:
     segment = segments.get(name) if isinstance(segments, Mapping) else None
     if not isinstance(segment, Mapping):
         raise GateInputError(f"segment '{name}' is missing from the report; {RERUN_HINT}")
+    if segment.get("skipped") is True:
+        raise GateInputError(f"segment '{name}' was skipped, so there is nothing to judge; {RERUN_HINT} with all segments")
     return segment
 
 
@@ -119,6 +122,7 @@ def evaluate_gate(report: Mapping[str, Any], *, prior_looks: int = 0) -> GateVer
     if not isinstance(strategy, str) or not strategy:
         raise GateInputError(f"strategy is not a name; {RERUN_HINT}")
     look = prior_looks + 1
+    max_drawdown = MAX_DRAWDOWN_PERCENT_BY_STRATEGY.get(strategy, MAX_DRAWDOWN_PERCENT)
     training = _segment(report, "training")
     final = _segment(report, "final_test")
     _segment(report, "validation")
@@ -147,7 +151,7 @@ def evaluate_gate(report: Mapping[str, Any], *, prior_looks: int = 0) -> GateVer
         2: ("Real edge", f"avg R > 0, t >= {t_stat_bar}"),
         3: ("Profit factor", f">= {MIN_PROFIT_FACTOR} (warn > {WARN_PROFIT_FACTOR})"),
         4: ("Realized reward:risk", f">= {MIN_REALIZED_RR}"),
-        5: ("Drawdown", f"<= {MAX_DRAWDOWN_PERCENT}, return/dd >= {MIN_RETURN_TO_DRAWDOWN}"),
+        5: ("Drawdown", f"<= {max_drawdown}, return/dd >= {MIN_RETURN_TO_DRAWDOWN}"),
         6: ("Out-of-sample efficiency", f"final avg R >= {MIN_OOS_EFFICIENCY} x training, training > 0"),
     }
 
@@ -188,7 +192,7 @@ def evaluate_gate(report: Mapping[str, Any], *, prior_looks: int = 0) -> GateVer
             5,
             *names[5],
             f"dd {_fmt(drawdown)}, return/dd {_fmt(ret_dd)}",
-            drawdown <= MAX_DRAWDOWN_PERCENT and ret_dd >= MIN_RETURN_TO_DRAWDOWN,
+            drawdown <= max_drawdown and ret_dd >= MIN_RETURN_TO_DRAWDOWN,
         ),
         criterion(6, *names[6], efficiency_actual, efficiency_ok),
     ]

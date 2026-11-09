@@ -53,8 +53,11 @@ class RiskManagementEngine:
             return self._reject("Entry price is required")
         if request.stop_loss is None:
             return self._reject("Stop loss is required")
-        if request.take_profit is None:
+        trend = self.config.profile == "trend"
+        if request.take_profit is None and not trend:
             return self._reject("Take profit is required")
+        if request.requested_size is not None and not request.requested_size > 0:
+            return self._reject("Requested size must be positive")
 
         direction = request.direction.upper()
         stop_distance = self._stop_distance(
@@ -64,25 +67,31 @@ class RiskManagementEngine:
         )
         if stop_distance <= 0:
             return self._reject("Invalid stop loss for trade direction")
-        if stop_distance < self.config.minimum_stop_distance:
+        if trend:
+            minimum_stop = (self.config.minimum_stop_fraction or 0.0) * request.entry_price
+        else:
+            minimum_stop = self.config.minimum_stop_distance
+        if stop_distance < minimum_stop:
             return self._reject("Stop-loss distance below configured minimum")
 
-        reward_distance = self._reward_distance(
-            direction=direction,
-            entry_price=request.entry_price,
-            take_profit=request.take_profit,
-        )
-        if reward_distance <= 0:
-            return self._reject("Invalid take profit for trade direction")
-        reward_to_risk = reward_distance / stop_distance
-        if reward_to_risk < self.config.minimum_reward_to_risk:
-            return self._reject("Reward-to-risk below configured minimum", reward_to_risk=reward_to_risk)
+        reward_to_risk = 0.0
+        if not trend:
+            reward_distance = self._reward_distance(
+                direction=direction,
+                entry_price=request.entry_price,
+                take_profit=request.take_profit,
+            )
+            if reward_distance <= 0:
+                return self._reject("Invalid take profit for trade direction")
+            reward_to_risk = reward_distance / stop_distance
+            if reward_to_risk < self.config.minimum_reward_to_risk:
+                return self._reject("Reward-to-risk below configured minimum", reward_to_risk=reward_to_risk)
 
         max_daily_loss_amount = request.equity * self.config.max_daily_loss
         if self.state.daily_realized_pnl <= -max_daily_loss_amount:
             self.kill_switch.trip("Max daily loss limit reached")
             return self._reject("Max daily loss limit reached", reward_to_risk=reward_to_risk)
-        if self.state.consecutive_losses >= self.config.max_consecutive_losses:
+        if not trend and self.state.consecutive_losses >= self.config.max_consecutive_losses:
             self.kill_switch.trip("Max consecutive losses limit reached")
             return self._reject("Max consecutive losses limit reached", reward_to_risk=reward_to_risk)
         if self.state.trades_today >= self.config.max_trades_per_day:
@@ -92,6 +101,9 @@ class RiskManagementEngine:
 
         risk_amount = request.equity * self.config.risk_per_trade
         position_size = risk_amount / stop_distance
+        if request.requested_size is not None and request.requested_size < position_size:
+            position_size = request.requested_size
+            risk_amount = position_size * stop_distance
         notional = position_size * request.entry_price
         leverage = notional / request.equity
         if leverage > self.config.max_leverage:
@@ -125,7 +137,7 @@ class RiskManagementEngine:
         elif realized_pnl > 0:
             self.state.consecutive_losses = 0
         self._save_state()
-        if self.state.consecutive_losses >= self.config.max_consecutive_losses:
+        if self.config.profile != "trend" and self.state.consecutive_losses >= self.config.max_consecutive_losses:
             self.kill_switch.trip("Max consecutive losses limit reached")
 
     def _save_state(self) -> None:
