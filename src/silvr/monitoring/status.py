@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +21,8 @@ PANEL_TITLES: tuple[str, ...] = (
     "READINESS",
     "EVIDENCE REPORTS",
     "RISK BUDGET",
-    "OPEN POSITIONS / RECENT TRADES",
-    "ALERTS (logs/audit.jsonl)",
+    "POSITIONS / TRADES",
+    "ALERTS",
 )
 EVIDENCE_REPORTS: tuple[str, ...] = (
     "backtest_report",
@@ -56,6 +56,8 @@ AUDIT_EVENTS = 20
 RECENT_ROWS = 10
 NO_PAPER_RUN = "none recorded (no paper run, G-3)"
 CONFIG_INVALID = "not available: configuration invalid"
+RISK_PREFIX = "Risk rejected: "
+SIGNAL_TEXT = "Strategy signal detected. Passing to risk engine."
 
 Row = dict[str, str]
 
@@ -106,11 +108,16 @@ def collect_status(
     except Exception as exc:  # a broken panel makes the ladder unreadable, never a guess (AC-23.7)
         ladder = {"steps": [row("err", "unreadable", type(exc).__name__)], "next": None, "next_text": ""}
         degraded += 1
+    try:
+        restraint = _restraint(config, now)
+    except Exception as exc:  # never blank the page (AC-23.7); the panels above already count a database failure
+        restraint = _restraint_off(f"not available: restraint unreadable ({type(exc).__name__})")
     return {
         "generated_at": _format_time(now),
         "root": str(root),
         "panels": panels,
         "ladder": ladder,
+        "restraint": restraint,
         "degraded": degraded,
     }
 
@@ -123,7 +130,9 @@ def _ladder(evidence_rows: list[Row], readiness_rows: list[Row]) -> dict[str, An
     steps.append(row("off", LADDER_STEPS[4], "blocked (PRD-F12)"))
     next_index = next((index for index, step in enumerate(steps[:4]) if step["state"] != "ok"), None)
     next_text = ALL_GATES_PASS if next_index is None else NEXT_TEXT[next_index]
-    return {"steps": steps, "next": next_index, "next_text": next_text}
+    # Gates clear (silvr-cr-004 V-3a): steps 1 to 4 in state ok. Live is never counted.
+    gates_clear = sum(1 for step in steps[:4] if step["state"] == "ok")
+    return {"steps": steps, "next": next_index, "next_text": next_text, "gates_clear": gates_clear}
 
 
 def _find_row(rows: list[Row], label: str) -> Row:
@@ -298,14 +307,83 @@ def _positions(config: AppConfig | None) -> list[Row]:
         else row("off", "open positions", "not available: no risk_state row")
     ]
     rows += [
-        row("plain", f"SIM {_display_time(exit_time)}", f"{symbol} {direction} {_number(entry)} to {_number(exit_price)}, pnl {pnl:.2f}, {reason}")
+        {
+            **row("plain", f"SIM {_display_time(exit_time)}", f"{symbol} {direction} {_number(entry)} to {_number(exit_price)}, pnl {pnl:.2f}, {reason}"),
+            "event": "closed trade",
+        }
         for exit_time, symbol, direction, entry, exit_price, pnl, reason in trades
     ]
     rows += [
-        row("plain", f"SIM {_display_time(timestamp)}", f"{event_type}: {message}")
+        {**row("plain", f"SIM {_display_time(timestamp)}", _event_text(event_type, message)), "event": event_type}
         for timestamp, event_type, message in events
     ]
     return rows
+
+
+def _sentence(text: str) -> str:
+    """End text with one full stop, keeping it exactly as stored otherwise."""
+
+    return text if text.endswith(".") else text + "."
+
+
+def _reason(message: str) -> str:
+    """The stored risk_rejected message without its leading "Risk rejected: " (silvr-cr-004 V-6)."""
+
+    return message.removeprefix(RISK_PREFIX)
+
+
+def _event_text(event_type: str, message: str) -> str:
+    """Dashboard wording for one paper event (DSD 1.4, silvr-cr-004 V-6); other events show as stored."""
+
+    if event_type == "risk_rejected":
+        reason = _reason(message)
+        return f"Risk engine held. Setup declined: {_sentence(reason)}" if reason else "Risk engine held. Setup declined."
+    if event_type == "signal_detected":
+        return SIGNAL_TEXT
+    return message
+
+
+def _restraint_off(text: str) -> dict[str, Any]:
+    return {"state": "off", "count": None, "text": text}
+
+
+def _restraint(config: AppConfig | None, now: datetime) -> dict[str, Any]:
+    """Count today's (UTC) risk_rejected paper events; a real count, never estimated (silvr-cr-004 V-3b).
+
+    paper_events.timestamp is TEXT (the isoformat of the signal time, storage/postgres.py:76), so the
+    SQL only narrows by date text (any UTC offset puts a UTC day within a day of its local date) and
+    the day itself is decided here on the parsed value. Rows are not capped by RECENT_ROWS.
+    """
+
+    if config is None:
+        return _restraint_off(CONFIG_INVALID)
+    if config.database_url is None:
+        return _restraint_off("not available: no database configured (G-3)")
+    today = now.astimezone(UTC).date()
+    since = (today - timedelta(days=1)).isoformat()  # digits and dashes from a date, never user input
+    found = _query(
+        config.database_url,
+        'SELECT "timestamp", message FROM paper_events '
+        f"WHERE event_type = 'risk_rejected' AND \"timestamp\" >= '{since}' ORDER BY id DESC",
+    )
+    if found is None:
+        return _restraint_off("not available: paper_events table absent, no paper run (G-3)")
+    held = [message for timestamp, message in found if _utc_day(timestamp) == today]
+    if not held:
+        return {"state": "ok", "count": 0, "text": "No setups held today."}
+    noun = "setup" if len(held) == 1 else "setups"
+    reason = _reason(held[0])  # newest row first (ORDER BY id DESC)
+    text = f"Risk engine held {len(held)} {noun} today."
+    if reason:
+        text += f" Reason: {_sentence(reason)}"
+    return {"state": "ok", "count": len(held), "text": text}
+
+
+def _utc_day(value: Any) -> date | None:
+    try:
+        return _parse_time(value).astimezone(UTC).date()
+    except ValueError:
+        return None
 
 
 def _alerts(root: Path) -> list[Row]:
