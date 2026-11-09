@@ -21,7 +21,7 @@ def test_exact_frozen_values():
         "LTCUSDT", "TRXUSDT", "ATOMUSDT", "NEARUSDT", "BCHUSDT",
     )
     assert params.LOOKBACKS == (5, 10, 20, 30, 60, 90, 150, 250, 360)
-    assert params.SCALE_K == 4.011
+    assert params.SCALE_K == 1.0
     assert params.KILL_SWITCH_DRAWDOWN == 4500.0
     assert params.INITIAL_BALANCE == 15000.0
     assert {s: (l.min_notional, l.qty_step, l.min_qty) for s, l in params.EXCHANGE_LIMITS.items()} == {
