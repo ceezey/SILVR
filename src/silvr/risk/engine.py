@@ -65,7 +65,7 @@ class RiskManagementEngine:
             entry_price=request.entry_price,
             stop_loss=request.stop_loss,
         )
-        if stop_distance <= 0:
+        if not stop_distance > 0:  # also rejects a NaN stop
             return self._reject("Invalid stop loss for trade direction")
         if trend:
             minimum_stop = (self.config.minimum_stop_fraction or 0.0) * request.entry_price

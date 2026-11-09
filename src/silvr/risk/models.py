@@ -53,6 +53,15 @@ class RiskConfig:
             raise ValueError("minimum_stop_fraction is required for the trend profile")
         if self.minimum_stop_fraction is not None and self.minimum_stop_fraction <= 0:
             raise ValueError("minimum_stop_fraction must be positive")
+        if self.profile == "trend" and not (
+            self.max_leverage <= 3.0
+            and self.max_daily_loss <= 0.02
+            and self.max_trades_per_day <= 135
+            and self.max_open_positions <= 135
+            and self.minimum_stop_fraction is not None
+            and self.minimum_stop_fraction >= 0.001
+        ):
+            raise ValueError("the trend profile may be tightened but never loosened beyond its spec limits")
         if not 0 < self.risk_per_trade <= MAX_RISK_PER_TRADE:
             raise ValueError("risk_per_trade must be greater than 0 and no more than 0.5%")
         if self.minimum_stop_distance <= 0:
