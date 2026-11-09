@@ -204,10 +204,16 @@ class _Run:
         return now
 
     def _check_history(self, first: datetime) -> None:
+        """Non-empty warm-up must be consecutive days ending the day before the run; a gap shifts every window."""
+
+        day_before = first.date() - timedelta(days=1)
         for symbol in self.symbols:
-            bars = self.engine.history[symbol]
-            if bars and bars[-1].day >= first.date():
-                raise ValueError(f"{symbol}: warm-up history must end before {first.date().isoformat()}")
+            days = [bar.day for bar in self.engine.history[symbol]]
+            if days and days[-1] != day_before:
+                raise TrendDataError(symbol, None, f"warm-up history ends {days[-1]}, not {day_before}")
+            for earlier, later in zip(days, days[1:]):
+                if later - earlier != timedelta(days=1):
+                    raise TrendDataError(symbol, None, f"warm-up history gap between {earlier} and {later}")
 
     def _check_funding(self, start: datetime, end: datetime) -> None:
         """Fail closed on a funding gap; checked day by day, which covers the same chain as the whole span."""

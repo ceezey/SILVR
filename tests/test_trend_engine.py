@@ -159,6 +159,22 @@ def test_missing_funding_schedule_or_wrong_profile_refused() -> None:
         TrendPortfolioEngine(BacktestConfig(), funding={"AAA": schedule(), "BBB": schedule()}, history=history(), k=1.0)
 
 
+@pytest.mark.parametrize(
+    ("cut", "message"),
+    [(slice(None, -1), "warm-up history ends"), ([*range(50), *range(51, 100)], "warm-up history gap")],
+    ids=["early_end", "gap"],
+)
+def test_warm_up_history_gap_or_early_end_fails_closed(cut: slice | list[int], message: str) -> None:
+    bars = history()
+    bars["BBB"] = bars["BBB"][cut] if isinstance(cut, slice) else [bars["BBB"][i] for i in cut]
+    config = BacktestConfig(initial_balance=15_000.0, risk=RiskConfig.trend())
+    funding = {"AAA": schedule(), "BBB": schedule()}
+
+    with pytest.raises(TrendDataError, match=message) as error:
+        TrendPortfolioEngine(config, funding=funding, history=bars, k=1.0).run(minutes(BASE))
+    assert error.value.symbol == "BBB"
+
+
 def test_kill_switch_flattens_and_halts(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(params, "LOOKBACKS", (2, 3))
     monkeypatch.setattr(sizing, "LOOKBACKS", (2, 3))
