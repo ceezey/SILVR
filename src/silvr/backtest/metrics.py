@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 import statistics
 from collections import defaultdict
+from collections.abc import Sequence
+from datetime import UTC, date
 from typing import Any
 
 from silvr.backtest.models import EquityPoint, TradeRecord
@@ -77,6 +79,19 @@ def calculate_metrics(
         "return_to_drawdown": return_to_drawdown,
         "session_performance": _session_metrics(trades),
     }
+
+
+def day_r_t_stat(trades: Sequence[TradeRecord]) -> float:
+    """t-stat of R summed per UTC entry day; 0.0 below two days or with no spread, as for trades."""
+
+    days: dict[date, float] = defaultdict(float)
+    for trade in trades:
+        days[trade.entry_time.astimezone(UTC).date()] += trade.realized_r
+    sums = list(days.values())
+    if len(sums) < 2:
+        return 0.0
+    spread = statistics.stdev(sums)
+    return statistics.fmean(sums) / (spread / math.sqrt(len(sums))) if spread else 0.0
 
 
 def _max_consecutive(trades: list[TradeRecord], *, winning: bool) -> int:
