@@ -3,12 +3,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from silver_bot.data import resample
-from silver_bot.models import Candle
-from silver_bot.strategy.top_down import StepResult, StructureTracker, TopDownOBStrategy, atr
-from silver_bot.strategy.top_down import strategy as strategy_module
-from silver_bot.strategy.top_down.order_blocks import OrderBlock
-from silver_bot.strategy.top_down.structure import SwingLevel
+from silvr.data import resample
+from silvr.models import Candle
+from silvr.strategy.top_down import StepResult, StructureTracker, TopDownOBStrategy, atr
+from silvr.strategy.top_down import strategy as strategy_module
+from silvr.strategy.top_down.order_blocks import OrderBlock
+from silvr.strategy.top_down.structure import SwingLevel
 
 M1 = timedelta(minutes=1)
 M15 = timedelta(minutes=15)

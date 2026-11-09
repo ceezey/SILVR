@@ -14,7 +14,7 @@ def test_dockerfile_defaults_to_safe_paper_mode() -> None:
     assert "TRADING_MODE=paper" in dockerfile
     assert "LIVE_TRADING=false" in dockerfile
     assert "PAPER_TRADING=true" in dockerfile
-    assert 'CMD ["python", "-m", "silver_bot"]' in dockerfile
+    assert 'CMD ["python", "-m", "silvr"]' in dockerfile
     assert "live" not in dockerfile.lower().split("cmd", maxsplit=1)[-1]
 
 
@@ -54,8 +54,8 @@ def test_compose_bot_services_use_the_local_postgres() -> None:
     compose = read("docker-compose.yaml")
 
     assert "image: postgres:18" in compose
-    assert "DATABASE_URL: postgresql://silverbot:${POSTGRES_PASSWORD:-silverbot}@postgres:5432/silverbot" in compose
-    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silverbot}" in compose
+    assert "DATABASE_URL: postgresql://silvr:${POSTGRES_PASSWORD:-silvr}@postgres:5432/silvr" in compose
+    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silvr}" in compose
     assert '"127.0.0.1:${POSTGRES_PORT:-5432}:5432"' in compose
     assert compose.count("condition: service_healthy") == 4
     assert "DATABASE_PATH" not in compose
@@ -69,7 +69,7 @@ def test_compose_dashboard_is_loopback_only_on_the_host_network() -> None:
     assert "    ports:" not in block.splitlines()
     assert "--host" not in block
     assert block.count(":ro") == 4
-    assert 'command: ["python", "-m", "silver_bot.monitoring.dashboard_server", "--port", "8765"]' in block
+    assert 'command: ["python", "-m", "silvr.monitoring.dashboard_server", "--port", "8765"]' in block
 
 
 def test_dockerfile_runs_as_uid_1000_without_a_volume_line() -> None:
@@ -81,23 +81,23 @@ def test_dockerfile_runs_as_uid_1000_without_a_volume_line() -> None:
 
 
 def test_systemd_service_runs_compose_paper_bot_and_dashboard() -> None:
-    service = read("deploy/systemd/silver-bot.service")
+    service = read("deploy/systemd/silvr.service")
 
     assert "docker compose" in service
-    assert "ExecStartPre=-/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up -d dashboard" in service
+    assert "ExecStartPre=-/usr/bin/docker compose -f /opt/silvr/docker-compose.yaml up -d dashboard" in service
     assert "TRADING_MODE=live" not in service
     assert "User=ubuntu" in service
 
 
 def test_systemd_propagates_exit_code_and_stops_on_bad_configuration() -> None:
-    service = read("deploy/systemd/silver-bot.service")
+    service = read("deploy/systemd/silvr.service")
 
-    assert "ExecStart=/usr/bin/docker compose -f /opt/silver-bot/docker-compose.yaml up bot --exit-code-from bot" in service
+    assert "ExecStart=/usr/bin/docker compose -f /opt/silvr/docker-compose.yaml up bot --exit-code-from bot" in service
     assert "RestartPreventExitStatus=2 78" in service
 
 
 def test_logrotate_covers_the_audit_log() -> None:
-    assert "/opt/silver-bot/logs/*.jsonl" in read("deploy/logrotate/silver-bot")
+    assert "/opt/silvr/logs/*.jsonl" in read("deploy/logrotate/silvr")
 
 
 def test_no_railway_files_remain() -> None:
@@ -116,13 +116,13 @@ def test_compose_bot_does_not_self_restart() -> None:
 def test_compose_backtest_services_read_candles_directory() -> None:
     compose = read("docker-compose.yaml")
 
-    assert compose.count('command: ["python", "-m", "silver_bot", "--candles", "/app/data/candles"]') == 2
+    assert compose.count('command: ["python", "-m", "silvr", "--candles", "/app/data/candles"]') == 2
 
 
 def test_windows_runner_restarts_on_failure_and_stops_on_bad_configuration() -> None:
     script = read("deploy/windows/run-bot.ps1")
 
-    assert r"& $python -m silver_bot *>> logs\bot-console.log" in script
+    assert r"& $python -m silvr *>> logs\bot-console.log" in script
     assert "if ($code -eq 2) { break }" in script
     assert "Start-Sleep -Seconds 30" in script
     assert "LIVE_TRADING" not in script and "TRADING_MODE" not in script

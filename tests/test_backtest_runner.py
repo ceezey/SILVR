@@ -4,17 +4,17 @@ from pathlib import Path
 
 import pytest
 
-import silver_bot
-from silver_bot.backtest import ExitReason, build_backtest_config, run_backtest, runner
-from silver_bot.backtest.runner import WALK_FORWARD_WINDOWS
-from silver_bot.backtest.top_down_engine import TopDownBacktestEngine
-from silver_bot.config import AppConfig, TradingMode
-from silver_bot.data.funding import FundingRate, FundingSchedule
-from silver_bot.models import Candle, SignalDirection
-from silver_bot.readiness import evaluate_live_readiness
-from silver_bot.strategy import SilverBulletStrategyEngine
-from silver_bot.strategy.models import SilverBulletSignal
-from silver_bot.strategy.top_down import EntryPlan, StepResult
+import silvr
+from silvr.backtest import ExitReason, build_backtest_config, run_backtest, runner
+from silvr.backtest.runner import WALK_FORWARD_WINDOWS
+from silvr.backtest.top_down_engine import TopDownBacktestEngine
+from silvr.config import AppConfig, TradingMode
+from silvr.data.funding import FundingRate, FundingSchedule
+from silvr.models import Candle, SignalDirection
+from silvr.readiness import evaluate_live_readiness
+from silvr.strategy import SilverBulletStrategyEngine
+from silvr.strategy.models import SilverBulletSignal
+from silvr.strategy.top_down import EntryPlan, StepResult
 
 
 NO_TRIPS = {"mode": "simulated_per_run_daily_reset", "trips": 0, "trip_log": []}
@@ -110,7 +110,7 @@ def test_run_record_lists_inputs_costs_and_kill_switch_mode(tmp_path: Path) -> N
     assert run["spread_bps"] == 3.0
     assert run["risk_per_trade"] == 0.005
     assert run["ml_filter_enabled"] is False
-    assert run["package_version"] == silver_bot.__version__
+    assert run["package_version"] == silvr.__version__
     assert run["first_open_time"] == "2026-01-02T14:00:00+00:00"
     assert run["kill_switch"] == NO_TRIPS
 
@@ -158,7 +158,7 @@ def test_tripping_run_reports_trip_count_and_log(tmp_path: Path, monkeypatch: py
                 setup_quality_score=90,
             )
 
-    monkeypatch.setattr("silver_bot.backtest.engine.SilverBulletStrategyEngine", AlwaysLosingStrategy)
+    monkeypatch.setattr("silvr.backtest.engine.SilverBulletStrategyEngine", AlwaysLosingStrategy)
     start = datetime(2026, 1, 2, 14, 0, tzinfo=UTC)
     stopped_out = [
         Candle(

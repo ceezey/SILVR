@@ -1,4 +1,4 @@
-"""Repository entrypoint for the Silver Bot application."""
+"""Repository entrypoint for the SILVR application."""
 
 from pathlib import Path
 import sys
@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from silver_bot.main import main  # noqa: E402
+from silvr.main import main  # noqa: E402
 
 
 if __name__ == "__main__":

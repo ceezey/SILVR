@@ -4,15 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.backtest import BacktestConfig, BacktestEngine
-from silver_bot.backtest.sim_kill_switch import SimulatedKillSwitch
-from silver_bot.models import Candle, SignalDirection
-from silver_bot.risk import KillSwitch, RiskManagementEngine
-from silver_bot.strategy import SilverBulletStrategyEngine
-from silver_bot.strategy.models import SilverBulletSignal
+from silvr.backtest import BacktestConfig, BacktestEngine
+from silvr.backtest.sim_kill_switch import SimulatedKillSwitch
+from silvr.models import Candle, SignalDirection
+from silvr.risk import KillSwitch, RiskManagementEngine
+from silvr.strategy import SilverBulletStrategyEngine
+from silvr.strategy.models import SilverBulletSignal
 
 REASON = "Max consecutive losses limit reached"
-SRC = Path(__file__).resolve().parents[1] / "src" / "silver_bot"
+SRC = Path(__file__).resolve().parents[1] / "src" / "silvr"
 
 
 def test_constructor_takes_no_path() -> None:

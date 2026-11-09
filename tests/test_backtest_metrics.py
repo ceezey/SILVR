@@ -4,9 +4,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from silver_bot.backtest import ExitReason
-from silver_bot.backtest.metrics import calculate_metrics
-from silver_bot.backtest.models import EquityPoint, TradeRecord
+from silvr.backtest import ExitReason
+from silvr.backtest.metrics import calculate_metrics
+from silvr.backtest.models import EquityPoint, TradeRecord
 
 START = datetime(2026, 1, 5, 9, 0, tzinfo=UTC)
 NEW_KEYS = ("average_win_r", "average_loss_r", "realized_rr", "r_stdev", "r_t_stat", "return_to_drawdown")

@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from silver_bot.demo_readiness import evaluate_demo_readiness
-from silver_bot.readiness import export_readiness_report
+from silvr.demo_readiness import evaluate_demo_readiness
+from silvr.readiness import export_readiness_report
 
 
 def demo_env() -> dict[str, str]:

@@ -6,8 +6,8 @@ from pathlib import Path
 import psycopg
 
 from conftest import execute
-from silver_bot.config import AppConfig, ConfigError
-from silver_bot.monitoring.status import (
+from silvr.config import AppConfig, ConfigError
+from silvr.monitoring.status import (
     AUDIT_EVENTS,
     AUDIT_TAIL_BYTES,
     EVIDENCE_REPORTS,
@@ -15,7 +15,7 @@ from silver_bot.monitoring.status import (
     _read_json_object,
     collect_status,
 )
-from silver_bot.storage import PostgresStorage
+from silvr.storage import PostgresStorage
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
 BANNER, READINESS, EVIDENCE, RISK, POSITIONS, ALERTS = range(6)
@@ -340,11 +340,11 @@ def test_ladder_live_is_blocked_even_when_live_report_says_ready(tmp_path):
 
 
 def test_next_is_first_non_ok_step_with_exact_strip_text(tmp_path):
-    from silver_bot.monitoring.status import ALL_GATES_PASS, NEXT_TEXT
+    from silvr.monitoring.status import ALL_GATES_PASS, NEXT_TEXT
 
     backtest = "Next: run a backtest (runbook-backtest.md steps 5 and 6)"
     paper = "Next: paper trading (not available yet, G-3)"
-    demo = "Next: refresh demo readiness  python -m silver_bot.demo_readiness (runbook-demo-testnet.md steps 3 and 4)"
+    demo = "Next: refresh demo readiness  python -m silvr.demo_readiness (runbook-demo-testnet.md steps 3 and 4)"
     assert NEXT_TEXT == (backtest, backtest, paper, demo)
     assert ALL_GATES_PASS == "All evidence gates pass. Live trading stays blocked (PRD-F12)."
 
@@ -468,7 +468,7 @@ def test_database_panels_empty_when_tables_missing(tmp_path, database_url):
 
 
 def test_unreachable_database_degrades_only_its_panels(tmp_path, fast_connect_timeout):
-    status = collect_db(tmp_path, "postgresql://bot:pw@127.0.0.1:1/silverbot?connect_timeout=2")
+    status = collect_db(tmp_path, "postgresql://bot:pw@127.0.0.1:1/silvr?connect_timeout=2")
 
     assert rows(status, RISK)[0]["label"] == "unreadable"
     assert rows(status, POSITIONS)[0]["label"] == "unreadable"

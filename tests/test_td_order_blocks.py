@@ -2,9 +2,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from silver_bot.models import Candle
-from silver_bot.strategy.top_down import OrderBlock, OrderBookOfBlocks, SwingLevel, detect_order_block
-from silver_bot.strategy.top_down.order_blocks import leaves_gap, takes_previous_candle
+from silvr.models import Candle
+from silvr.strategy.top_down import OrderBlock, OrderBookOfBlocks, SwingLevel, detect_order_block
+from silvr.strategy.top_down.order_blocks import leaves_gap, takes_previous_candle
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 M15 = timedelta(minutes=15)

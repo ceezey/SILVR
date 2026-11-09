@@ -7,7 +7,7 @@ from urllib.parse import quote
 import psycopg
 import pytest
 
-DEFAULT_TEST_DATABASE_URL = "postgresql://silverbot:silverbot@localhost:5432/silverbot"
+DEFAULT_TEST_DATABASE_URL = "postgresql://silvr:silvr@localhost:5432/silvr"
 
 
 @pytest.fixture
@@ -35,8 +35,8 @@ def database_url():
 def fast_connect_timeout(monkeypatch):
     """Unreachable-database tests: Windows waits out the whole timeout on a refused port."""
 
-    import silver_bot.monitoring.status as status
-    import silver_bot.storage.postgres as postgres
+    import silvr.monitoring.status as status
+    import silvr.storage.postgres as postgres
 
     monkeypatch.setattr(postgres, "CONNECT_TIMEOUT_SECONDS", 1)
     monkeypatch.setattr(status, "CONNECT_TIMEOUT_SECONDS", 1)

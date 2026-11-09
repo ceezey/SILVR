@@ -14,14 +14,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from silver_bot.backtest import BacktestConfig, ExitReason
-from silver_bot.backtest.models import TradeRecord
-from silver_bot.backtest.sim_kill_switch import SimulatedKillSwitch
-from silver_bot.backtest.top_down_engine import TopDownBacktestEngine
-from silver_bot.data.funding import FundingDataError, FundingRate, FundingSchedule
-from silver_bot.models import Candle
-from silver_bot.risk import RiskConfig, RiskManagementEngine
-from silver_bot.strategy.top_down import EntryPlan, StepResult, StructureEvent
+from silvr.backtest import BacktestConfig, ExitReason
+from silvr.backtest.models import TradeRecord
+from silvr.backtest.sim_kill_switch import SimulatedKillSwitch
+from silvr.backtest.top_down_engine import TopDownBacktestEngine
+from silvr.data.funding import FundingDataError, FundingRate, FundingSchedule
+from silvr.models import Candle
+from silvr.risk import RiskConfig, RiskManagementEngine
+from silvr.strategy.top_down import EntryPlan, StepResult, StructureEvent
 
 START = datetime(2024, 1, 2, 10, 0, tzinfo=UTC)
 MS = timedelta(milliseconds=1)

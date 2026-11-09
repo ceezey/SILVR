@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from silver_bot.backtest import gate
-from silver_bot.backtest.gate import GateInputError, evaluate_gate, main
+from silvr.backtest import gate
+from silvr.backtest.gate import GateInputError, evaluate_gate, main
 
 FINAL_OK = {
     "total_trades": 120,

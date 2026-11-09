@@ -2,14 +2,14 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from silver_bot.ml import (
+from silvr.ml import (
     FeatureEngineeringPipeline,
     MLDataset,
     MLSetupRow,
     ModelRegistry,
     train_baseline_models,
 )
-from silver_bot.models import SignalDirection
+from silvr.models import SignalDirection
 
 
 def dataset_with_rows(count: int = 10) -> MLDataset:

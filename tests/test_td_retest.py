@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.data.csv_loader import load_binance_kline_csv
-from silver_bot.models import Candle
-from silver_bot.strategy.top_down.order_blocks import OrderBlock
-from silver_bot.strategy.top_down.retest import RetestSetup, SwingTracker
-from silver_bot.strategy.top_down.structure import StructureTracker, SwingLevel
+from silvr.data.csv_loader import load_binance_kline_csv
+from silvr.models import Candle
+from silvr.strategy.top_down.order_blocks import OrderBlock
+from silvr.strategy.top_down.retest import RetestSetup, SwingTracker
+from silvr.strategy.top_down.structure import StructureTracker, SwingLevel
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 FIXTURE = Path(__file__).parent / "fixtures" / "btcusdt_spot_1m_2026-10-30.csv"

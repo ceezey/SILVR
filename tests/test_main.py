@@ -7,11 +7,11 @@ from urllib.parse import parse_qs, urlsplit
 import psycopg
 import pytest
 
-from silver_bot.data.funding import FundingRate, write_funding_csv
-from silver_bot.exchange import binance_futures
-from silver_bot.main import main
-from silver_bot.readiness import evaluate_live_readiness
-from silver_bot.storage import PostgresStorage
+from silvr.data.funding import FundingRate, write_funding_csv
+from silvr.exchange import binance_futures
+from silvr.main import main
+from silvr.readiness import evaluate_live_readiness
+from silvr.storage import PostgresStorage
 
 MODE_KEYS = ("MODE", "TRADING_MODE", "PAPER_TRADING", "DEMO_TRADING", "LIVE_TRADING", "KILL_SWITCH_ENABLED", "DATABASE_URL")
 START_MS = int(datetime(2026, 1, 2, 14, 0, tzinfo=UTC).timestamp() * 1000)
@@ -144,7 +144,7 @@ def test_paper_mode_without_database_url_exits_2(workdir: Path, klines: list[str
 def test_unreachable_database_exits_1_and_audits(
     workdir: Path, monkeypatch: pytest.MonkeyPatch, klines: list[str], fast_connect_timeout: None
 ) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql://bot:pw@127.0.0.1:1/silverbot?connect_timeout=2")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://bot:pw@127.0.0.1:1/silvr?connect_timeout=2")
 
     assert main([]) == 1
 
@@ -160,7 +160,7 @@ def test_database_error_text_never_carries_the_password(
     def echo_dsn(self) -> None:
         raise psycopg.OperationalError('invalid connection option near "s3cret-pw@db"')
 
-    monkeypatch.setenv("DATABASE_URL", "postgresql://bot:s3cret-pw@db/silverbot")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://bot:s3cret-pw@db/silvr")
     monkeypatch.setattr(PostgresStorage, "initialize", echo_dsn)
 
     assert main([]) == 1
@@ -254,7 +254,7 @@ def test_unknown_flag_exits_2(workdir: Path) -> None:
 
 
 def test_crash_during_backtest_still_audits_bot_stopped(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import silver_bot.main as entry
+    import silvr.main as entry
 
     backtest_env(monkeypatch)
     csv_path = write_klines(workdir / "a.csv")

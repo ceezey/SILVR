@@ -2,9 +2,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from silver_bot.models import Candle
-from silver_bot.strategy.models import FairValueGap, FairValueGapDirection
-from silver_bot.strategy.top_down import SwingLevel, atr, final_target, stage2_level, unfilled_fvgs
+from silvr.models import Candle
+from silvr.strategy.models import FairValueGap, FairValueGapDirection
+from silvr.strategy.top_down import SwingLevel, atr, final_target, stage2_level, unfilled_fvgs
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 M15 = timedelta(minutes=15)

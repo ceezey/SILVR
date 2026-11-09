@@ -5,17 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.backtest import BacktestConfig, BacktestEngine
-from silver_bot.ml import (
+from silvr.backtest import BacktestConfig, BacktestEngine
+from silvr.ml import (
     FeatureEngineeringPipeline,
     MLDecision,
     MLFilterConfig,
     MLProbabilityFilter,
     ModelRegistry,
 )
-from silver_bot.models import Candle
-from silver_bot.storage import PostgresStorage
-from silver_bot.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
+from silvr.models import Candle
+from silvr.storage import PostgresStorage
+from silvr.strategy import SilverBulletStrategyConfig, SilverBulletStrategyEngine
 
 
 class ConstantProbabilityModel:

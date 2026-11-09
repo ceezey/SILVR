@@ -1,0 +1,24 @@
+[Unit]
+Description=SILVR paper-mode container and its Postgres
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/silvr
+Environment=COMPOSE_PROJECT_NAME=silvr
+# The dashboard runs detached ("-" ignores its failure): it must never stop or block the bot.
+ExecStartPre=-/usr/bin/docker compose -f /opt/silvr/docker-compose.yaml up -d dashboard
+ExecStart=/usr/bin/docker compose -f /opt/silvr/docker-compose.yaml up bot --exit-code-from bot
+ExecStop=/usr/bin/docker compose -f /opt/silvr/docker-compose.yaml down
+Restart=always
+RestartSec=30
+RestartPreventExitStatus=2 78
+# uid 1000, the same as the container's silvr user, so the bind-mounted folders stay writable
+# (ubuntu on Oracle's Ubuntu image, opc on Oracle Linux).
+User=ubuntu
+Group=docker
+
+[Install]
+WantedBy=multi-user.target

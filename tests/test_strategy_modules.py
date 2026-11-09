@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
-from silver_bot.models import Candle
-from silver_bot.strategy import (
+from silvr.models import Candle
+from silvr.strategy import (
     BiasDirection,
     FairValueGapDirection,
     LiquidityLevel,
