@@ -10,6 +10,7 @@ def test_frozen_values():
     assert list(params.LOOKBACKS) == sorted(set(params.LOOKBACKS))
     assert (params.VOL_TARGET, params.VOL_WINDOW, params.MAX_GROSS_LEVERAGE) == (0.25, 90, 2.0)
     assert params.KILL_SWITCH_DRAWDOWN == 0.30 * params.INITIAL_BALANCE
+    assert params.SCALE_K is not None and params.SCALE_K > 0
 
 
 def test_every_symbol_has_exchange_limits():

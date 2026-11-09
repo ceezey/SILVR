@@ -18,7 +18,7 @@ LOOKBACKS: tuple[int, ...] = (5, 10, 20, 30, 60, 90, 150, 250, 360)
 VOL_TARGET = 0.25  # annual volatility target
 VOL_WINDOW = 90  # daily returns, annualized with sqrt(365)
 MAX_GROSS_LEVERAGE = 2.0  # total notional cap, times equity
-SCALE_K: float | None = None  # calibrated on the training segment in Task 7
+SCALE_K: float | None = 4.011  # calibrated 2026-11-10 on the training segment only, realized volatility 0.2484 (target 0.25)
 
 INITIAL_BALANCE = 15_000.0
 KILL_SWITCH_DRAWDOWN = 4_500.0  # 0.30 x INITIAL_BALANCE, in dollars
