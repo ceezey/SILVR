@@ -197,7 +197,7 @@ def test_report_shape_reads_in_gate(tiny_universe: None, tmp_path: Path) -> None
     assert report["strategy"] == "trend_ensemble" and report["parameters_tuned"] is False
     assert report["symbols"] == list(SYMBOLS) and report["k"] == 1.0
     final = report["segments"]["final_test"]
-    assert set(final) == {"candles", "start", "end", "metrics", "kill_switch", "success_standard", "rejections"}
+    assert set(final) == {"candles", "start", "end", "metrics", "kill_switch", "success_standard", "rejections", "realized_volatility"}
     assert final["kill_switch"] == {"trips": 0, "tripped_at": None}
     assert final["candles"] == 2 * 1440 * len(SYMBOLS)
     verdict = gate.evaluate_gate(report)
@@ -277,3 +277,63 @@ def test_cli_runs_training_with_k(tiny_universe: None, monkeypatch: pytest.Monke
     assert code == 0
     report = json.loads((tmp_path / "o" / "out_of_sample_validation_report.json").read_text(encoding="utf-8"))
     assert report["segments"]["final_test"] == {"skipped": True}
+
+
+def test_realized_volatility() -> None:
+    day = datetime(2024, 3, 1, tzinfo=UTC)
+    equities = [100.0, 110.0, 99.0]  # returns from initial 100: 0.0, 0.1, -0.1
+    points = [EquityPoint(day + i * timedelta(days=1), e, 0.0, 0.0) for i, e in enumerate(equities)]
+    assert trend_runner.realized_volatility(points, 100.0) == pytest.approx(0.1 * 365**0.5)
+    assert trend_runner.realized_volatility(points[:1], 100.0) == 0.0
+    assert trend_runner.realized_volatility([], 100.0) == 0.0
+
+
+def test_report_segments_carry_realized_volatility(tiny_universe: None, tmp_path: Path) -> None:
+    candles, funding = write_data(tmp_path)
+    path = run_trend_backtest(
+        candles_root=candles, funding_root=funding, output_dir=tmp_path / "out", segments=("training",), k=1.0
+    )
+    segments = json.loads(path.read_text(encoding="utf-8"))["segments"]
+    assert segments["training"]["realized_volatility"] == 0.0  # flat prices: no trades, no variation
+    assert "realized_volatility" not in segments["validation"]
+
+
+def fake_runner(monkeypatch: pytest.MonkeyPatch, realized_of_k, calls: list[tuple[str, ...]]) -> None:
+    def fake(*, candles_root: Path, funding_root: Path, output_dir: Path, segments: tuple[str, ...], k: float) -> Path:
+        calls.append(segments)
+        path = Path(output_dir) / "report.json"
+        path.write_text(json.dumps({"segments": {"training": {"realized_volatility": realized_of_k(k)}}}), encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(trend_runner, "run_trend_backtest", fake)
+
+
+def test_calibrate_k_uses_training_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[tuple[str, ...]] = []
+    fake_runner(monkeypatch, lambda k: 0.1 * k, calls)
+    trend_runner.calibrate_k(candles_root=tmp_path, funding_root=tmp_path)
+    assert calls and all(segments == ("training",) for segments in calls)
+
+
+def test_calibrate_k_converges_on_linear_fixture(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_runner(monkeypatch, lambda k: 0.1 * k, [])
+    k, history = trend_runner.calibrate_k(candles_root=tmp_path, funding_root=tmp_path)
+    assert k == pytest.approx(2.5, abs=0.05)
+    assert history[0] == (1.0, pytest.approx(0.1))
+    assert history[-1][0] == k and abs(history[-1][1] - 0.25) <= 0.005
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == len(history) and all(line.startswith("k=") and "realized_volatility=" in line for line in lines)
+
+
+def test_calibrate_k_stops_after_max_iterations_returning_last_run_k(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    fake_runner(monkeypatch, lambda k: 0.1 * k**2, [])  # never lands within tolerance in 2 steps
+    k, history = trend_runner.calibrate_k(candles_root=tmp_path, funding_root=tmp_path, max_iterations=2)
+    assert len(history) == 2 and k == history[-1][0]
+
+
+def test_calibrate_k_refuses_zero_volatility(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    fake_runner(monkeypatch, lambda k: 0.0, [])
+    with pytest.raises(ValueError, match="cannot calibrate"):
+        trend_runner.calibrate_k(candles_root=tmp_path, funding_root=tmp_path)
