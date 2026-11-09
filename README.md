@@ -28,7 +28,7 @@ Full proposal conditions: [RFC-004 §7.1](<C:/AI Agentic Memory/03_Resources/RFC
 
 ## Current Status
 
-Honest summary on `feat/be-trend-ensemble` at `492c4b8` (2026-11-10; see [prd-silvr](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/prd-silvr.md>) section 3 for the per-feature table):
+Honest summary on `feat/be-trend-ensemble` (2026-11-10; see [prd-silvr](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/prd-silvr.md>) section 3 for the per-feature table):
 
 - Strategy `trend_ensemble` (built and tested): daily bars in UTC; nine lookbacks per coin (5, 10, 20, 30, 60, 90, 150, 250 and 360 days); a slice enters long when a daily close beats the highest close of the prior N days, filled at the next day's first 1m open; its stop is the midpoint of the N-day close channel, only ever raised, and fills intraday; no take-profit and no resizing. Rules: [RFC-001](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>).
 - Sizing: slice notional = k x (0.25 / 90-day annualized volatility) / 15 / 9 x equity, with k = `SCALE_K` = 1.0, the paper's own per-slice weight (owner decision, not fitted to results). Caps: 0.5% risk per slice, total notional at most 2x equity, Binance minimums (skip, never round up).
