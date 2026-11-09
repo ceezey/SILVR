@@ -8,51 +8,16 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
-from silvr.backtest.models import EquityPoint, RejectedSignalRecord, TradeRecord
-from silvr.execution.paper_trading import PaperTradingResult
+from silvr.backtest.models import EquityPoint, TradeRecord
 from silvr.monitoring.audit import AuditEvent, redact_secrets
-
-
-def build_daily_paper_report(result: PaperTradingResult) -> dict[str, Any]:
-    """Build a local daily report from a paper-trading result."""
-
-    rejections = [
-        {
-            "timestamp": event.timestamp,
-            "symbol": event.symbol,
-            "timeframe": "unknown",
-            "reason": event.message,
-            "ml_probability": (event.context or {}).get("ml_probability"),
-            "ml_decision": (event.context or {}).get("ml_decision"),
-        }
-        for event in result.events
-        if "rejected" in event.event_type.value
-    ]
-    report = build_daily_performance_report(
-        trades=result.trades,
-        rejected_signals=rejections,
-        equity_curve=None,
-    )
-    report.update(
-        {
-            "candles_processed": result.candles_processed,
-            "closed_trades": result.closed_trades,
-            "winning_trades": len([trade for trade in result.trades if trade.realized_pnl > 0]),
-            "losing_trades": len([trade for trade in result.trades if trade.realized_pnl < 0]),
-            "net_pnl": report["pnl"],
-            "ending_equity": result.equity,
-            "event_count": len(result.events),
-        }
-    )
-    return report
 
 
 def build_daily_performance_report(
     *,
     trades: Iterable[TradeRecord],
-    rejected_signals: Iterable[Any],
+    rejected_signals: Iterable[Mapping[str, Any]],
     equity_curve: Iterable[EquityPoint] | None = None,
     audit_events: Iterable[AuditEvent] | None = None,
     report_date: date | None = None,
@@ -92,7 +57,7 @@ def build_daily_performance_report(
 def build_weekly_performance_report(
     *,
     trades: Iterable[TradeRecord],
-    rejected_signals: Iterable[Any],
+    rejected_signals: Iterable[Mapping[str, Any]],
     equity_curve: Iterable[EquityPoint] | None = None,
     week_start: date | None = None,
 ) -> dict[str, Any]:
@@ -162,7 +127,7 @@ def export_report_json(report: dict[str, Any], path: str | Path) -> Path:
     return output_path
 
 
-def _infer_report_date(trades: list[TradeRecord], rejected: list[Any]) -> date:
+def _infer_report_date(trades: list[TradeRecord], rejected: list[Mapping[str, Any]]) -> date:
     if trades:
         return trades[0].exit_time.date()
     if rejected:

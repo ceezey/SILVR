@@ -25,7 +25,6 @@ from typing import Any
 
 from silvr.backtest.models import BacktestConfig, EquityPoint
 from silvr.backtest.reporting import json_safe
-from silvr.backtest.runner import TRAINING_FRACTION, VALIDATION_FRACTION
 from silvr.backtest.trend_engine import TrendDataError, TrendPortfolioEngine
 from silvr.data.csv_loader import CandleDataError, load_binance_kline_csv
 from silvr.data.funding import FundingDataError, FundingSchedule, load_funding_csv
@@ -35,6 +34,8 @@ from silvr.strategy.trend import params
 from silvr.strategy.trend.signals import daily_bars
 
 REPORT_NAME = "out_of_sample_validation_report.json"
+TRAINING_FRACTION = 0.6
+VALIDATION_FRACTION = 0.2
 SEGMENT_NAMES = ("training", "validation", "final_test")
 TARGET_WEEKLY_NET = 50.0
 _MINUTE = timedelta(minutes=1)

@@ -18,6 +18,3 @@ telegram:
 
 ml:
   filter_enabled: false
-  registry_path: models/model_registry.json
-  min_probability: 0.60
-  reduce_risk_threshold: 0.55

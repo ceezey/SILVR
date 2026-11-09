@@ -31,7 +31,7 @@ MAX_DRAWDOWN_PERCENT_BY_STRATEGY = {"trend_ensemble": 0.30}  # a diversified boo
 MIN_RETURN_TO_DRAWDOWN = 2.0
 MIN_OOS_EFFICIENCY = 0.5
 
-DEFAULT_STRATEGY = "silver_bullet"  # reports from before the strategy key existed
+DEFAULT_STRATEGY = "unnamed"  # reports from before the strategy key existed
 DEFAULT_REPORT = "reports/out_of_sample_validation_report.json"
 OUTPUT_NAME = "promotion_gate.json"
 LOG_NAME = "promotion_gate_log.jsonl"

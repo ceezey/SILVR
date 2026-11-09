@@ -1,15 +1,11 @@
 import inspect
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from silvr.backtest import BacktestConfig, BacktestEngine
 from silvr.backtest.sim_kill_switch import SimulatedKillSwitch
-from silvr.models import Candle, SignalDirection
-from silvr.risk import KillSwitch, RiskManagementEngine
-from silvr.strategy import SilverBulletStrategyEngine
-from silvr.strategy.models import SilverBulletSignal
+from silvr.risk import KillSwitch, RiskConfig, RiskManagementEngine, RiskRequest
 
 REASON = "Max consecutive losses limit reached"
 SRC = Path(__file__).resolve().parents[1] / "src" / "silvr"
@@ -95,115 +91,48 @@ def test_report_of_untripped_switch() -> None:
         assert ks.report() == {"mode": "simulated_per_run_daily_reset", "trips": 0, "trip_log": []}
 
 
-def flat_candle(opened: datetime, *, low: float = 99, high: float = 101) -> Candle:
-    return Candle(
-        symbol="BTCUSDT",
-        timeframe="1m",
-        open_time=opened,
-        close_time=opened + timedelta(minutes=1),
-        open=100,
-        high=high,
-        low=low,
-        close=100,
-        volume=1000,
+DAY1 = datetime(2026, 1, 2, 10, 0, tzinfo=UTC)
+DAY2 = datetime(2026, 1, 3, 0, 0, tzinfo=UTC)
+DAILY_LOSS = "Max daily loss limit reached"
+
+
+def request(at: datetime) -> RiskRequest:
+    return RiskRequest(
+        equity=15_000.0, entry_price=100.0, stop_loss=98.0, take_profit=None, direction="LONG", signal_day=at.date()
     )
 
 
-class ScriptedStrategy:
-    """Returns a prepared LONG signal at chosen candle open times, else NO_TRADE."""
+def lose_the_daily_limit(kill_switch: KillSwitch) -> RiskManagementEngine:
+    """A trend-profile risk engine that has lost 2% on DAY1, as the trend engine drives it."""
 
-    # The engine reads the session clock for the pending order's expiry (session-end expiry).
-    sessions = SilverBulletStrategyEngine().sessions
-
-    def __init__(self, signal_times: set[datetime]) -> None:
-        self.signal_times = signal_times
-
-    def evaluate(self, candles):
-        last = candles[-1]
-        if last.open_time not in self.signal_times:
-            return SilverBulletSignal(
-                direction=SignalDirection.NO_TRADE,
-                symbol=last.symbol,
-                timeframe=last.timeframe,
-                generated_at=last.open_time,
-                reason="scripted: no setup",
-                explanation="scripted",
-            )
-        return SilverBulletSignal(
-            direction=SignalDirection.LONG,
-            symbol=last.symbol,
-            timeframe=last.timeframe,
-            generated_at=last.open_time,
-            reason=None,
-            explanation="scripted",
-            entry_price=100.0,
-            stop_loss=98.0,
-            take_profit=104.0,
-            risk_reward_ratio=2.0,
-            session_name="scripted",
-            setup_quality_score=90,
-        )
+    risk = RiskManagementEngine(RiskConfig.trend(), kill_switch=kill_switch)
+    risk.reserve_trade(DAY1.date())
+    risk.release_trade(realized_pnl=-400.0, day=DAY1.date())  # 2% of 15,000 is 300
+    return risk
 
 
-def three_losses_then_next_day_setup() -> tuple[list[Candle], datetime, set[datetime]]:
-    """Day 1: three losing trades. Day 2: first candle carries a setup that then wins."""
-
-    day1 = datetime(2026, 1, 2, 10, 0, tzinfo=UTC)
-    day2 = datetime(2026, 1, 3, 0, 0, tzinfo=UTC)
-    candles: list[Candle] = []
-    for attempt in range(3):
-        base = day1 + timedelta(minutes=attempt * 3)
-        candles.append(flat_candle(base))  # signal candle
-        candles.append(flat_candle(base + timedelta(minutes=1), low=97))  # fills, stops out
-        candles.append(flat_candle(base + timedelta(minutes=2)))
-    candles.append(flat_candle(day1 + timedelta(minutes=9)))  # day 1 setup, blocked by the trip
-    candles.append(flat_candle(day2))  # day 2 signal candle
-    candles.append(flat_candle(day2 + timedelta(minutes=1), high=105))  # fills, hits target
-    signals = {candles[0].open_time, candles[3].open_time, candles[6].open_time, candles[9].open_time, day2}
-    return candles, day2, signals
-
-
-def run_scenario(kill_switch: KillSwitch):
-    candles, day2, signals = three_losses_then_next_day_setup()
-    config = BacktestConfig(maker_fee=0.0, taker_fee=0.0, slippage_bps=0.0, spread_bps=0.0)
-    engine = BacktestEngine(
-        strategy=ScriptedStrategy(signals),
-        config=config,
-        risk_engine=RiskManagementEngine(config.risk, kill_switch=kill_switch),
-    )
-    return engine.run(candles), day2
-
-
-def test_engine_resumes_trading_next_day() -> None:
+def test_trip_blocks_the_day_and_clears_at_the_next_utc_day() -> None:
     with SimulatedKillSwitch() as ks:
-        result, day2 = run_scenario(ks)
+        ks.now = DAY1
+        risk = lose_the_daily_limit(ks)
 
-        assert [trade.realized_pnl < 0 for trade in result.trades] == [True, True, True, False]
-        assert result.trades[-1].entry_time > day2
-        assert len(ks.trips) == 1
-        assert ks.trips[0]["reason"] == REASON
-        assert ks.trips[0]["tripped_at"].date() == datetime(2026, 1, 2).date()
-        assert ks.trips[0]["reset_at"] == day2
-        assert any(record.reason == "Risk rejected: Kill switch is active" for record in result.rejected_signals)
+        assert risk.evaluate(request(DAY1)).reason == DAILY_LOSS
+        assert risk.evaluate(request(DAY1)).reason == "Kill switch is active"
+        assert ks.reset_if_new_day(DAY1.replace(hour=23, minute=59)) is False
+        assert risk.evaluate(request(DAY1)).reason == "Kill switch is active"
+
+        assert ks.reset_if_new_day(DAY2) is True
+        assert risk.evaluate(request(DAY2)).approved
+        assert ks.trips == [{"reason": DAILY_LOSS, "tripped_at": DAY1, "reset_at": DAY2}]
 
 
-def test_plain_kill_switch_never_resets(tmp_path: Path) -> None:
+def test_plain_kill_switch_has_no_reset_and_blocks_every_day(tmp_path: Path) -> None:
     ks = KillSwitch(tmp_path / "KS")
+    risk = lose_the_daily_limit(ks)
 
-    result, day2 = run_scenario(ks)
-
-    assert len(result.trades) == 3
-    assert all(trade.entry_time < day2 for trade in result.trades)
-    assert ks.path.exists()
-
-
-def test_reset_hook_ignores_plain_kill_switch(tmp_path: Path) -> None:
-    ks = KillSwitch(tmp_path / "KS")
-    ks.trip(REASON)
-
-    result, _ = run_scenario(ks)
-
-    assert result.trades == []
+    assert risk.evaluate(request(DAY1)).reason == DAILY_LOSS
+    assert not hasattr(ks, "reset_if_new_day")
+    assert risk.evaluate(request(DAY2)).reason == "Kill switch is active"
     assert ks.path.exists()
 
 

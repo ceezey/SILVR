@@ -2,9 +2,9 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from silvr.backtest import EquityPoint, ExitReason, TradeRecord
-from silvr.backtest.models import RejectedSignalRecord
 from silvr.monitoring import (
     InMemoryTelegramClient,
     StructuredAuditLogger,
@@ -60,16 +60,18 @@ def trade(
     )
 
 
-def rejection(reason: str, *, day_offset: int = 0, ml_decision: str | None = None) -> RejectedSignalRecord:
+def rejection(reason: str, *, day_offset: int = 0, ml_decision: str | None = None) -> dict[str, Any]:
+    """A rejected-setup record as it appears in a report's JSON."""
+
     timestamp = datetime(2026, 1, 5, 15, 5, tzinfo=UTC) + timedelta(days=day_offset)
-    return RejectedSignalRecord(
-        timestamp=timestamp,
-        symbol="BTCUSDT",
-        timeframe="1m",
-        reason=reason,
-        ml_probability=0.4 if ml_decision else None,
-        ml_decision=ml_decision,
-    )
+    return {
+        "timestamp": timestamp,
+        "symbol": "BTCUSDT",
+        "timeframe": "1m",
+        "reason": reason,
+        "ml_probability": 0.4 if ml_decision else None,
+        "ml_decision": ml_decision,
+    }
 
 
 def test_structured_log_generation_and_secret_redaction(tmp_path: Path) -> None:
@@ -119,7 +121,7 @@ def test_demo_credentials_are_redacted_from_logs(tmp_path: Path) -> None:
 def test_daily_report_generation_and_exports(tmp_path: Path) -> None:
     trades = [trade(1, pnl=100, realized_r=2), trade(2, pnl=-50, realized_r=-1)]
     rejected = [
-        rejection("Outside enabled Silver Bullet session"),
+        rejection("No breakout"),
         rejection("ML rejected setup below probability threshold", ml_decision="reject"),
     ]
     equity = [
@@ -143,7 +145,7 @@ def test_daily_report_generation_and_exports(tmp_path: Path) -> None:
     assert report["average_r"] == 0.5
     assert report["best_trade"]["trade_id"] == 1
     assert report["worst_trade"]["trade_id"] == 2
-    assert report["rule_failures"]["Outside enabled Silver Bullet session"] == 1
+    assert report["rule_failures"]["No breakout"] == 1
     assert report["ml_decisions"]["approve"] == 2
     assert report["ml_decisions"]["reject"] == 1
     assert export_path.exists()
@@ -155,8 +157,8 @@ def test_weekly_report_generation_journal_and_dashboard_export(tmp_path: Path) -
         trade(2, pnl=-25, realized_r=-0.5, session="london", day_offset=1),
     ]
     rejected = [
-        rejection("No liquidity sweep detected"),
-        rejection("No liquidity sweep detected", day_offset=1),
+        rejection("Volatility warm-up"),
+        rejection("Volatility warm-up", day_offset=1),
     ]
     equity = [
         EquityPoint(timestamp=datetime(2026, 1, 5, 15, 0, tzinfo=UTC), equity=10_000, realized_pnl=0, drawdown=0),
@@ -175,7 +177,7 @@ def test_weekly_report_generation_journal_and_dashboard_export(tmp_path: Path) -
         daily_report={"trades_taken": 2},
         weekly_report=weekly,
         recent_trades=journal,
-        recent_rejections=[{"reason": "No liquidity sweep detected"}],
+        recent_rejections=[{"reason": "Volatility warm-up"}],
     )
     dashboard_path = export_dashboard_data(dashboard, tmp_path / "dashboard.json")
 
@@ -187,7 +189,7 @@ def test_weekly_report_generation_journal_and_dashboard_export(tmp_path: Path) -
     assert weekly["max_drawdown"] == 25
     assert weekly["best_session"]["session_name"] == "new_york_am"
     assert weekly["worst_session"]["session_name"] == "london"
-    assert weekly["repeated_rejection_reasons"]["No liquidity sweep detected"] == 2
+    assert weekly["repeated_rejection_reasons"]["Volatility warm-up"] == 2
     assert journal[0]["trade_id"] == 1
     assert journal_path.exists()
     assert dashboard_path.exists()
@@ -214,7 +216,7 @@ def test_telegram_mocked_send_behavior() -> None:
     asyncio.run(alerter.bot_started())
     asyncio.run(alerter.bot_stopped())
     asyncio.run(alerter.signal_detected("BTCUSDT", "LONG"))
-    asyncio.run(alerter.signal_rejected("BTCUSDT", "No FVG"))
+    asyncio.run(alerter.signal_rejected("BTCUSDT", "No breakout"))
     asyncio.run(alerter.risk_rejection("BTCUSDT", "Max trades per day limit reached"))
     asyncio.run(alerter.ml_approval("BTCUSDT", 0.75))
     asyncio.run(alerter.ml_rejection("BTCUSDT", 0.42, "Below threshold"))

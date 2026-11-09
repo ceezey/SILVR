@@ -240,3 +240,21 @@ def test_r_t_stat_is_min_of_trade_and_day(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(trend_engine, "day_r_t_stat", lambda trades: 5.0)
     high_day = run([*BASE, gap]).metrics
     assert high_day["r_t_stat"] == high_day["trade_r_t_stat"] < high_day["day_r_t_stat"]
+
+
+def test_never_uses_the_real_kill_switch(tmp_path) -> None:
+    real = tmp_path / "KILL_SWITCH"
+    real.write_text('{"reason": "owner"}', encoding="utf-8")
+    config = BacktestConfig(initial_balance=15_000.0, risk=RiskConfig.trend(kill_switch_path=real))
+    funding = {"AAA": schedule(), "BBB": schedule()}
+
+    result = TrendPortfolioEngine(config, funding=funding, history=history(), k=1.0).run(minutes([*BASE, 100.0]))
+
+    assert len(result.trades) == 1  # the active real file blocks nothing: the run has its own simulated switch
+    assert real.read_text(encoding="utf-8") == '{"reason": "owner"}'
+
+
+def test_backtest_cost_defaults_are_conservative() -> None:
+    config = BacktestConfig()
+
+    assert (config.slippage_bps, config.spread_bps) == (5.0, 3.0)

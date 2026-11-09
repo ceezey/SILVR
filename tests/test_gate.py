@@ -366,8 +366,8 @@ def test_second_look_bar_3_fails_t_2_5(tmp_path, capsys):
 
 def test_looks_counted_across_strategies(tmp_path, capsys):
     data = report(r_t_stat=2.5)
-    data["strategy"] = "top_down_ob"
-    _seed_log(tmp_path, _old_line(strategy="silver_bullet", t_stat_bar=2.0, passed=True))
+    data["strategy"] = "other_strategy"
+    _seed_log(tmp_path, _old_line(strategy="unnamed", t_stat_bar=2.0, passed=True))
     code, path = run(tmp_path, data)
     assert code == 1
     assert "look 2 at this data range" in capsys.readouterr().out
@@ -378,19 +378,19 @@ def test_looks_counted_across_strategies(tmp_path, capsys):
 
 def test_strategy_in_json_and_log(tmp_path):
     data = report()
-    data["strategy"] = "top_down_ob"
+    data["strategy"] = "other_strategy"
     code, path = run(tmp_path, data)
     assert code == 0
     written = json.loads((path.parent / "promotion_gate.json").read_text(encoding="utf-8"))
-    assert (written["strategy"], written["t_stat_bar"]) == ("top_down_ob", 2.0)
-    assert (_log_lines(path)[0]["strategy"], _log_lines(path)[0]["t_stat_bar"]) == ("top_down_ob", 2.0)
+    assert (written["strategy"], written["t_stat_bar"]) == ("other_strategy", 2.0)
+    assert (_log_lines(path)[0]["strategy"], _log_lines(path)[0]["t_stat_bar"]) == ("other_strategy", 2.0)
 
-    # reports from before the strategy key existed are silver_bullet
+    # reports from before the strategy key existed are "unnamed"
     code, path = run(tmp_path, report(r_t_stat=3.5))
     line = _log_lines(path)[-1]
-    assert (line["strategy"], line["t_stat_bar"]) == ("silver_bullet", 3.0)
+    assert (line["strategy"], line["t_stat_bar"]) == ("unnamed", 3.0)
     written = json.loads((path.parent / "promotion_gate.json").read_text(encoding="utf-8"))
-    assert (written["strategy"], written["t_stat_bar"]) == ("silver_bullet", 3.0)
+    assert (written["strategy"], written["t_stat_bar"]) == ("unnamed", 3.0)
 
 
 def test_existing_log_without_strategy_still_counts(tmp_path, capsys):
@@ -417,7 +417,7 @@ def test_trend_drawdown_limit_030():
     verdict = evaluate_gate(data)
     assert 5 not in failed_numbers(verdict)
     assert "<= 0.3" in _criterion(verdict, 5).threshold
-    data["strategy"] = "top_down_ob"
+    data["strategy"] = "other_strategy"
     assert 5 in failed_numbers(evaluate_gate(data))
     assert gate.MAX_DRAWDOWN_PERCENT_BY_STRATEGY == {"trend_ensemble": 0.30}
 
