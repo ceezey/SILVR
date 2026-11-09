@@ -413,7 +413,7 @@ Branch flow (owner decision, 2026-10-14): BE and FE work, then merge to `dev`, t
 
 1. Branch from `dev` per task: `feat/be-<name>` for bot code, `feat/fe-<name>` for the operator dashboard or Telegram (FE is built by `psl-purist`, SAD-B1).
 2. Build on the branch with tests, and run the reviewers below before merging.
-3. Merge the branch into `dev` and push. No PR and no owner sign-off is needed for this step.
+3. Merge the branch into local `dev`. Do not push: push `dev` only when the owner says "push" (fetch and compare with `origin/dev` first; never force-push). After the push, remove the branch's worktree and delete the branch. No PR and no owner sign-off is needed for this step (owner rule, 2026-11-10; also in the global agent instructions).
 4. QA on `dev`: the full `python -m pytest`, the [QAD](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>) section 6 release criteria for the affected mode gate, and a smoke run of the bot and the dashboard. The owner signs off.
 5. Open a PR from `dev` to `main` only after QA passes and the owner says go.
 
