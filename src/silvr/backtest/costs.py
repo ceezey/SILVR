@@ -1,4 +1,4 @@
-"""Fill-price and fee formulas shared by the phase 1 and top-down backtest engines.
+"""Fill-price and fee formulas for the backtest engine.
 
 A market fill moves the price against the trade by half the spread plus the slippage.
 """

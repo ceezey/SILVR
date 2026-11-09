@@ -106,7 +106,7 @@ def test_skipped_segments_not_simulated(tiny_universe: None, tmp_path: Path, mon
         def run(self, minutes) -> TrendRunResult:
             count = sum(1 for _ in minutes)
             assert count == 6 * 1440
-            return TrendRunResult([], [], {"total_trades": 0}, None, Counter())
+            return TrendRunResult([], [], {"total_trades": 0}, None, Counter(), {})
 
     monkeypatch.setattr(trend_runner, "TrendPortfolioEngine", FakeEngine)
     path = run_trend_backtest(
@@ -117,6 +117,29 @@ def test_skipped_segments_not_simulated(tiny_universe: None, tmp_path: Path, mon
     assert report["segments"]["validation"] == {"skipped": True}
     assert report["segments"]["final_test"] == {"skipped": True}
     assert report["segments"]["training"]["candles"] == 6 * 1440 * len(SYMBOLS)
+
+
+def test_simulated_kill_switch_trips_reach_the_report(
+    tiny_universe: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candles, funding = write_data(tmp_path)
+    trip = {"reason": "Max daily loss limit reached", "tripped_at": "2024-03-03T00:00:00+00:00", "reset_at": None}
+    simulated = {"mode": "simulated_per_run_daily_reset", "trips": 1, "trip_log": [trip]}
+
+    class FakeEngine:
+        def __init__(self, config, *, funding, history, k) -> None:
+            pass
+
+        def run(self, minutes) -> TrendRunResult:
+            return TrendRunResult([], [], {"total_trades": 0}, None, Counter(), simulated)
+
+    monkeypatch.setattr(trend_runner, "TrendPortfolioEngine", FakeEngine)
+    path = run_trend_backtest(
+        candles_root=candles, funding_root=funding, output_dir=tmp_path / "out", segments=("training",), k=1.0
+    )
+    training = json.loads(path.read_text(encoding="utf-8"))["segments"]["training"]
+    assert training["simulated_kill_switch"] == simulated
+    assert training["kill_switch"] == {"trips": 0, "tripped_at": None}  # the gate's drawdown field is separate
 
 
 def test_later_segment_gets_warmup_history_ending_the_day_before(
@@ -133,7 +156,7 @@ def test_later_segment_gets_warmup_history_ending_the_day_before(
             first = next(iter(minutes))
             assert all(c.open_time == START + 6 * 1440 * MINUTE for c in first.values())
             assert first["AAA"] is not first.get("BBB")
-            return TrendRunResult([], [], {"total_trades": 0}, None, Counter())
+            return TrendRunResult([], [], {"total_trades": 0}, None, Counter(), {})
 
     monkeypatch.setattr(trend_runner, "TrendPortfolioEngine", FakeEngine)
     run_trend_backtest(
@@ -197,8 +220,12 @@ def test_report_shape_reads_in_gate(tiny_universe: None, tmp_path: Path) -> None
     assert report["strategy"] == "trend_ensemble" and report["parameters_tuned"] is False
     assert report["symbols"] == list(SYMBOLS) and report["k"] == 1.0
     final = report["segments"]["final_test"]
-    assert set(final) == {"candles", "start", "end", "metrics", "kill_switch", "success_standard", "rejections", "realized_volatility"}
+    assert set(final) == {
+        "candles", "start", "end", "metrics", "kill_switch", "simulated_kill_switch", "success_standard", "rejections",
+        "realized_volatility",
+    }
     assert final["kill_switch"] == {"trips": 0, "tripped_at": None}
+    assert final["simulated_kill_switch"] == {"mode": "simulated_per_run_daily_reset", "trips": 0, "trip_log": []}
     assert final["candles"] == 2 * 1440 * len(SYMBOLS)
     verdict = gate.evaluate_gate(report)
     assert verdict.strategy == "trend_ensemble"

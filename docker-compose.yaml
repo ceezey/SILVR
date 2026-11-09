@@ -38,6 +38,8 @@ services:
       retries: 10
     restart: "no"
 
+  # Paper mode has no strategy runtime yet (trend_ensemble is backtest only): this container exits 2 with a
+  # usage error before any network call, and the systemd unit does not restart exit 2.
   bot:
     <<: *bot-common
     container_name: silvr-paper
@@ -71,6 +73,7 @@ services:
         condition: service_healthy
     restart: always
 
+  # Paper and demo profiles also exit 2 until a trend runtime exists.
   paper:
     <<: *bot-common
     profiles: ["paper"]

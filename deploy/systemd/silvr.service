@@ -1,5 +1,5 @@
 [Unit]
-Description=SILVR paper-mode container and its Postgres
+Description=SILVR paper-mode container (exits 2 until a trend runtime exists), its dashboard and Postgres
 Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service

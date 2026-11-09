@@ -221,7 +221,8 @@ def run_trend_backtest(
             "start": start.isoformat(),
             "end": end.isoformat(),
             "metrics": result.metrics,
-            "kill_switch": {"trips": int(tripped is not None), "tripped_at": tripped},
+            "kill_switch": {"trips": int(tripped is not None), "tripped_at": tripped},  # drawdown; the gate reads it
+            "simulated_kill_switch": result.simulated_kill_switch,  # risk-limit trips (daily loss), reset daily
             "success_standard": success_standard(result.daily_equity, config.initial_balance),
             "realized_volatility": realized_volatility(result.daily_equity, config.initial_balance),
             "rejections": dict(result.rejections),

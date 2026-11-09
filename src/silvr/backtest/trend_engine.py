@@ -10,7 +10,7 @@ Per 1m minute, in this fixed order:
    its open.
 5. Mark to market at this close; a fall of KILL_SWITCH_DRAWDOWN from peak flattens every slice and halts
    entries for the rest of the run.
-After the last minute every open slice closes at that minute's close with costs.
+6. Once, after the last minute: every open slice closes at that minute's close with costs.
 
 Per-minute work is O(symbols): each symbol keeps its open slices' total quantity, cost, funding and highest
 stop, refreshed only when a slice opens, closes, is funded or has its stop raised.
@@ -59,8 +59,9 @@ class TrendRunResult:
     trades: list[TradeRecord]
     daily_equity: list[EquityPoint]
     metrics: dict[str, Any]
-    kill_switch_tripped_at: datetime | None
+    kill_switch_tripped_at: datetime | None  # the drawdown kill switch
     rejections: Counter[str]
+    simulated_kill_switch: dict[str, Any]  # SimulatedKillSwitch.report(): risk-limit trips and resets
 
 
 @dataclass(slots=True)
@@ -181,7 +182,7 @@ class _Run:
         if last is None:
             raise ValueError("no 1m minutes to simulate")
         self._check_funding(funding_from, last)
-        self._close_all(previous, last, ExitReason.END_OF_DATA)  # 7.
+        self._close_all(previous, last, ExitReason.END_OF_DATA)  # 6.
         self.peak = max(self.peak, self.equity)
         self._point(last, max(day_drawdown, self.peak - self.equity))
 
@@ -189,7 +190,9 @@ class _Run:
         metrics["trade_r_t_stat"] = metrics["r_t_stat"]
         metrics["day_r_t_stat"] = day_r_t_stat(self.trades)
         metrics["r_t_stat"] = min(metrics["trade_r_t_stat"], metrics["day_r_t_stat"])
-        return TrendRunResult(self.trades, self.curve, metrics, self.tripped_at, self.rejections)
+        # Called inside TrendPortfolioEngine.run's with-block, so the switch is still open to report.
+        report = self.kill_switch.report()
+        return TrendRunResult(self.trades, self.curve, metrics, self.tripped_at, self.rejections, report)
 
     def _check_minute(self, minute: Mapping[str, Candle], last: datetime | None) -> datetime:
         """The minute's open time; every symbol must have a candle at it, one minute after the last."""
@@ -273,6 +276,9 @@ class _Run:
         open_notional = sum(self.qty[s] * minute[s].open for s in self.symbols)
         for slice_id, capped in fit_gross_cap(notional, open_notional=open_notional, equity=equity).items():
             symbol, n, stop, fill = approved[slice_id]
+            if capped <= 0:  # no room left under the gross cap
+                self.rejections["gross cap"] += 1
+                continue
             qty = round_to_exchange(symbol, capped / fill, fill)
             if qty == 0:
                 self.rejections["below exchange minimum"] += 1
@@ -290,8 +296,9 @@ class _Run:
                 risk_amount=qty * (fill - stop),
                 entry_fee=fee,
                 entry_slippage=costs.slippage_value(minute[symbol].open, self.config.slippage_bps),
-                funded_until=now - _MS,  # charges a funding stamp at the fill instant, as the top-down engine does
+                funded_until=now - _MS,  # a funding stamp falling exactly at the fill instant is charged
             )
+            # The trend profile's 135 trades/positions per day cannot bind: at most 15 x 9 slices exist.
             self.risk.reserve_trade(day)
         for symbol in {item[0] for item in approved.values()}:
             self._refresh(symbol)
