@@ -258,3 +258,34 @@ def test_backtest_cost_defaults_are_conservative() -> None:
     config = BacktestConfig()
 
     assert (config.slippage_bps, config.spread_bps) == (5.0, 3.0)
+
+
+def test_kill_switch_trip_blocks_until_next_utc_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Days 3 and 4 both close as breakouts (n=2), so an entry is due at day 4 00:00 and again at day 5 00:00.
+    # The simulated switch trips at day 4 00:00 (as a risk-limit trip would): day 4's entry is blocked and the
+    # reset at the next UTC day lets day 5's entry through.
+    switches: list[trend_engine.SimulatedKillSwitch] = []
+
+    class TripsOnDay4(trend_engine.SimulatedKillSwitch):
+        def __init__(self) -> None:
+            super().__init__()
+            switches.append(self)
+
+        @property
+        def now(self) -> datetime | None:
+            return self._now
+
+        @now.setter
+        def now(self, value: datetime | None) -> None:
+            self._now = value
+            if value == day(4):
+                self.trip("Max daily loss limit reached")
+
+    monkeypatch.setattr(trend_engine, "SimulatedKillSwitch", TripsOnDay4)
+
+    result = run([*BASE, 100.0, 100.0])
+
+    assert result.rejections["Kill switch is active"] == 1
+    [trade] = result.trades
+    assert trade.entry_time == day(5)
+    assert switches[0].trips == [{"reason": "Max daily loss limit reached", "tripped_at": day(4), "reset_at": day(5)}]

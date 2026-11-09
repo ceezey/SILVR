@@ -96,6 +96,14 @@ def test_structured_log_generation_and_secret_redaction(tmp_path: Path) -> None:
     assert redact_secrets({"telegram_bot_token": "token"})["telegram_bot_token"] == "[REDACTED]"
 
 
+def test_audit_logger_retains_events_by_default() -> None:
+    logger = StructuredAuditLogger()
+
+    logger.log("bot_started", "Backtest started")
+
+    assert len(logger.events) == 1
+
+
 def test_demo_credentials_are_redacted_from_logs(tmp_path: Path) -> None:
     log_path = tmp_path / "audit.jsonl"
     logger = StructuredAuditLogger(log_path)
