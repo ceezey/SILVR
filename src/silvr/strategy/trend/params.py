@@ -18,7 +18,7 @@ LOOKBACKS: tuple[int, ...] = (5, 10, 20, 30, 60, 90, 150, 250, 360)
 VOL_TARGET = 0.25  # annual volatility target
 VOL_WINDOW = 90  # daily returns, annualized with sqrt(365)
 MAX_GROSS_LEVERAGE = 2.0  # total notional cap, times equity
-SCALE_K: float | None = None  # calibrated on the training segment in Task 7
+SCALE_K: float | None = 1.0  # the paper's own per-slice sizing (0.25 / vol / 9 / 15 of equity), chosen by the owner on 2026-11-10 after the k = 4.011 training check tripped the kill switch; not fitted to results; training realized volatility at k = 1.0 was 0.0935 (first calibration run)
 
 INITIAL_BALANCE = 15_000.0
 KILL_SWITCH_DRAWDOWN = 4_500.0  # 0.30 x INITIAL_BALANCE, in dollars

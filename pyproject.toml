@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "silvr"
 version = "0.1.0"
-description = "ICT Silver Bullet research, backtesting, and paper trading bot."
+description = "Quant trend-following research and backtesting system for Binance USDT-M futures."
 requires-python = ">=3.11"
 dependencies = ["ccxt>=4.5,<5", "psycopg[binary]>=3.3,<4"]
 

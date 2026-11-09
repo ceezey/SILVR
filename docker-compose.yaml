@@ -3,7 +3,6 @@ name: silvr
 x-safe-environment: &safe-environment
   LIVE_TRADING: "false"
   DATABASE_URL: postgresql://silvr:${POSTGRES_PASSWORD:-silvr}@postgres:5432/silvr
-  ML_REGISTRY_PATH: /app/models/model_registry.json
   TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-false}"
   ML_FILTER_ENABLED: "${ML_FILTER_ENABLED:-false}"
 
@@ -39,6 +38,8 @@ services:
       retries: 10
     restart: "no"
 
+  # Paper mode has no strategy runtime yet (trend_ensemble is backtest only): this container exits 2 with a
+  # usage error before any network call, and the systemd unit does not restart exit 2.
   bot:
     <<: *bot-common
     container_name: silvr-paper
@@ -72,6 +73,7 @@ services:
         condition: service_healthy
     restart: always
 
+  # Paper and demo profiles also exit 2 until a trend runtime exists.
   paper:
     <<: *bot-common
     profiles: ["paper"]
@@ -117,7 +119,7 @@ services:
       TRADING_MODE: backtest
       PAPER_TRADING: "false"
       ML_FILTER_ENABLED: "${ML_FILTER_ENABLED:-false}"
-    command: ["python", "-m", "silvr", "--candles", "/app/data/candles"]
+    command: ["python", "-m", "silvr", "--candles", "/app/data/candles", "--funding", "/app/data/funding"]
     restart: "no"
 
   research:
@@ -128,7 +130,7 @@ services:
       TRADING_MODE: backtest
       PAPER_TRADING: "false"
       ML_FILTER_ENABLED: "false"
-    command: ["python", "-m", "silvr", "--candles", "/app/data/candles"]
+    command: ["python", "-m", "silvr", "--candles", "/app/data/candles", "--funding", "/app/data/funding"]
     restart: "no"
 
 volumes:

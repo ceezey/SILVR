@@ -44,15 +44,10 @@ class AuditEvent:
 
 
 class StructuredAuditLogger:
-    """Write JSON-lines audit logs and retain in-memory events for tests.
+    """Write JSON-lines audit logs and retain in-memory events for tests."""
 
-    `retain_events=False` skips the in-memory list so a long run stays bounded;
-    the JSON-lines file is written either way.
-    """
-
-    def __init__(self, log_path: str | Path | None = None, *, retain_events: bool = True) -> None:
+    def __init__(self, log_path: str | Path | None = None) -> None:
         self.log_path = Path(log_path) if log_path is not None else None
-        self.retain_events = retain_events
         self.events: list[AuditEvent] = []
 
     def log(
@@ -73,8 +68,7 @@ class StructuredAuditLogger:
             created_at=created_at or datetime.now(timezone.utc),
             context=redact_secrets(context or {}),
         )
-        if self.retain_events:
-            self.events.append(event)
+        self.events.append(event)
         if self.log_path is not None:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             with self.log_path.open("a", encoding="utf-8") as handle:

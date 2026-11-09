@@ -106,7 +106,7 @@ def test_skipped_segments_not_simulated(tiny_universe: None, tmp_path: Path, mon
         def run(self, minutes) -> TrendRunResult:
             count = sum(1 for _ in minutes)
             assert count == 6 * 1440
-            return TrendRunResult([], [], {"total_trades": 0}, None, Counter())
+            return TrendRunResult([], [], {"total_trades": 0}, None, Counter(), {})
 
     monkeypatch.setattr(trend_runner, "TrendPortfolioEngine", FakeEngine)
     path = run_trend_backtest(
@@ -117,6 +117,29 @@ def test_skipped_segments_not_simulated(tiny_universe: None, tmp_path: Path, mon
     assert report["segments"]["validation"] == {"skipped": True}
     assert report["segments"]["final_test"] == {"skipped": True}
     assert report["segments"]["training"]["candles"] == 6 * 1440 * len(SYMBOLS)
+
+
+def test_simulated_kill_switch_trips_reach_the_report(
+    tiny_universe: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candles, funding = write_data(tmp_path)
+    trip = {"reason": "Max daily loss limit reached", "tripped_at": "2024-03-03T00:00:00+00:00", "reset_at": None}
+    simulated = {"mode": "simulated_per_run_daily_reset", "trips": 1, "trip_log": [trip]}
+
+    class FakeEngine:
+        def __init__(self, config, *, funding, history, k) -> None:
+            pass
+
+        def run(self, minutes) -> TrendRunResult:
+            return TrendRunResult([], [], {"total_trades": 0}, None, Counter(), simulated)
+
+    monkeypatch.setattr(trend_runner, "TrendPortfolioEngine", FakeEngine)
+    path = run_trend_backtest(
+        candles_root=candles, funding_root=funding, output_dir=tmp_path / "out", segments=("training",), k=1.0
+    )
+    training = json.loads(path.read_text(encoding="utf-8"))["segments"]["training"]
+    assert training["simulated_kill_switch"] == simulated
+    assert training["kill_switch"] == {"trips": 0, "tripped_at": None}  # the gate's drawdown field is separate
 
 
 def test_later_segment_gets_warmup_history_ending_the_day_before(
@@ -133,7 +156,7 @@ def test_later_segment_gets_warmup_history_ending_the_day_before(
             first = next(iter(minutes))
             assert all(c.open_time == START + 6 * 1440 * MINUTE for c in first.values())
             assert first["AAA"] is not first.get("BBB")
-            return TrendRunResult([], [], {"total_trades": 0}, None, Counter())
+            return TrendRunResult([], [], {"total_trades": 0}, None, Counter(), {})
 
     monkeypatch.setattr(trend_runner, "TrendPortfolioEngine", FakeEngine)
     run_trend_backtest(
@@ -197,8 +220,12 @@ def test_report_shape_reads_in_gate(tiny_universe: None, tmp_path: Path) -> None
     assert report["strategy"] == "trend_ensemble" and report["parameters_tuned"] is False
     assert report["symbols"] == list(SYMBOLS) and report["k"] == 1.0
     final = report["segments"]["final_test"]
-    assert set(final) == {"candles", "start", "end", "metrics", "kill_switch", "success_standard", "rejections"}
+    assert set(final) == {
+        "candles", "start", "end", "metrics", "kill_switch", "simulated_kill_switch", "success_standard", "rejections",
+        "realized_volatility",
+    }
     assert final["kill_switch"] == {"trips": 0, "tripped_at": None}
+    assert final["simulated_kill_switch"] == {"mode": "simulated_per_run_daily_reset", "trips": 0, "trip_log": []}
     assert final["candles"] == 2 * 1440 * len(SYMBOLS)
     verdict = gate.evaluate_gate(report)
     assert verdict.strategy == "trend_ensemble"
@@ -277,3 +304,63 @@ def test_cli_runs_training_with_k(tiny_universe: None, monkeypatch: pytest.Monke
     assert code == 0
     report = json.loads((tmp_path / "o" / "out_of_sample_validation_report.json").read_text(encoding="utf-8"))
     assert report["segments"]["final_test"] == {"skipped": True}
+
+
+def test_realized_volatility() -> None:
+    day = datetime(2024, 3, 1, tzinfo=UTC)
+    equities = [100.0, 110.0, 99.0]  # returns from initial 100: 0.0, 0.1, -0.1
+    points = [EquityPoint(day + i * timedelta(days=1), e, 0.0, 0.0) for i, e in enumerate(equities)]
+    assert trend_runner.realized_volatility(points, 100.0) == pytest.approx(0.1 * 365**0.5)
+    assert trend_runner.realized_volatility(points[:1], 100.0) == 0.0
+    assert trend_runner.realized_volatility([], 100.0) == 0.0
+
+
+def test_report_segments_carry_realized_volatility(tiny_universe: None, tmp_path: Path) -> None:
+    candles, funding = write_data(tmp_path)
+    path = run_trend_backtest(
+        candles_root=candles, funding_root=funding, output_dir=tmp_path / "out", segments=("training",), k=1.0
+    )
+    segments = json.loads(path.read_text(encoding="utf-8"))["segments"]
+    assert segments["training"]["realized_volatility"] == 0.0  # flat prices: no trades, no variation
+    assert "realized_volatility" not in segments["validation"]
+
+
+def fake_runner(monkeypatch: pytest.MonkeyPatch, realized_of_k, calls: list[tuple[str, ...]]) -> None:
+    def fake(*, candles_root: Path, funding_root: Path, output_dir: Path, segments: tuple[str, ...], k: float) -> Path:
+        calls.append(segments)
+        path = Path(output_dir) / "report.json"
+        path.write_text(json.dumps({"segments": {"training": {"realized_volatility": realized_of_k(k)}}}), encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(trend_runner, "run_trend_backtest", fake)
+
+
+def test_calibrate_k_uses_training_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[tuple[str, ...]] = []
+    fake_runner(monkeypatch, lambda k: 0.1 * k, calls)
+    trend_runner.calibrate_k(candles_root=tmp_path, funding_root=tmp_path)
+    assert calls and all(segments == ("training",) for segments in calls)
+
+
+def test_calibrate_k_converges_on_linear_fixture(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_runner(monkeypatch, lambda k: 0.1 * k, [])
+    k, history = trend_runner.calibrate_k(candles_root=tmp_path, funding_root=tmp_path)
+    assert k == pytest.approx(2.5, abs=0.05)
+    assert history[0] == (1.0, pytest.approx(0.1))
+    assert history[-1][0] == k and abs(history[-1][1] - 0.25) <= 0.005
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == len(history) and all(line.startswith("k=") and "realized_volatility=" in line for line in lines)
+
+
+def test_calibrate_k_stops_after_max_iterations_returning_last_run_k(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    fake_runner(monkeypatch, lambda k: 0.1 * k**2, [])  # never lands within tolerance in 2 steps
+    k, history = trend_runner.calibrate_k(candles_root=tmp_path, funding_root=tmp_path, max_iterations=2)
+    assert len(history) == 2 and k == history[-1][0]
+
+
+def test_calibrate_k_refuses_zero_volatility(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    fake_runner(monkeypatch, lambda k: 0.0, [])
+    with pytest.raises(ValueError, match="cannot calibrate"):
+        trend_runner.calibrate_k(candles_root=tmp_path, funding_root=tmp_path)

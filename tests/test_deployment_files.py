@@ -113,10 +113,11 @@ def test_compose_bot_does_not_self_restart() -> None:
     assert "unless-stopped" not in compose
 
 
-def test_compose_backtest_services_read_candles_directory() -> None:
+def test_compose_backtest_services_read_candles_and_funding_directories() -> None:
     compose = read("docker-compose.yaml")
 
-    assert compose.count('command: ["python", "-m", "silvr", "--candles", "/app/data/candles"]') == 2
+    command = 'command: ["python", "-m", "silvr", "--candles", "/app/data/candles", "--funding", "/app/data/funding"]'
+    assert compose.count(command) == 2
 
 
 def test_windows_runner_restarts_on_failure_and_stops_on_bad_configuration() -> None:

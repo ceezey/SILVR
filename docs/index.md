@@ -1,9 +1,9 @@
 # Documentation Index: SILVR (pointer)
 
-**Project:** SILVR (ICT Silver Bullet trading bot)
+**Project:** SILVR (quant trend-following system)
 **Slug:** `silvr`
 **Maintainer:** Cian Jake Francisco
-**Last updated:** 2026-10-19
+**Last updated:** 2026-11-10
 
 **The project docs are no longer in this repo.** On 2026-10-19 every SILVR doc moved into the owner's Obsidian vault, the AI Memory Vault at `C:\AI Agentic Memory`, which syncs to a private GitHub repo. This file stays in the repo only so that humans and agents know where to look.
 

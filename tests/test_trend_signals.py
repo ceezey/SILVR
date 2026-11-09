@@ -70,6 +70,16 @@ def test_vol_uses_only_the_last_window():
     assert annualized_vol(closes, 30) == pytest.approx(statistics.stdev(window) * math.sqrt(365))
 
 
+def test_default_vol_window_is_the_last_90_returns_not_all():
+    closes = [100.0, 200.0, 50.0]  # two wild early returns (+100%, -75%) outside the 90-return window
+    for i in range(90):
+        closes.append(closes[-1] * (1.02 if i % 2 else 0.99))
+    last_90 = statistics.stdev(simple_returns(closes)[-90:]) * math.sqrt(365)
+    every = statistics.stdev(simple_returns(closes)) * math.sqrt(365)
+    assert every > 2 * last_90  # the two windows give clearly different answers
+    assert annualized_vol(closes) == pytest.approx(last_90)
+
+
 def test_daily_bars_drop_incomplete_last_day():
     bars = daily_bars(minutes(start="2024-01-01T00:00", count=1440 + 60))
     assert [b.day for b in bars] == [date(2024, 1, 1)]

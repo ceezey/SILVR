@@ -8,12 +8,12 @@
 >
 > Write project knowledge (doc updates, CRs, session logs, decisions) in the vault, never in `docs/`. The repo's [docs/index.md](docs/index.md) only points there. This file is hand-maintained and is the only copy of the build guide.
 
-**Project:** SILVR (ICT Silver Bullet trading bot)
+**Project:** SILVR (quant trend-following system)
 **Version:** 0.1
 **Owner:** Cian Jake Francisco
 **Status:** Draft
-**Last updated:** 2026-10-22
-**Last reconciled:** 2026-10-21 against code at commit `c523f04` for the section 3 stack table (ccxt, the first runtime dependency); 2026-10-08 against code at commit `62037d1` for the rest; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`; the D-4 and D-11 rows of the deprecations register re-checked 2026-10-09 against `099085b`; the D-4 and D-11 rows and the golden path (b) line references re-checked 2026-10-14 against `40ea0b1` (paper and demo runtime `973cd82`, merged into `dev` 2026-10-22)
+**Last updated:** 2026-11-10
+**Last reconciled:** 2026-11-10 against code at commit `492c4b8` on `feat/be-trend-ensemble` for section 1 traceability, the section 3 scikit-learn row and the D-4 and D-11 rows, section 4 golden paths (a) to (c) and the section 5 Strategy Rules and Risk Rules (`trend_ensemble` and the `trend` risk profile; `pyproject.toml` changed only its description, so no pin changed); 2026-10-21 against code at commit `c523f04` for the section 3 stack table (ccxt, the first runtime dependency); 2026-10-08 against code at commit `62037d1` for the rest; section 1 traceability, the section 3 deprecations register and golden path (b) re-checked 2026-10-09 against `70ccaec`; the D-4 and D-11 rows of the deprecations register re-checked 2026-10-09 against `099085b`; the D-4 and D-11 rows and the golden path (b) line references re-checked 2026-10-14 against `40ea0b1` (paper and demo runtime `973cd82`, merged into `dev` 2026-10-22)
 
 This guide tells a coding agent or a human how to build SILVR from the canonical docs. It is the root `AGENTS.md`, which every future session reads first. Safety rules in section 5 are carried over from the previous `AGENTS.md` and must not be weakened.
 
@@ -55,12 +55,12 @@ Re-ground (re-read the relevant doc and the code) when:
 
 | To build | Read | Verify against |
 |----------|------|----------------|
-| Signal engine (PRD-F1) | [rfc-silvr-signal-engine.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>), SDD strategy section | `tests/` strategy tests, QAD strategy scenarios |
-| Backtester and validation (PRD-F2) | SDD backtest section, [qad-silvr.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>) | backtest tests; evidence reports must be non-empty before any performance claim |
-| Risk engine and kill switch (PRD-F3) | [rfc-silvr-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>) | risk tests, [clr-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/clr-silvr.md>), subagent SAD-A2 |
-| Paper trading (PRD-F4) | SDD execution section | paper trading tests with mocked exchange |
+| Signal engine (PRD-F1, `trend_ensemble`) | [rfc-silvr-signal-engine.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>), SDD strategy section | `tests/test_trend_params.py`, `tests/test_trend_signals.py`, `tests/test_trend_sizing.py`, QAD strategy scenarios |
+| Backtester and validation (PRD-F2) | SDD backtest section, [qad-silvr.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>) | `tests/test_trend_engine.py`, `tests/test_trend_runner.py`, `tests/test_gate.py`; evidence reports must be non-empty before any performance claim |
+| Risk engine and kill switch (PRD-F3) | [rfc-silvr-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>) | `tests/test_risk_engine.py`, `tests/test_risk_trend_profile.py`, `tests/test_sim_kill_switch.py`, [clr-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/clr-silvr.md>), subagent SAD-A2 |
+| Paper trading (PRD-F4), Planned: no runtime since `9df48c0` | PRD section 9 | `tests/test_main.py` (paper and demo exit 2 before any network or database) |
 | Demo mode (PRD-F5) and readiness (PRD-F8) | [rfc-silvr-readiness-gates.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>) | readiness tests, subagent SAD-A1 |
-| ML filter (PRD-F6) | [rfc-silvr-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>), [aia-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>) | ML tests, subagent SAD-A3 |
+| ML filter (PRD-F6), Planned: no ML code since `9df48c0` | [rfc-silvr-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>), [aia-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>), the ML Rules in section 5 | `tests/test_config.py::test_ml_filter_enabled_rejected`, subagent SAD-A3 |
 | Monitoring (PRD-F7), deployment (PRD-F11) | [ops-silvr.md](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SILVR/ops-silvr.md>) | monitoring tests, runbook steps |
 | Config (PRD-F9), data and storage (PRD-F10) | SDD config and data sections | config tests, the runbook-local-dev step 3 env block loads; `.env.example` loads as paper mode since `c6d909d` (G-4 closed, `tests/test_config.py:258`) |
 
@@ -82,7 +82,7 @@ Four safety reviewers run before merge on the paths each guards, and one standar
 | Hosting | Oracle Cloud Always Free VM (Ampere A1, Ubuntu, home region outside the US): `docker compose` run by a systemd unit (restart on exit 1, stop on exit 2), logrotate for `logs/` | `deploy/systemd/silvr.service`; `deploy/logrotate/silvr`; `deploy/scripts/prepare-host.sh` |
 | Dev dependency | `pytest>=8.0` (optional extra `dev`) | `pyproject.toml` |
 | Build backend | `setuptools>=68` | `pyproject.toml` |
-| scikit-learn | Optional and undeclared; used only for the RandomForest and GradientBoosting models if it imports | [aia-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>) section 1.2 |
+| scikit-learn | Not used: the ML training code that imported it was deleted in `9df48c0`, and nothing in `src/` imports it | [aia-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>) section 1.2 |
 | Docker base image | `python:3.11-slim` | `Dockerfile` line 1 |
 | Binance Futures REST and WebSocket | Versionless public API; no pinned version | https://binance-docs.github.io/apidocs/futures/en/ |
 
@@ -92,46 +92,51 @@ No version in this table is invented. If `pyproject.toml` or the `Dockerfile` ch
 
 | ID | Old convention (in old docs) | Current code | Use instead |
 |----|------------------------------|--------------|-------------|
-| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Partly resolved (`f84557e`, `973cd82`): the keys reach the filter through `build_ml_filter_config` in CLI backtests and in the paper and demo runtime (`src/silvr/backtest/runner.py:54,59-67`, `src/silvr/execution/runtime.py:87`); a `PaperTradingEngine` built without `ml_filter` still uses a disabled default | Build the filter config with `build_ml_filter_config(config)`; the filter still needs an active registered model to do anything; see [rfc-silvr-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>) |
-| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into `RiskConfig` (`4726cb5`) and CLI backtests use it with a simulated per-run kill switch; the paper and demo runtime calls `build_risk_engine(config, storage)` (`src/silvr/execution/runtime.py:76`, `973cd82`); the daily-loss and leverage bounds are checked in demo mode only | Build a runtime engine with `build_risk_engine(config, storage)` (`src/silvr/risk/factory.py:26-33`); a backtest takes `build_risk_config` through `build_backtest_config` (`src/silvr/backtest/runner.py:39-67`) and never the real kill-switch path; never hand-build a `RiskConfig` for a running bot; see [rfc-silvr-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>) |
+| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Superseded (`9df48c0`): the ML filter, `build_ml_filter_config` and the ML registry and threshold settings are deleted; `ML_FILTER_ENABLED=true` raises `ConfigError` at load (`src/silvr/config/settings.py:148-150`) | Keep `ML_FILTER_ENABLED=false`; a future filter needs its own spec under the ML Rules in section 5 and [rfc-silvr-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>) |
+| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into a `default` profile `RiskConfig` (`src/silvr/risk/factory.py:15-23`), but since `9df48c0` only tests call it: the trend backtest builds `RiskConfig.trend()` with a simulated kill switch (`src/silvr/backtest/trend_runner.py:202-204`), and no paper or demo runtime exists; the daily-loss and leverage bounds are checked in demo mode only | A trend backtest takes `RiskConfig.trend()` (`src/silvr/risk/models.py:33-47`) and never the real kill-switch path; a future runtime builds its engine from settings through `src/silvr/risk/factory.py` and must select the `trend` profile (open for the follow-up runtime project); never hand-build a `RiskConfig` for a running bot; see [rfc-silvr-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>) |
 | D-10 | Live trading is gated by `LIVE_TRADING` plus readiness | `LIVE_TRADING=true` is rejected at load; readiness is never consulted by the entrypoint | Live is `Planned, blocked`; see [rfc-silvr-readiness-gates.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>) |
 
 The full list is in [audit-docs-drift.md](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>).
 
 ## 4. Golden-Path Patterns
 
-Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the shape, not the line numbers.
+Excerpted from real code, verified 2026-11-10 against commit `492c4b8`. Copy the shape, not the line numbers.
 
-### (a) A strategy rejection returns NO_TRADE with a reason
+### (a) A skipped entry carries a reason
 
-`src/silvr/strategy/silver_bullet.py:67-73` and `:258-267`:
+`src/silvr/backtest/trend_engine.py:224-246`: at each daily close every flat slice of `trend_ensemble` either queues a `LONG` entry or is skipped with a named reason, counted in the report's `rejections`:
 
 ```python
-        if len(candles) < max(5, self.config.swing_lookback + 3):
-            return self._reject(candles, "Not enough candles to evaluate Silver Bullet setup")
+    def _signals(self) -> list[tuple[str, int, float, float]]:
+        """Raise open stops and return (symbol, n, vol, stop) for each flat slice to enter."""
 
-        latest = candles[-1]
-        session = self.sessions.evaluate(latest.open_time)
-        if not session.is_active:
-            return self._reject(candles, "Outside enabled Silver Bullet session")
-...
-    def _reject(self, candles: Sequence[Candle], reason: str) -> SilverBulletSignal:
-        latest = candles[-1] if candles else None
-        return SilverBulletSignal(
-            direction=SignalDirection.NO_TRADE,
-            symbol=latest.symbol if latest else "UNKNOWN",
-            timeframe=latest.timeframe if latest else "UNKNOWN",
-            generated_at=self._signal_timestamp(latest) if latest else datetime.now(timezone.utc),
-            reason=reason,
-            explanation=f"NO_TRADE: {reason}",
-        )
+        queued = []
+        for symbol in self.symbols:
+            closes = self.closes[symbol]
+            vol = annualized_vol(closes)
+            slices = self.book[symbol]
+            for n in self.lookbacks:
+                if n in slices:
+                    slices[n].stop = raise_stop(slices[n].stop, channel_mid(closes, n))
+                elif len(closes) < n + 1:
+                    self.rejections["lookback warm-up"] += 1
+                elif not is_breakout(closes, n):
+                    self.rejections["no breakout"] += 1
+                elif self.tripped_at is not None:
+                    self.rejections["kill switch"] += 1
+                elif vol is None or vol <= 0:
+                    self.rejections["volatility warm-up"] += 1
+                else:
+                    queued.append((symbol, n, vol, channel_mid(closes, n)))
+            self._refresh(symbol)
+        return queued
 ```
 
-`strategy/models.py:191-192` enforces it: a `NO_TRADE` signal without a reason raises `ValueError`.
+A risk-engine rejection is counted under its own reason (golden path (b)), a slice the 2x gross cap leaves no room for under `gross cap`, and a slice below the exchange minimum under `below exchange minimum`. Pinned by `tests/test_trend_engine.py::test_risk_rejection_reason_counted` and `::test_gross_cap_and_exchange_minimum_skips`.
 
 ### (b) An order request passes through the risk engine and kill switch
 
-`src/silvr/risk/engine.py:38-55` (an unreadable persisted risk state halts first; the kill switch is the first gate) and `src/silvr/execution/paper_trading.py:229-239` (the caller must ask the risk engine before any fill):
+`src/silvr/risk/engine.py:38-55` (an unreadable persisted risk state halts first; the kill switch is the first gate) and `src/silvr/backtest/trend_engine.py:253-269` (every queued slice asks the risk engine before any fill):
 
 ```python
     def evaluate(self, request: RiskRequest) -> RiskDecision:
@@ -155,28 +160,30 @@ Excerpted from real code, verified 2026-10-08 against commit `62037d1`. Copy the
 ```
 
 ```python
-        decision = self.risk.evaluate(
-            RiskRequest(
-                equity=self.equity,
-                entry_price=signal.entry_price,
-                stop_loss=signal.stop_loss,
-                take_profit=signal.take_profit,
-                direction=signal.direction.value,
-                signal_day=signal.generated_at.date(),
+        for symbol, n, vol, stop in queued:
+            fill = costs.entry_price(minute[symbol].open, LONG, **self.bps)
+            target = target_notional(equity=equity, vol=vol, k=self.engine.k)
+            decision = self.risk.evaluate(
+                RiskRequest(
+                    equity=equity,
+                    entry_price=fill,
+                    stop_loss=stop,
+                    take_profit=None,
+                    direction=LONG.value,
+                    signal_day=day,
+                    requested_size=target / fill,
+                )
             )
-        )
-        if not decision.approved:
-            ...
-            return
+            if not decision.approved:
+                self.rejections[decision.reason] += 1
+                continue
 ```
 
-The `...` elides the lines after line 239 (the `if not decision.approved:` header; the rejection event, audit log and alert).
-
-A rejected decision is recorded and the function returns before any position is opened.
+A rejected decision is counted with its reason and the slice is skipped before any position exists. An approved slice takes the smaller of the volatility target and the 0.5% risk cap (`decision.position_size`), then the gross cap and the exchange rounding, and never grows afterwards.
 
 ### (c) Fail-closed config validation rejects live mode
 
-`src/silvr/config/settings.py:105-108`:
+`src/silvr/config/settings.py:100-103`:
 
 ```python
     if live_trading:
@@ -185,7 +192,7 @@ A rejected decision is recorded and the function returns before any position is 
         raise ConfigError("TRADING_MODE=live is not supported in Phase 1")
 ```
 
-Any new mode or flag must follow the same rule: invalid or unsafe input raises `ConfigError`; it never degrades to a permissive default.
+Any new mode or flag must follow the same rule: invalid or unsafe input raises `ConfigError`; it never degrades to a permissive default. `ML_FILTER_ENABLED=true` follows it too (`settings.py:148-150`).
 
 ## 5. Conventions & Guardrails
 
@@ -277,30 +284,30 @@ Note: `PROGRESS.md` and `TODO.md` were retired by the documentation suite. Read 
 
 ### Strategy Rules
 
-The strategy is ICT Silver Bullet.
+The strategy is `trend_ensemble`: a long-only Donchian-ensemble trend follower over a frozen universe of 15 Binance USDT-M perpetuals (BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, AVAXUSDT, LINKUSDT, DOTUSDT, LTCUSDT, TRXUSDT, ATOMUSDT, NEARUSDT, BCHUSDT; `src/silvr/strategy/trend/params.py`). It follows Zarattini, Pagani and Barbon (2025), "Catching Crypto Trends" (SSRN 5209907). The rules and their reasons are in [rfc-silvr-signal-engine.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>) (RFC-001).
 
-The bot should look for:
+The bot looks for:
 
 ```text
-session window
-liquidity sweep
-displacement
-market structure shift
-Fair Value Gap
-retracement into FVG
-defined stop loss
-liquidity-based take profit
+daily bars in UTC, complete only once their last 1m candle has closed
+nine lookbacks per symbol: 5, 10, 20, 30, 60, 90, 150, 250, 360 days (one slice each)
+breakout: a daily close above the highest close of the prior N days
+entry at the next day's first 1m open, never at the signal close
+stop at the midpoint of the N-day close channel, only ever raised
+a real intraday stop: a minute that opens below it fills at its open
+long only, no take-profit, no resizing of an open slice
 ```
 
 The strategy engine should output:
 
 ```text
 LONG
-SHORT
 NO_TRADE
 ```
 
 Every rejected setup must include a reason.
+
+Every parameter (symbols, lookbacks, volatility window and target, the scale factor `SCALE_K`, the caps, the kill-switch level) is frozen in code before a counted gate run. Nothing is tuned on the final test segment or after seeing a counted result.
 
 ### ML Rules
 
@@ -339,6 +346,29 @@ consecutive loss validation
 max trades validation
 kill switch validation
 ```
+
+Each strategy selects a named risk profile, validated at startup (`RiskConfig.profile`, `src/silvr/risk/models.py`). The `default` profile keeps the limits above exactly as they were. `trend_ensemble` uses the `trend` profile (`RiskConfig.trend()`); under it the reward-to-risk and consecutive-loss checks in the list above are not applied, and every other check runs on every slice:
+
+| Limit | `default` | `trend` profile | Why |
+|---|---|---|---|
+| Risk per trade | 0.5% | **0.5%, unchanged** (per slice) | Owner did not ask to loosen it |
+| Max leverage | 3x | **3x, unchanged**; strategy caps itself at 2x | |
+| Stop loss required | yes | **yes, unchanged** | Safety rule |
+| Minimum reward-to-risk | 2.0, needs a take-profit | **not applied**: no take-profit exists; the trailing stop is the exit (owner chose separate limits for trend) | The check has nothing to measure |
+| Minimum stop distance | absolute 0.01 | **relative: 0.1% of entry price** | The absolute 0.01 was too large for coins under a few dollars (found 2026-11-03) |
+| Max daily loss | 2% | **2%, unchanged**: blocks new entries for the rest of the UTC day | Entries happen once a day at the open, so in practice this rarely binds |
+| Max consecutive losses | 3, trips the kill switch | **not applied**: trend strategies lose most trades by design | Replaced by the drawdown kill switch |
+| Drawdown kill switch | none | **a $4,500 drop from peak marked equity (30% of the $15,000 start)**, checked at every 1m close: flatten every position, block all entries until the owner clears it | Sits beyond the drops this sizing normally produces, so it catches a broken strategy, not an ordinary bad stretch |
+| Max trades per day | 3 | **135** (15 symbols x 9 slices) | Many slices can trigger on one breakout day |
+| Max open positions | 1 | **135** | |
+
+Notes on the `trend` profile:
+
+- Overrides of `RiskConfig.trend()` may tighten the values above but never loosen them: a looser leverage, daily loss, trade or position count, or minimum stop fraction raises `ValueError` (`src/silvr/risk/models.py`).
+- The 2% daily-loss check runs on every entry but cannot bind in the trend engine: entries happen only at a day's first minute, right after the daily counter resets. The drawdown kill switch is the binding protection.
+- In the backtest the drawdown kill switch is never cleared automatically: once it trips, that segment flattens and trades no more, and the report says so. Each segment (training, validation, final test) starts with a fresh $15,000 account, a fresh kill switch and no open positions.
+- Sizing: slice notional = k x (0.25 / 90-day annualized volatility) / 15 / 9 x equity, with `SCALE_K` = 1.0, the paper's own per-slice weight (owner decision 2026-11-10, after a calibrated k = 4.011 tripped the kill switch on the training segment; one value taken from the paper, not fitted to results). The 0.5% risk cap, then the total notional cap of 2x equity (the day's new slices shrink pro rata) and the Binance minimums (skip, never round up) apply after it.
+- Promotion gate criterion 5 allows a drawdown of 0.30 for `trend_ensemble` only (`src/silvr/backtest/gate.py:30`); every other strategy keeps 0.10, and every other threshold is unchanged.
 
 ### Testing Requirements
 
@@ -477,7 +507,7 @@ Nothing is generated. `tools/materialize_docs.py` was retired on 2026-10-19 when
 ## 8. Self-Check
 
 - [x] Read order covers every committed suite doc and RFC.
-- [x] Section 5 carries every rule line of the previous `AGENTS.md`.
+- [x] Section 5 carries every safety, risk and ML rule line of the previous `AGENTS.md`; the Strategy Rules were rewritten for `trend_ensemble` on 2026-11-10 and the `trend` profile was added under Risk Rules.
 - [x] Pinned stack values match `pyproject.toml` and `Dockerfile`; none invented.
 - [x] Golden-path excerpts are copied from real files with `file:line` and the commit.
 - [x] The vault project index and the LOG are named with their vault paths.

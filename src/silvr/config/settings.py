@@ -43,9 +43,6 @@ class AppConfig:
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     ml_filter_enabled: bool = False
-    ml_registry_path: Path = Path("models/model_registry.json")
-    ml_min_probability: float = 0.60
-    ml_reduce_risk_threshold: float = 0.55
     risk_engine_enabled: bool = True
     kill_switch_enabled: bool = False
     kill_switch_path: Path | None = None
@@ -79,9 +76,6 @@ def load_config(
         "BINANCE_FUTURES_BASE_URL": "",
         "TELEGRAM_ENABLED": "false",
         "ML_FILTER_ENABLED": "false",
-        "ML_REGISTRY_PATH": "models/model_registry.json",
-        "ML_MIN_PROBABILITY": "0.60",
-        "ML_REDUCE_RISK_THRESHOLD": "0.55",
         "RISK_ENGINE_ENABLED": "true",
         "KILL_SWITCH_ENABLED": "false",
         "KILL_SWITCH_PATH": "",
@@ -152,24 +146,8 @@ def load_config(
     if telegram_enabled and (not telegram_bot_token or not telegram_chat_id):
         raise ConfigError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when TELEGRAM_ENABLED=true")
     ml_filter_enabled = _parse_bool(raw.get("ML_FILTER_ENABLED", "false"), "ML_FILTER_ENABLED")
-    ml_registry_path = Path(_required(raw, "ML_REGISTRY_PATH"))
-    if ml_registry_path.name in {"", ".", ".."}:
-        raise ConfigError("ML_REGISTRY_PATH must point to a model registry file")
-    if ".." in ml_registry_path.parts:
-        raise ConfigError("ML_REGISTRY_PATH must not traverse parent directories")
-    if ml_registry_path.exists() and ml_registry_path.is_dir():
-        raise ConfigError("ML_REGISTRY_PATH must point to a file, not a directory")
-    ml_min_probability = _parse_float(raw.get("ML_MIN_PROBABILITY", "0.60"), "ML_MIN_PROBABILITY")
-    ml_reduce_risk_threshold = _parse_float(
-        raw.get("ML_REDUCE_RISK_THRESHOLD", "0.55"),
-        "ML_REDUCE_RISK_THRESHOLD",
-    )
-    if not 0 <= ml_reduce_risk_threshold <= 1:
-        raise ConfigError("ML_REDUCE_RISK_THRESHOLD must be between 0 and 1")
-    if not 0 <= ml_min_probability <= 1:
-        raise ConfigError("ML_MIN_PROBABILITY must be between 0 and 1")
-    if ml_reduce_risk_threshold > ml_min_probability:
-        raise ConfigError("ML_REDUCE_RISK_THRESHOLD must be less than or equal to ML_MIN_PROBABILITY")
+    if ml_filter_enabled:
+        raise ConfigError("ML filter has no feature set for trend_ensemble; keep ML_FILTER_ENABLED=false")
     risk_engine_enabled = _parse_bool(raw.get("RISK_ENGINE_ENABLED", "true"), "RISK_ENGINE_ENABLED")
     kill_switch_enabled = _parse_bool(raw.get("KILL_SWITCH_ENABLED", "false"), "KILL_SWITCH_ENABLED")
     kill_switch_path = Path(raw["KILL_SWITCH_PATH"]) if _blank_to_none(raw.get("KILL_SWITCH_PATH")) else None
@@ -212,9 +190,6 @@ def load_config(
         telegram_bot_token=telegram_bot_token,
         telegram_chat_id=telegram_chat_id,
         ml_filter_enabled=ml_filter_enabled,
-        ml_registry_path=ml_registry_path,
-        ml_min_probability=ml_min_probability,
-        ml_reduce_risk_threshold=ml_reduce_risk_threshold,
         risk_engine_enabled=risk_engine_enabled,
         kill_switch_enabled=kill_switch_enabled,
         kill_switch_path=kill_switch_path,
@@ -326,9 +301,6 @@ def _flatten_config_yaml(path: Path) -> dict[str, str]:
         "ALERTS_TELEGRAM_CHAT_ID": "TELEGRAM_CHAT_ID",
         "ML_ENABLED": "ML_FILTER_ENABLED",
         "ML_FILTER_ENABLED": "ML_FILTER_ENABLED",
-        "ML_REGISTRY_PATH": "ML_REGISTRY_PATH",
-        "ML_MIN_PROBABILITY": "ML_MIN_PROBABILITY",
-        "ML_REDUCE_RISK_THRESHOLD": "ML_REDUCE_RISK_THRESHOLD",
         "TRADING_DEMO_TRADING": "DEMO_TRADING",
         "RISK_ENGINE_ENABLED": "RISK_ENGINE_ENABLED",
         "RISK_KILL_SWITCH_ENABLED": "KILL_SWITCH_ENABLED",

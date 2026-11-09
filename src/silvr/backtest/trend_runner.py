@@ -13,8 +13,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
+import statistics
 import sys
+import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -22,7 +25,6 @@ from typing import Any
 
 from silvr.backtest.models import BacktestConfig, EquityPoint
 from silvr.backtest.reporting import json_safe
-from silvr.backtest.runner import TRAINING_FRACTION, VALIDATION_FRACTION
 from silvr.backtest.trend_engine import TrendDataError, TrendPortfolioEngine
 from silvr.data.csv_loader import CandleDataError, load_binance_kline_csv
 from silvr.data.funding import FundingDataError, FundingSchedule, load_funding_csv
@@ -32,6 +34,8 @@ from silvr.strategy.trend import params
 from silvr.strategy.trend.signals import daily_bars
 
 REPORT_NAME = "out_of_sample_validation_report.json"
+TRAINING_FRACTION = 0.6
+VALIDATION_FRACTION = 0.2
 SEGMENT_NAMES = ("training", "validation", "final_test")
 TARGET_WEEKLY_NET = 50.0
 _MINUTE = timedelta(minutes=1)
@@ -81,6 +85,14 @@ def success_standard(daily_equity: Sequence[EquityPoint], initial_balance: float
         "target_weekly_net": TARGET_WEEKLY_NET,
         "met": average >= TARGET_WEEKLY_NET,
     }
+
+
+def realized_volatility(daily_equity: Sequence[EquityPoint], initial_balance: float) -> float:
+    """Annualized sample stdev of daily marked-equity simple returns (first one from the initial balance)."""
+
+    equities = [initial_balance, *(point.equity for point in daily_equity)]
+    returns = [now / before - 1.0 for before, now in zip(equities, equities[1:])]
+    return statistics.stdev(returns) * math.sqrt(365) if len(returns) >= 2 else 0.0
 
 
 def _month_files(root: Path, symbol: str) -> dict[str, Path]:
@@ -209,8 +221,10 @@ def run_trend_backtest(
             "start": start.isoformat(),
             "end": end.isoformat(),
             "metrics": result.metrics,
-            "kill_switch": {"trips": int(tripped is not None), "tripped_at": tripped},
+            "kill_switch": {"trips": int(tripped is not None), "tripped_at": tripped},  # drawdown; the gate reads it
+            "simulated_kill_switch": result.simulated_kill_switch,  # risk-limit trips (daily loss), reset daily
             "success_standard": success_standard(result.daily_equity, config.initial_balance),
+            "realized_volatility": realized_volatility(result.daily_equity, config.initial_balance),
             "rejections": dict(result.rejections),
         }
 
@@ -218,6 +232,36 @@ def run_trend_backtest(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(json_safe(report), indent=2, sort_keys=True), encoding="utf-8")
     return path
+
+
+def calibrate_k(
+    *, candles_root: Path, funding_root: Path, max_iterations: int = 6, tolerance: float = 0.005
+) -> tuple[float, list[tuple[float, float]]]:
+    """Find the scale factor k that gives the target volatility on the training segment only.
+
+    Each run scales k by target / realized. Stops within `tolerance` of the target (returning the k that
+    produced it) or after `max_iterations` runs (returning the last k run). Prints only k and volatility.
+    """
+
+    target = params.VOL_TARGET
+    k = 1.0
+    history: list[tuple[float, float]] = []
+    for _ in range(max_iterations):
+        with tempfile.TemporaryDirectory() as output_dir:
+            report_path = run_trend_backtest(
+                candles_root=candles_root, funding_root=funding_root, output_dir=Path(output_dir),
+                segments=("training",), k=k,
+            )
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        realized = report["segments"]["training"]["realized_volatility"]
+        history.append((k, realized))
+        print(f"k={k:.4f} realized_volatility={realized:.4f}")
+        if realized <= 0:
+            raise ValueError("cannot calibrate k: the training segment has no volatility (no trades)")
+        if abs(realized - target) <= tolerance:
+            break
+        k *= target / realized
+    return history[-1][0], history
 
 
 def main(argv: list[str] | None = None) -> int:

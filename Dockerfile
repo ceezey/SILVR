@@ -5,7 +5,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TRADING_MODE=paper \
     LIVE_TRADING=false \
     PAPER_TRADING=true \
-    ML_REGISTRY_PATH=models/model_registry.json \
     TELEGRAM_ENABLED=false \
     ML_FILTER_ENABLED=false
 
