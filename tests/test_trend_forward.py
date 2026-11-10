@@ -683,7 +683,9 @@ class FakeAdapter:
         self.candle_calls: list[tuple[str, str, datetime, datetime]] = []
         self.funding_calls: list[tuple[str, datetime, datetime]] = []
 
-    async def fetch_ohlcv_history(self, *, symbol: str, timeframe: str, start: datetime, end: datetime, limit: int) -> list:
+    async def fetch_ohlcv_history(
+        self, *, symbol: str, timeframe: str, start: datetime, end: datetime, limit: int
+    ) -> list:
         self.candle_calls.append((symbol, timeframe, start, end))
         if symbol == self.fail_candles:
             raise RuntimeError("boom")
@@ -702,6 +704,10 @@ def _old_funding(tmp_path: Path) -> Path:
     return folder
 
 
+def _funding_names() -> list[str]:
+    return sorted(f"{symbol}-funding.csv" for symbol in params.SYMBOLS)
+
+
 def _rate(folder: Path, symbol: str) -> float:
     return load_funding_csv(folder / f"{symbol}-funding.csv")[0].rate
 
@@ -714,7 +720,8 @@ def test_download_keeps_good_funding_when_new_is_partial(tmp_path: Path) -> None
     assert (folder / "BTCUSDT-funding.csv").read_bytes() == before
     assert len(problems) == len(params.SYMBOLS)  # every symbol got the same partial answer
     assert all("funding" in problem for problem in problems)
-    assert not list(folder.glob("*.part"))
+    assert sorted(path.name for path in folder.iterdir()) == _funding_names()
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["candles", "funding"]
 
 
 def test_download_keeps_good_funding_when_one_symbol_is_partial(tmp_path: Path) -> None:
@@ -739,7 +746,8 @@ def test_download_replaces_funding_when_new_covers(tmp_path: Path) -> None:
         new = load_funding_csv(folder / f"{symbol}-funding.csv")
         assert new[0].rate == 0.0002
         FundingSchedule(new).check_coverage(ORIGINAL_FIRST, DOWNLOAD_END - timedelta(minutes=1))
-    assert not list(folder.glob("*.part"))
+    assert sorted(path.name for path in folder.iterdir()) == _funding_names()
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["candles", "funding"]
     assert {call[1:] for call in adapter.funding_calls} == {(ORIGINAL_FIRST, DOWNLOAD_END)}
 
 
@@ -772,7 +780,8 @@ def test_download_asks_for_candles_from_october_with_the_given_end(tmp_path: Pat
         (datetime(2027, 11, 10, 23, 59, 30, tzinfo=UTC), datetime(2027, 11, 1, tzinfo=UTC)),
         (datetime(2027, 11, 11, 0, 0, tzinfo=UTC), datetime(2027, 11, 11, 0, 0, tzinfo=UTC)),
         (datetime(2027, 12, 5, tzinfo=UTC), datetime(2027, 11, 11, 0, 0, tzinfo=UTC)),
-        (datetime(2026, 12, 1, 7, 30, tzinfo=timezone(timedelta(hours=8))), datetime(2026, 11, 1, tzinfo=UTC)),  # 23:30 UTC on 11-30
+        # 23:30 UTC on 11-30
+        (datetime(2026, 12, 1, 7, 30, tzinfo=timezone(timedelta(hours=8))), datetime(2026, 11, 1, tzinfo=UTC)),
     ],
 )
 def test_download_end_is_the_month_start_until_the_window_closes(tmp_path: Path, now: datetime, end: datetime) -> None:
@@ -780,3 +789,23 @@ def test_download_end_is_the_month_start_until_the_window_closes(tmp_path: Path,
     download_new_data(tmp_path, now, adapter=adapter)
     assert max(call[3] for call in adapter.candle_calls) == end
     assert {call[2] for call in adapter.funding_calls} == {end}
+
+
+@pytest.mark.parametrize("failure", ["empty", "raises"])
+def test_download_funding_that_returns_nothing_or_raises_keeps_the_old_file(tmp_path: Path, failure: str) -> None:
+    folder = _old_funding(tmp_path)
+    before = (folder / "LTCUSDT-funding.csv").read_bytes()
+
+    class FundingFails(FakeAdapter):
+        async def fetch_funding_rates(self, *, symbol: str, start: datetime, end: datetime) -> list[FundingRate]:
+            if symbol != "LTCUSDT":
+                return await super().fetch_funding_rates(symbol=symbol, start=start, end=end)
+            if failure == "raises":
+                raise RuntimeError("boom")
+            return []
+
+    problems = download_new_data(tmp_path, DOWNLOAD_NOW, adapter=FundingFails())
+    assert len(problems) == 1 and "LTCUSDT" in problems[0]
+    assert (folder / "LTCUSDT-funding.csv").read_bytes() == before
+    assert _rate(folder, "BTCUSDT") == 0.0002
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["candles", "funding"]

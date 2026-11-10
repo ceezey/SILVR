@@ -123,7 +123,10 @@ def last_closed_minute(now: datetime) -> datetime:
 
 
 def _download_end(now: datetime) -> datetime:
-    """Exclusive end of a download: the first instant of `now`'s UTC month, or one minute past FORWARD_END once the window has closed."""
+    """Exclusive end of a download: the first instant of `now`'s UTC month.
+
+    Once the window has closed (`now >= FORWARD_END + 1 minute`) it is one minute past FORWARD_END instead.
+    """
     now = now.astimezone(UTC)
     if now >= FORWARD_END + _MINUTE:
         return FORWARD_END + _MINUTE
@@ -173,7 +176,9 @@ def download_new_data(data_root: Path, now: datetime, *, adapter: BinanceFutures
     end = _download_end(now)
     # The adapter closes its own client after every request, so there is nothing to close here.
     adapter = adapter or BinanceFuturesAdapter()
-    with tempfile.TemporaryDirectory() as scratch:
+    # The scratch folder sits beside funding/ so os.replace never crosses volumes (it fails on Windows).
+    data_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=data_root) as scratch:
         asyncio.run(_download_all(data_root, end, adapter, Path(scratch), problems))
     return problems
 
