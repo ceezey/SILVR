@@ -1,13 +1,27 @@
-"""Tests for the trend_ensemble forward test: frozen-files check."""
+"""Tests for the trend_ensemble forward test: frozen-files check and the fixed-window simulation."""
 
 from __future__ import annotations
 
+import json
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from silvr.backtest.trend_forward import check_frozen
+from silvr.backtest.reporting import json_safe
+from silvr.backtest.trend_engine import TrendDataError
+from silvr.backtest.trend_forward import (
+    FORWARD_END,
+    backtest_config,
+    check_frozen,
+    last_closed_minute,
+    simulate_window,
+)
+from silvr.backtest.trend_runner import SEGMENT_NAMES, run_trend_backtest, segment_bounds
+from silvr.risk import RiskConfig
+from silvr.strategy.trend import params
+from tests.test_trend_runner import DAYS, MINUTE, START, SYMBOLS, tiny_universe, write_data, write_month  # noqa: F401
 
 PATHS = ("a.py", "pkg")
 
@@ -74,3 +88,51 @@ def test_repo_is_frozen_at_freeze_commit() -> None:
     if probe.returncode != 0:
         pytest.skip("not a git checkout")
     assert check_frozen(root) == []
+
+
+def test_last_closed_minute_from_manila_morning_on_the_first() -> None:
+    now = datetime(2026, 12, 1, 1, 0, tzinfo=UTC)
+    assert last_closed_minute(now) == datetime(2026, 11, 30, 23, 59, tzinfo=UTC)
+
+
+def test_last_closed_minute_is_capped_at_forward_end() -> None:
+    assert last_closed_minute(datetime(2028, 1, 1, tzinfo=UTC)) == FORWARD_END
+
+
+def test_backtest_config_matches_the_frozen_runner() -> None:
+    config = backtest_config()
+    assert config.initial_balance == params.INITIAL_BALANCE
+    assert config.risk == RiskConfig.trend()
+    assert config.slippage_bps == 5.0
+    assert config.spread_bps == 3.0
+
+
+def test_simulate_window_rejects_data_ending_before_end(tiny_universe: None, tmp_path: Path) -> None:
+    candles, funding = write_data(tmp_path)
+    last = START + DAYS * 1440 * MINUTE - MINUTE
+    with pytest.raises(TrendDataError, match="does not cover the window"):
+        simulate_window(
+            candles_root=candles, funding_root=funding, start=START, end=last + timedelta(days=1), k=1.0
+        )
+
+
+def test_simulate_window_rejects_data_starting_after_start(tiny_universe: None, tmp_path: Path) -> None:
+    candles, funding = write_data(tmp_path)
+    late = START + timedelta(days=1)
+    for symbol in SYMBOLS:  # replace the month with one whose first candle is a day late
+        write_month(candles / symbol / f"{symbol}-1m-2024-03.csv", late, (DAYS - 1) * 1440)
+    with pytest.raises(TrendDataError, match="does not cover the window"):
+        simulate_window(
+            candles_root=candles, funding_root=funding, start=START, end=START + 5 * 1440 * MINUTE, k=1.0
+        )
+
+
+def test_simulate_window_matches_runner_segment(tiny_universe: None, tmp_path: Path) -> None:
+    candles, funding = write_data(tmp_path)
+    path = run_trend_backtest(
+        candles_root=candles, funding_root=funding, output_dir=tmp_path / "out", segments=SEGMENT_NAMES, k=1.0
+    )
+    expected = json.loads(path.read_text(encoding="utf-8"))["segments"]["final_test"]
+    start, end = segment_bounds(START, START + DAYS * 1440 * MINUTE - MINUTE)["final_test"]
+    got = simulate_window(candles_root=candles, funding_root=funding, start=start, end=end, k=1.0)
+    assert json.loads(json.dumps(json_safe(got))) == expected
