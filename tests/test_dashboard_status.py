@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import psycopg
+import pytest
 
 from conftest import execute
 from silvr.config import AppConfig, ConfigError
@@ -18,7 +19,8 @@ from silvr.monitoring.status import (
 from silvr.storage import PostgresStorage
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
-BANNER, READINESS, EVIDENCE, RISK, POSITIONS, ALERTS = range(6)
+BANNER, READINESS, EVIDENCE, RISK, POSITIONS, ALERTS, FORWARD = range(7)
+NOTE_TEXT = "Progress only. No verdict until 2027-11-10. Do not change the strategy because of this number."
 
 
 def make_config(root: Path, **overrides) -> AppConfig:
@@ -72,11 +74,236 @@ def audit_line(event_type: str, message: str = "m", **context) -> str:
     )
 
 
-def test_six_panels_in_layout_order(tmp_path):
+def test_seven_panels_in_layout_order(tmp_path):
     status = collect(tmp_path)
 
+    assert list(PANEL_TITLES) == [
+        "MODE & SAFETY",
+        "READINESS",
+        "EVIDENCE REPORTS",
+        "RISK BUDGET",
+        "POSITIONS / TRADES",
+        "ALERTS",
+        "FORWARD TEST",
+    ]
     assert [panel["title"] for panel in status["panels"]] == list(PANEL_TITLES)
     assert status["generated_at"] == "2026-10-09 12:00 UTC"
+
+
+def progress(**overrides) -> dict:
+    data = {
+        "kind": "forward_progress",
+        "strategy": "trend_ensemble",
+        "status": "running",
+        "reason": None,
+        "forward_start": "2026-11-11T00:00:00+00:00",
+        "forward_end": "2027-11-10T23:59:00+00:00",
+        "through": "2026-11-30T23:59:00+00:00",
+        "days_done": 20,
+        "days_total": 365,
+        "net": 123.4,
+        "max_drawdown": 45.5,
+        "fees": 3.0,
+        "funding": 1.0,
+        "trades": 12,
+        "average_r": 0.2,
+        "profit_factor": 1.4,
+        "realized_rr": 1.1,
+        "weekly_average": 41.25,
+        "weekly_target": 50.0,
+        "losing_week_share": 0.25,
+        "worst_week": -30.0,
+        "kill_switch_trips": 0,
+        "data_gaps": [],
+        "commits": ["abc1234"],
+        "frozen_check": [],
+        "note": NOTE_TEXT,
+        "run_at": "2026-12-01T00:10:00+00:00",
+    }
+    return {**data, **overrides}
+
+
+def write_progress(root: Path, content: dict | str | bytes) -> Path:
+    path = root / "reports" / "trend_ensemble_forward" / "forward_progress.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(content, dict):
+        content = json.dumps(content)
+    path.write_bytes(content.encode("utf-8") if isinstance(content, str) else content)
+    return path
+
+
+def test_forward_panel_missing_file_is_off(tmp_path):
+    status = collect(tmp_path)
+
+    assert rows(status, FORWARD) == [
+        {"state": "off", "label": "status", "text": "not started: no forward_progress.json yet"}
+    ]
+    assert status["degraded"] == 0
+
+
+def test_forward_panel_running_rows(tmp_path):
+    write_progress(tmp_path, progress())
+
+    status = collect(tmp_path)
+
+    assert [(item["state"], item["label"], item["text"]) for item in rows(status, FORWARD)] == [
+        ("ok", "status", "running"),
+        ("plain", "period", "2026-11-11 to 2026-11-30, 20 / 365 days"),
+        ("plain", "net", "$123.40"),
+        ("plain", "max drawdown", "$45.50"),
+        ("plain", "weekly average", "$41.25 vs $50 target"),
+        ("plain", "losing weeks", "25%"),
+        ("plain", "trades", "12"),
+        ("plain", "kill switch trips", "0"),
+        ("plain", "data gaps", "none"),
+        ("plain", "verdict date", "2027-11-10"),
+        ("plain", "NOTE", NOTE_TEXT),
+    ]
+    assert status["degraded"] == 0
+
+
+def test_forward_panel_shows_negative_money_and_listed_gaps(tmp_path):
+    write_progress(tmp_path, progress(net=-12.3, data_gaps=["BTC/USDT 2026-11-05"], kill_switch_trips=2))
+
+    found = by_label(collect(tmp_path), FORWARD)
+
+    assert found["net"]["text"] == "-$12.30"
+    assert found["data gaps"]["text"] == "BTC/USDT 2026-11-05"
+    assert found["kill switch trips"]["text"] == "2"
+
+
+def test_forward_panel_null_figures_are_not_available_never_zero(tmp_path):
+    write_progress(
+        tmp_path,
+        progress(
+            through=None, days_done=None, net=None, max_drawdown=None, weekly_average=None,
+            weekly_target=None, losing_week_share=None, trades=None, kill_switch_trips=None,
+        ),
+    )
+
+    found = by_label(collect(tmp_path), FORWARD)
+
+    for label in ("period", "net", "max drawdown", "weekly average", "losing weeks", "trades", "kill switch trips"):
+        assert found[label]["text"].startswith("not available"), label
+        assert found[label]["state"] == "plain"
+    assert found["verdict date"]["text"] == "2027-11-10"
+
+
+def test_forward_panel_malformed_figures_are_not_available(tmp_path):
+    write_progress(tmp_path, progress(net="lots", trades=True, days_done="x", through="garbage", data_gaps="oops"))
+
+    found = by_label(collect(tmp_path), FORWARD)
+
+    assert found["net"]["text"].startswith("not available")
+    assert found["trades"]["text"].startswith("not available")
+    assert found["period"]["text"].startswith("not available")
+    assert found["data gaps"]["text"].startswith("not available")
+
+
+@pytest.mark.parametrize(
+    ("stored", "state"),
+    [
+        ("running", "ok"),
+        ("verdict PASS", "ok"),
+        ("incomplete data", "warn"),
+        ("error", "err"),
+        ("ended: kill switch", "err"),
+        ("void: same gap three months", "err"),
+        ("verdict FAIL", "err"),
+        ("something new", "err"),
+    ],
+)
+def test_forward_status_state_follows_the_stored_status(tmp_path, stored, state):
+    write_progress(tmp_path, progress(status=stored))
+
+    first = rows(collect(tmp_path), FORWARD)[0]
+
+    assert first["label"] == "status" and first["state"] == state
+    assert first["text"].startswith(stored)
+
+
+def test_forward_status_row_adds_the_reason(tmp_path):
+    write_progress(tmp_path, progress(status="error", reason="download failed: timeout"))
+
+    assert rows(collect(tmp_path), FORWARD)[0]["text"] == "error; download failed: timeout"
+
+
+@pytest.mark.parametrize("stored", ["verdict PASS", "verdict FAIL", "ended: kill switch", "void: same gap three months"])
+def test_forward_note_shows_the_stored_status_once_decided(tmp_path, stored):
+    write_progress(tmp_path, progress(status=stored))
+
+    note = by_label(collect(tmp_path), FORWARD)["NOTE"]
+
+    assert note["text"] == stored
+    assert "No verdict until" not in note["text"]
+
+
+@pytest.mark.parametrize("stored", ["running", "incomplete data", "error"])
+def test_forward_note_shows_the_file_note_otherwise(tmp_path, stored):
+    write_progress(tmp_path, progress(status=stored, note="a stored note"))
+
+    assert by_label(collect(tmp_path), FORWARD)["NOTE"]["text"] == "a stored note"
+
+
+def test_forward_note_falls_back_to_the_fixed_text_when_the_file_has_none(tmp_path):
+    write_progress(tmp_path, progress(note=None))
+
+    assert by_label(collect(tmp_path), FORWARD)["NOTE"]["text"] == NOTE_TEXT
+
+
+def test_forward_status_missing_is_unreadable(tmp_path):
+    data = progress()
+    del data["status"]
+    write_progress(tmp_path, data)
+
+    first = rows(collect(tmp_path), FORWARD)[0]
+
+    assert first["state"] == "err" and first["label"] == "status" and first["text"].startswith("unreadable")
+
+
+def test_forward_panel_wrong_kind_is_err(tmp_path):
+    write_progress(tmp_path, progress(kind="forward_verdict"))
+
+    status = collect(tmp_path)
+
+    assert len(rows(status, FORWARD)) == 1
+    assert rows(status, FORWARD)[0]["state"] == "err"
+    assert rows(status, FORWARD)[0]["label"] == "status"
+    assert rows(status, FORWARD)[0]["text"].startswith("unreadable: ")
+    assert status["degraded"] == 0
+
+
+@pytest.mark.parametrize("content", [b"", "not json", "[1, 2]"])
+def test_forward_panel_empty_or_invalid_file_is_err(tmp_path, content):
+    write_progress(tmp_path, content)
+
+    only = rows(collect(tmp_path), FORWARD)
+
+    assert len(only) == 1 and only[0]["state"] == "err" and only[0]["text"].startswith("unreadable: ")
+
+
+def test_forward_panel_unreadable_does_not_blank_page(tmp_path):
+    (tmp_path / "reports" / "trend_ensemble_forward" / "forward_progress.json").mkdir(parents=True)
+
+    status = collect(tmp_path)
+
+    assert rows(status, FORWARD)[0]["state"] == "err"
+    assert rows(status, FORWARD)[0]["label"] == "unreadable"
+    assert status["degraded"] == 1
+    assert [panel["title"] for panel in status["panels"]] == list(PANEL_TITLES)
+    assert len(steps(status)) == 5
+    for index in (BANNER, READINESS, EVIDENCE, RISK, POSITIONS, ALERTS):
+        assert all(item["label"] != "unreadable" for item in rows(status, index))
+
+
+def test_forward_collecting_changes_nothing_on_disk(tmp_path):
+    path = write_progress(tmp_path, progress())
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+
+    collect(tmp_path)
+
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+    assert sorted(p.name for p in path.parent.iterdir()) == ["forward_progress.json"]
 
 
 def test_banner_shows_mode_and_flags(tmp_path):

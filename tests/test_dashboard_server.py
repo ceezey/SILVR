@@ -53,11 +53,15 @@ def ttl(title: str) -> str:
     return f'<span class="ttl">{html.escape(title)}</span>'
 
 
-def test_page_shows_six_panels_in_layout_order_with_banner_first(tmp_path):
+def test_page_shows_seven_panels_in_layout_order_with_banner_first(tmp_path):
     page = page_for(tmp_path)
 
-    positions = [page.index(ttl(title)) for title in PANEL_TITLES]
+    # LAYOUT puts FORWARD TEST (index 6) after EVIDENCE REPORTS and before RISK BUDGET.
+    order = (*PANEL_TITLES[:3], PANEL_TITLES[6], *PANEL_TITLES[3:6])
+    assert len(PANEL_TITLES) == 7
+    positions = [page.index(ttl(title)) for title in order]
     assert positions == sorted(positions)
+    positions = [page.index(ttl(title)) for title in PANEL_TITLES[:3]]
     banner = page.index('class="row banner"')
     ladder = page.index('class="ladder"')
     strip = page.index('class="next-strip"')
@@ -143,8 +147,8 @@ def test_mode_and_safety_is_first_and_inside_the_sidebar(tmp_path):
     end = page.index("</aside>")
     mode = page.index(ttl("MODE & SAFETY"))
     assert start < mode < end
-    # Panels 00 to 07: eight title rows, two (00 MODE & SAFETY and 07 HOST) in the sidebar.
-    assert page.count('class="ttl"') == 8
+    # Panels 00 to 08: nine title rows, two (00 MODE & SAFETY and 07 HOST) in the sidebar.
+    assert page.count('class="ttl"') == 9
     assert page[start:end].count('class="ttl"') == 2
     assert end < page.index('class="ladder"') < page.index('class="next-strip"')
     for title in PANEL_TITLES[1:]:
@@ -830,7 +834,7 @@ def test_rail_is_decorative_and_cards_carry_the_state(tmp_path):
     assert "backtest_report" in cards[0] and "demo_readiness_report" in cards[3]
 
 
-def test_title_rows_run_00_to_07_with_mode_and_safety_first(tmp_path):
+def test_title_rows_run_00_to_08_with_mode_and_safety_first(tmp_path):
     page = page_for(tmp_path)
 
     titles = re.findall(r'<span class="idx">(\d\d)</span><span class="ttl">(.*?)</span>', page)
@@ -840,6 +844,7 @@ def test_title_rows_run_00_to_07_with_mode_and_safety_first(tmp_path):
         ("01", "EVIDENCE LADDER · MISSION TRACK"),
         ("02", "READINESS"),
         ("03", "EVIDENCE REPORTS"),
+        ("08", "FORWARD TEST"),
         ("04", "RISK BUDGET"),
         ("05", "POSITIONS / TRADES"),
         ("06", "ALERTS"),
@@ -851,6 +856,7 @@ def test_title_rows_run_00_to_07_with_mode_and_safety_first(tmp_path):
         "reports/",
         "*_readiness_report.json",
         "reports/",
+        "reports/trend_ensemble_forward/",
         "risk_state",
         "paper_trades · paper_events",
         "logs/audit.jsonl",
@@ -1132,3 +1138,126 @@ def test_new_markup_never_adds_a_control_or_state_changing_route(server):
     assert call(server, path="/mission")[0].status == 404
     assert response.getheader("Content-Security-Policy") == SECURITY_HEADERS["Content-Security-Policy"]
     assert f":{port}" in body
+
+
+FORWARD_NOTE = "Progress only. No verdict until 2027-11-10. Do not change the strategy because of this number."
+
+
+def write_progress(root: Path, **overrides) -> Path:
+    data = {
+        "kind": "forward_progress",
+        "status": "running",
+        "reason": None,
+        "through": "2026-11-30T23:59:00+00:00",
+        "days_done": 20,
+        "net": 123.4,
+        "max_drawdown": 45.5,
+        "weekly_average": 41.25,
+        "weekly_target": 50.0,
+        "losing_week_share": 0.25,
+        "trades": 12,
+        "kill_switch_trips": 0,
+        "data_gaps": [],
+        "note": FORWARD_NOTE,
+        **overrides,
+    }
+    path = root / "reports" / "trend_ensemble_forward" / "forward_progress.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def forward_section(page: str) -> str:
+    start = page.index(ttl("FORWARD TEST"))
+    return page[page.rindex("<section>", 0, start) : page.index("</section>", start)]
+
+
+def test_forward_test_panel_renders_after_evidence_and_before_risk(tmp_path):
+    write_progress(tmp_path)
+
+    page = page_for(tmp_path)
+
+    evidence = page.index(ttl("EVIDENCE REPORTS"))
+    forward = page.index(ttl("FORWARD TEST"))
+    risk = page.index(ttl("RISK BUDGET"))
+    assert evidence < forward < risk
+    # its own full-width row: one section, between the evidence row and the risk row
+    row_start = page.rindex('<div class="row">', 0, forward)
+    assert page.count("<section", row_start, forward) == 1
+    assert evidence < row_start < forward < risk
+
+
+def test_forward_test_panel_markup_and_values(tmp_path):
+    write_progress(tmp_path)
+
+    section = forward_section(page_for(tmp_path))
+
+    assert '<span class="idx">08</span>' in section
+    assert '<span class="src">reports/trend_ensemble_forward/</span>' in section
+    assert '<th scope="col">ITEM</th><th scope="col">STATE</th><th scope="col">DETAIL</th>' in section
+    assert '<th scope="row">status</th><td class="ok">[ OK ]</td><td>running</td>' in section
+    assert "<td>2026-11-11 to 2026-11-30, 20 / 365 days</td>" in section
+    assert "<td>$41.25 vs $50 target</td>" in section
+    assert f'<p class="note"><span class="label">NOTE</span> {FORWARD_NOTE}</p>' in section
+    assert '<th scope="row">NOTE</th>' not in section  # the note follows the table, not inside it
+
+
+def test_forward_test_panel_states_carry_glyph_and_word(tmp_path):
+    write_progress(tmp_path, status="verdict FAIL")
+    failed = forward_section(page_for(tmp_path))
+    write_progress(tmp_path, status="incomplete data")
+    gap = forward_section(page_for(tmp_path))
+
+    assert '<td class="err">[ ERR ]</td><td>verdict FAIL</td>' in failed
+    assert '<td class="warn">[ WRN ]</td><td>incomplete data</td>' in gap
+
+
+def test_forward_test_panel_before_the_first_run_says_not_started(tmp_path):
+    section = forward_section(page_for(tmp_path))
+
+    assert '<td class="off">[ OFF ]</td>' in section
+    assert "not started: no forward_progress.json yet" in section
+    assert "No verdict until" not in section
+
+
+def test_forward_test_note_reads_the_stored_status_once_decided(tmp_path):
+    write_progress(tmp_path, status="verdict PASS")
+
+    section = forward_section(page_for(tmp_path))
+
+    assert '<p class="note"><span class="label">NOTE</span> verdict PASS</p>' in section
+    assert "No verdict until" not in section
+
+
+def test_forward_test_panel_unreadable_file_does_not_blank_the_page(tmp_path):
+    (tmp_path / "reports" / "trend_ensemble_forward" / "forward_progress.json").mkdir(parents=True)
+
+    page = page_for(tmp_path)
+
+    assert "degraded: 1 panel unreadable" in page
+    for title in PANEL_TITLES:
+        assert ttl(title) in page
+    assert "[ ERR ]" in forward_section(page)
+    assert page.count('<li class="step') == 5
+
+
+def test_forward_test_panel_escapes_stored_text(tmp_path):
+    write_progress(tmp_path, status="error", reason="<script>alert(1)</script>", note="<b>n</b>", data_gaps=["<i>x</i>"])
+
+    page = page_for(tmp_path)
+
+    assert "<script" not in page and "<b>n</b>" not in page and "<i>x</i>" not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in forward_section(page)
+    assert "&lt;i&gt;x&lt;/i&gt;" in forward_section(page)
+
+
+def test_forward_test_panel_adds_no_route_control_or_script(server, tmp_path):
+    write_progress(tmp_path)
+
+    response, body = call(server)
+
+    assert response.status == 200
+    section = forward_section(body)
+    assert "<script" not in body and "<form" not in section and "<button" not in section and "<a " not in section
+    assert call(server, "POST")[0].status == 405
+    assert call(server, path="/reports/trend_ensemble_forward/forward_progress.json")[0].status == 404
