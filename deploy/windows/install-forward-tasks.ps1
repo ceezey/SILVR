@@ -16,7 +16,11 @@ $pwsh = (Get-Command pwsh).Source
 $conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
 $user = "$env:USERDOMAIN\$env:USERNAME"
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
+# The forward task stops after 12 hours (a hung download must not run forever; the verdict run
+# re-simulates 2022-2027 once and needs headroom). The dashboard is a server: no limit.
+$forwardSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 12)
+$dashboardSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
 
 $monthly = Get-CimClass -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_TaskMonthlyTrigger
@@ -28,7 +32,7 @@ $forwardTrigger = New-CimInstance -CimClass $monthly -ClientOnly -Property @{
 }
 $forwardAction = New-ScheduledTaskAction -Execute $conhost -WorkingDirectory $Root -Argument (
     '--headless "{0}" -NoProfile -File "{1}"' -f $pwsh, (Join-Path $Root 'deploy\windows\forward-test.ps1'))
-Register-ScheduledTask -TaskName $forwardName -Force -Principal $principal -Settings $settings `
+Register-ScheduledTask -TaskName $forwardName -Force -Principal $principal -Settings $forwardSettings `
     -Trigger $forwardTrigger -Action $forwardAction | Out-Null
 
 $python = Join-Path $Root '.venv\Scripts\python.exe'
@@ -36,7 +40,7 @@ $dashboardLog = Join-Path $Root 'logs\dashboard-console.log'
 New-Item -ItemType Directory -Force (Join-Path $Root 'logs') | Out-Null
 $dashboardAction = New-ScheduledTaskAction -Execute $conhost -WorkingDirectory $Root -Argument (
     "--headless `"{0}`" -NoProfile -Command `"& '{1}' -m silvr.monitoring.dashboard_server --port 8765 *>> '{2}'`"" -f $pwsh, $python, $dashboardLog)
-Register-ScheduledTask -TaskName $dashboardName -Force -Principal $principal -Settings $settings `
+Register-ScheduledTask -TaskName $dashboardName -Force -Principal $principal -Settings $dashboardSettings `
     -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $user) -Action $dashboardAction | Out-Null
 
 Write-Host "Registered '$forwardName' and '$dashboardName'. To remove both:"

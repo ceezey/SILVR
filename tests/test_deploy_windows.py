@@ -55,3 +55,13 @@ def test_installer_names_only_the_two_silvr_tasks() -> None:
     )
     assert "dashboard_server --port 8765" in script
     assert r"logs\dashboard-console.log" in script
+
+
+def test_forward_task_has_a_12_hour_limit_and_dashboard_none() -> None:
+    script = read("install-forward-tasks.ps1")
+
+    forward = script.split("$forwardSettings = ", 1)[1].split("$dashboardSettings", 1)[0]
+    dashboard = script.split("$dashboardSettings = ", 1)[1].split("\n$", 1)[0]
+    assert "-ExecutionTimeLimit (New-TimeSpan -Hours 12)" in forward
+    assert "-ExecutionTimeLimit ([TimeSpan]::Zero)" in dashboard
+    assert "-Settings $forwardSettings" in script and "-Settings $dashboardSettings" in script
