@@ -15,7 +15,7 @@ function Show-Toast([string]$text) {
 }
 $python = Join-Path $Root '.venv\Scripts\python.exe'
 if (-not (Test-Path $python)) {
-    "$(Get-Date -Format o) missing $python; create the venv and pip install . first" | Add-Content $log
+    "$(Get-Date -Format o) missing $python; create the venv and pip install -e . first" | Add-Content $log
     Show-Toast $crash
     exit 1
 }

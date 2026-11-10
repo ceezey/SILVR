@@ -85,3 +85,11 @@ def test_forward_test_toasts_instead_of_throwing_when_python_is_missing() -> Non
     assert "Add-Content $log" in missing and "Show-Toast $crash" in missing and "exit 1" in missing
     assert "$null -eq $LASTEXITCODE" in script
     assert "$_ -and $_.StartsWith('TOAST: ')" in script
+
+
+def test_forward_test_asks_for_an_editable_install_when_the_venv_is_missing() -> None:
+    """The run checks that silvr imports from this checkout, which only an editable install gives."""
+    script = read("forward-test.ps1")
+
+    missing = script.split("if (-not (Test-Path $python)) {", 1)[1].split("}", 1)[0]
+    assert "pip install -e ." in missing
