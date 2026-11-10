@@ -458,8 +458,10 @@ def _forward(root: Path) -> list[Row]:
     decided = stored in FORWARD_DECIDED or stored.startswith(("ended:", "void:"))
     note = data.get("note")
     gaps = data.get("data_gaps")
+    # A void status already names its reason ("void: X" with reason "X"); say it once.
+    shown = f"{stored}; {reason}" if isinstance(reason, str) and reason and reason not in stored else stored
     return [
-        row(state, "status", f"{stored}; {reason}" if isinstance(reason, str) and reason else stored),
+        row(state, "status", shown),
         row("plain", "period", _forward_period(data)),
         row("plain", "net", _figure(data.get("net"), _money)),
         row("plain", "max drawdown", _figure(data.get("max_drawdown"), _money)),

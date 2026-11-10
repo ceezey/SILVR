@@ -226,6 +226,42 @@ def test_forward_status_row_adds_the_reason(tmp_path):
     write_progress(tmp_path, progress(status="error", reason="download failed: timeout"))
 
     assert rows(collect(tmp_path), FORWARD)[0]["text"] == "error; download failed: timeout"
+    # a void status already holds its reason: say it once
+    write_progress(tmp_path, progress(status="void: same gap three months", reason="same gap three months"))
+    assert rows(collect(tmp_path), FORWARD)[0]["text"] == "void: same gap three months"
+
+
+def test_forward_panel_reads_every_key_the_real_producer_writes(tmp_path):
+    from silvr.backtest.metrics import calculate_metrics
+    from silvr.backtest.models import EquityPoint
+    from silvr.backtest.trend_forward import _fresh_report
+    from silvr.backtest.trend_runner import success_standard
+
+    curve = [
+        EquityPoint(datetime(2026, 11, day, tzinfo=UTC), 1000.0 + day, float(day), 2.0) for day in (11, 18, 25)
+    ]
+    segment = {
+        "metrics": calculate_metrics([], curve, initial_balance=1000.0),
+        "success_standard": success_standard(curve, 1000.0),
+        "kill_switch": {"trips": 0, "tripped_at": None},
+    }
+    report = _fresh_report(
+        status="running",
+        reason=None,
+        through=datetime(2026, 11, 30, 23, 59, tzinfo=UTC),
+        segment=segment,
+        gap=None,
+        commits=["abc1234"],
+        frozen_check=[],
+        run_at=datetime(2026, 12, 1, 0, 10, tzinfo=UTC),
+    )
+    write_progress(tmp_path, json.dumps(report))
+
+    found = rows(collect(tmp_path), FORWARD)
+
+    assert found[0]["state"] == "ok" and found[0]["text"] == "running"
+    assert [item["label"] for item in found if "not available" in item["text"]] == []
+    assert found[1]["text"] == "2026-11-11 to 2026-11-30, 20 / 365 days"
 
 
 @pytest.mark.parametrize("stored", ["verdict PASS", "verdict FAIL", "ended: kill switch", "void: same gap three months"])
