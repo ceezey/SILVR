@@ -334,6 +334,50 @@ def test_progress_frozen_mismatch_is_error(repo: tuple[Path, str], tmp_path: Pat
     assert simulate.calls == []
 
 
+MAR_1 = datetime(2027, 3, 1, 1, 0, tzinfo=UTC)
+NOV_THROUGH = "2026-11-30T23:59:00+00:00"
+
+
+def _figures_of(report: dict[str, Any] | None) -> tuple[Any, ...]:
+    assert report is not None
+    return tuple(report[key] for key in ("through", "days_done", "net", "max_drawdown", "trades", "weekly_average"))
+
+
+def test_gap_months_keep_the_last_good_figures_through_the_void(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    running = _run(root, tmp_path, DEC_1, FakeSimulate(_segment()))
+    good = _figures_of(running)
+    assert good == (NOV_THROUGH, 20, 12.5, 40.0, 4, 4.0)
+    gap_runs = [_run(root, tmp_path, now, FakeSimulate()) for now in (JAN_1, FEB_1, MAR_1)]
+    assert [report["status"] for report in gap_runs if report] == [
+        "incomplete data",
+        "incomplete data",
+        f"void: data gap not filled after 2 retries ({GAP})",
+    ]
+    assert all(_figures_of(report) == good for report in gap_runs)
+    assert all(report["data_gaps"] == [GAP] for report in gap_runs if report)
+    assert [entry["through"] for entry in _history(tmp_path)] == [
+        NOV_THROUGH,
+        "2026-12-31T23:59:00+00:00",
+        "2027-01-31T23:59:00+00:00",
+        "2027-02-28T23:59:00+00:00",
+    ]
+    after = _run(root, tmp_path, datetime(2027, 4, 1, 1, 0, tzinfo=UTC), FakeSimulate(_segment()))
+    assert _figures_of(after) == good
+
+
+def test_error_month_keeps_the_last_good_figures(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    good = _figures_of(_run(root, tmp_path, DEC_1, FakeSimulate(_segment())))
+    problems = ["changed: src/silvr/risk/engine.py"]
+    report = _run(root, tmp_path, JAN_1, FakeSimulate(_segment()), check=lambda _root: problems)
+    assert report is not None
+    assert report["status"] == "error"
+    assert report["frozen_check"] == problems
+    assert report["run_at"] == JAN_1.isoformat()
+    assert _figures_of(report) == good
+
+
 def test_record_void_is_terminal(repo: tuple[Path, str], tmp_path: Path) -> None:
     root, _ = repo
     _run(root, tmp_path, DEC_1, FakeSimulate(_segment()))

@@ -242,10 +242,10 @@ def run_progress(
     """Write the progress report for FORWARD_START to the last closed month and append its history line.
 
     Returns the report, or None (writing nothing) before the first month has closed. The status follows
-    the rules in order: an ended test stays ended with its last known figures (no simulation); a
-    frozen-files mismatch, or a commit git cannot name, is `error`; missing data is
-    `incomplete data`, or void once the same gap survives GAP_RETRIES later months; a kill-switch trip ends
-    the test; otherwise `running`. This is progress only, never a verdict.
+    the rules in order: an ended test stays ended (no simulation); a frozen-files mismatch, or a commit
+    git cannot name, is `error`; missing data is `incomplete data`, or void once the same gap survives
+    GAP_RETRIES later months; a kill-switch trip ends the test; otherwise `running`. A run that simulates
+    nothing keeps the last good month's period and figures. This is progress only, never a verdict.
     """
     through: datetime | None = last_closed_minute(now)
     if through < FORWARD_START:
@@ -263,7 +263,8 @@ def run_progress(
     gap: str | None = None
     segment: dict[str, Any] | None = None
     last = history[-1] if history else None
-    if last is not None and _is_terminal(last["status"]):
+    ended = last is not None and _is_terminal(last["status"])
+    if last is not None and ended:
         status, reason, gap = last["status"], last["reason"], last["gap"]
         through = datetime.fromisoformat(last["through"]) if last["through"] else None
     elif problems:
@@ -295,9 +296,12 @@ def run_progress(
     run_at = now.astimezone(UTC)
     commits = _distinct([entry["commit"] for entry in history] + [commit])
     previous = _read_progress(output_dir)
-    if last is not None and _is_terminal(last["status"]) and previous is not None:
-        # An ended test keeps its last known figures; only the status line and the run stamp move on.
-        changes = {"status": status, "reason": reason, "run_at": run_at, "commits": commits}
+    if segment is None and previous is not None:
+        # Nothing new was simulated: keep the last good month's period and figures; the status, reason
+        # and (unless the test had already ended) the data gaps and frozen check carry this run's news.
+        changes: dict[str, Any] = {"status": status, "reason": reason, "run_at": run_at, "commits": commits}
+        if not ended:
+            changes |= {"data_gaps": [gap] if gap else [], "frozen_check": problems or "ok"}
         report = {**previous, **json_safe(changes)}
     else:
         report = json_safe(
@@ -322,9 +326,9 @@ def run_progress(
     _write_progress(output_dir, report)
     _append_history(
         output_dir,
-        {
+        {  # `through` is the month this run attempted, so same-month reruns stay apart from retries
             "run_at": run_at,
-            "through": report["through"],
+            "through": through,
             "status": status,
             "reason": reason,
             "gap": gap,
