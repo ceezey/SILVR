@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from silvr.backtest import gate
+from silvr.backtest import gate, trend_forward
 from silvr.backtest.gate import LOG_NAME, OUTPUT_NAME, GateInputError, evaluate_gate
 from silvr.backtest.reporting import json_safe
 from silvr.backtest.trend_engine import TrendDataError
@@ -29,10 +29,12 @@ from silvr.backtest.trend_forward import (
     download_new_data,
     head_commit,
     last_closed_minute,
+    main,
     record_void,
     run_progress,
     run_verdict,
     simulate_window,
+    summary_line,
 )
 from silvr.backtest.trend_runner import REPORT_NAME, SEGMENT_NAMES, run_trend_backtest, segment_bounds
 from silvr.data.funding import FundingRate, FundingSchedule, load_funding_csv, write_funding_csv
@@ -809,3 +811,228 @@ def test_download_funding_that_returns_nothing_or_raises_keeps_the_old_file(tmp_
     assert (folder / "LTCUSDT-funding.csv").read_bytes() == before
     assert _rate(folder, "BTCUSDT") == 0.0002
     assert sorted(path.name for path in tmp_path.iterdir()) == ["candles", "funding"]
+
+
+# --- Task 6: command line and toast summary line ---
+
+
+def _report(**changes: Any) -> dict[str, Any]:
+    return {
+        "status": "running",
+        "reason": None,
+        "through": "2026-11-30T23:59:00+00:00",
+        "net": -42.1,
+        **changes,
+    }
+
+
+def test_summary_line_running() -> None:
+    assert summary_line(_report()) == "SILVR forward test, Nov 2026: net -$42.10 so far (progress only)"
+    assert summary_line(_report(net=1234.5, through="2027-02-28T23:59:00+00:00")) == (
+        "SILVR forward test, Feb 2027: net $1234.50 so far (progress only)"
+    )
+    assert "-$0.00" not in summary_line(_report(net=-0.001))
+
+
+def test_summary_line_terminal_states() -> None:
+    assert summary_line(_report(status="void: bug in trend_engine", reason="bug in trend_engine")) == (
+        "SILVR forward test: void: bug in trend_engine"
+    )
+    assert summary_line(_report(status="verdict FAIL")) == "SILVR forward test: verdict FAIL"
+    assert summary_line(_report(status="verdict PASS")) == "SILVR forward test: verdict PASS"
+    assert summary_line(_report(status="ended: kill switch", reason="tripped at x")) == (
+        "SILVR forward test: ended: kill switch"
+    )
+    assert summary_line(_report(status="incomplete data", reason=GAP)) == "SILVR forward test: incomplete data"
+    assert summary_line(_report(status="error", reason="RuntimeError: boom")) == (
+        "SILVR forward test error: RuntimeError: boom"
+    )
+
+
+def _cli(tmp_path: Path, *args: str) -> list[str]:
+    return ["--data-root", str(tmp_path / "data"), "--output-dir", str(tmp_path / "out"), *args]
+
+
+def _lines(capsys: pytest.CaptureFixture[str]) -> list[str]:
+    return capsys.readouterr().out.splitlines()
+
+
+def _boom(**_kw: Any) -> None:
+    raise RuntimeError("boom")
+
+
+def test_main_void_records_and_exits_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(_cli(tmp_path, "--void", "bug in trend_engine")) == 0
+    assert _lines(capsys)[-1] == "TOAST: SILVR forward test: void: bug in trend_engine"
+    assert _history(tmp_path)[-1]["status"] == "void: bug in trend_engine"
+
+
+def test_main_void_after_the_end_exits_two(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    ended = {"run_at": JAN_1.isoformat(), "through": None, "status": "verdict FAIL"}
+    (out / HISTORY_NAME).write_text(json.dumps(ended) + "\n", encoding="utf-8")
+    assert main(_cli(tmp_path, "--void", "late")) == 2
+    last = _lines(capsys)[-1]
+    assert last.startswith("TOAST: SILVR forward test error: ") and "already ended" in last
+    assert len(_history(tmp_path)) == 1
+
+
+def test_main_empty_void_reason_or_bad_arguments_exit_two(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(_cli(tmp_path, "--void", "  ")) == 2
+    assert _lines(capsys)[-1].startswith("TOAST: SILVR forward test error: ")
+    assert main(["--no-such-flag"]) == 2
+    assert _lines(capsys)[-1].startswith("TOAST: SILVR forward test error: ")
+    assert not (tmp_path / "out").exists()
+
+
+def test_main_error_exits_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    error = _report(status="error", reason="frozen files changed: changed: x")
+    monkeypatch.setattr(trend_forward, "run_progress", lambda **_kw: error)
+    assert main(_cli(tmp_path)) == 1
+    assert _lines(capsys)[-1] == "TOAST: SILVR forward test error: frozen files changed: changed: x"
+
+
+def test_main_nothing_to_report_exits_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(trend_forward, "run_progress", lambda **_kw: None)
+    assert main(_cli(tmp_path)) == 0
+    assert _lines(capsys)[-1] == "TOAST: SILVR forward test: nothing to report until 2026-12-01"
+
+
+def test_main_passes_an_aware_now_and_the_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake(**kwargs: Any) -> dict[str, Any]:
+        seen.update(kwargs)
+        return _report()
+
+    monkeypatch.setattr(trend_forward, "run_progress", fake)
+    monkeypatch.chdir(tmp_path)
+    assert main(["--data-root", "d", "--output-dir", "o"]) == 0
+    assert seen["now"].tzinfo is not None and seen["repo_root"] == Path.cwd()
+    assert (seen["data_root"], seen["output_dir"]) == (Path("d"), Path("o"))
+    assert seen["download_problems"] is None
+    assert _lines(capsys)[-1].startswith("TOAST: ")
+
+
+def test_main_crash_writes_error_report(
+    repo: tuple[Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, _ = repo
+    good = _figures_of(_run(root, tmp_path, DEC_1, FakeSimulate(_segment())))
+    monkeypatch.setattr(trend_forward, "run_progress", _boom)
+    assert main(_cli(tmp_path)) == 1
+    assert _lines(capsys)[-1] == "TOAST: SILVR forward test error: RuntimeError: boom"
+    report = json.loads((tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8"))
+    assert (report["status"], report["reason"]) == ("error", "RuntimeError: boom")
+    assert _figures_of(report) == good
+    assert _history(tmp_path)[-1]["status"] == "error"
+
+
+def test_main_crash_with_no_earlier_report_still_writes_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(trend_forward, "run_progress", _boom)
+    assert main(_cli(tmp_path)) == 1
+    report = json.loads((tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8"))
+    assert (report["status"], report["reason"], report["kind"], report["net"]) == (
+        "error",
+        "RuntimeError: boom",
+        "forward_progress",
+        None,
+    )
+
+
+def test_main_crash_never_overwrites_an_ended_test(
+    repo: tuple[Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, _ = repo
+    _run(root, tmp_path, DEC_1, FakeSimulate(_segment(trips=1)))
+    before = (tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8")
+    monkeypatch.setattr(trend_forward, "run_progress", _boom)
+    assert main(_cli(tmp_path)) == 1
+    assert _lines(capsys)[-1] == "TOAST: SILVR forward test error: RuntimeError: boom"
+    assert (tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8") == before
+    assert len(_history(tmp_path)) == 1
+
+
+def test_main_crash_survives_a_failing_report_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def cannot_write(*_a: Any, **_kw: Any) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(trend_forward, "run_progress", _boom)
+    monkeypatch.setattr(trend_forward, "record_error", cannot_write)
+    assert main(_cli(tmp_path)) == 1
+    assert _lines(capsys)[-1] == "TOAST: SILVR forward test error: RuntimeError: boom"
+
+
+def test_main_prints_toast_line_last(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(trend_forward, "run_progress", lambda **_kw: _report())
+    monkeypatch.setattr(trend_forward, "download_new_data", lambda *_a, **_kw: ["BTCUSDT: candle download failed: x"])
+    assert main(_cli(tmp_path, "--download")) == 0
+    lines = _lines(capsys)
+    assert lines[-1] == "TOAST: SILVR forward test, Nov 2026: net -$42.10 so far (progress only)"
+    assert [line for line in lines if line.startswith("TOAST: ")] == [lines[-1]]
+    assert any("candle download failed" in line for line in lines[:-1])
+
+
+def test_main_download_passes_problems_to_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(trend_forward, "run_progress", lambda **kw: seen.update(kw) or _report())
+    monkeypatch.setattr(trend_forward, "download_new_data", lambda *_a, **_kw: ["a", "b"])
+    main(_cli(tmp_path, "--download"))
+    assert seen["download_problems"] == ["a", "b"]
+
+
+def test_progress_download_failure_with_missing_data_is_error_not_a_gap(
+    repo: tuple[Path, str], tmp_path: Path
+) -> None:
+    root, _ = repo
+    good = _figures_of(_run(root, tmp_path, DEC_1, FakeSimulate(_segment())))
+    problems = ["BTCUSDT: candle download failed: x", "y"]
+    report = _run(root, tmp_path, JAN_1, FakeSimulate(), download_problems=problems)
+    assert report is not None
+    assert report["status"] == "error"
+    assert report["reason"] == "download failed: BTCUSDT: candle download failed: x; y"
+    assert _figures_of(report) == good
+    assert _history(tmp_path)[-1]["status"] == "error"
+    assert json.loads((tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8")) == report
+
+
+def test_progress_three_months_of_download_failures_never_void(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    down = ["BTCUSDT: candle download failed: network down"]
+    runs = (DEC_1, JAN_1, FEB_1, datetime(2027, 3, 1, 1, tzinfo=UTC))
+    reports = [_run(root, tmp_path, now, FakeSimulate(), download_problems=down) for now in runs]
+    assert [report["status"] for report in reports if report] == ["error"] * 4
+
+
+def test_progress_download_failure_month_does_not_count_toward_a_real_gap(
+    repo: tuple[Path, str], tmp_path: Path
+) -> None:
+    root, _ = repo
+    _run(root, tmp_path, DEC_1, FakeSimulate())
+    _run(root, tmp_path, JAN_1, FakeSimulate(), download_problems=["x"])
+    report = _run(root, tmp_path, FEB_1, FakeSimulate())
+    assert report is not None
+    assert report["status"] == "incomplete data"
+
+
+def test_progress_download_problems_with_a_running_status_keep_running(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    report = _run(root, tmp_path, DEC_1, FakeSimulate(_segment()), download_problems=["BTCUSDT: x"])
+    assert report is not None
+    assert report["status"] == "running"
+    assert report["reason"] is None

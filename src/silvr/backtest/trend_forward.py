@@ -8,12 +8,15 @@ run_verdict, called once by run_progress when the window has closed, runs the ga
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import os
 import subprocess
+import sys
 import tempfile
-from collections.abc import Callable
+import traceback
+from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -389,6 +392,39 @@ def run_verdict(
     raise VerdictRefused(f"the gate exit code {code} disagrees with {gate.OUTPUT_NAME} passed={passed!r}")
 
 
+def _fresh_report(
+    *,
+    status: str,
+    reason: str | None,
+    through: datetime | None,
+    segment: dict[str, Any] | None,
+    gap: str | None,
+    commits: list[str],
+    frozen_check: list[str] | str,
+    run_at: datetime,
+) -> dict[str, Any]:
+    """A whole progress report; a `segment` of None leaves every figure None."""
+    return json_safe(
+        {
+            "kind": KIND,
+            "strategy": params.STRATEGY_NAME,
+            "status": status,
+            "reason": reason,
+            "forward_start": FORWARD_START,
+            "forward_end": FORWARD_END,
+            "through": through,
+            "days_done": (through - FORWARD_START + _MINUTE).days if through else None,
+            "days_total": DAYS_TOTAL,
+            **_figures(segment),
+            "data_gaps": [gap] if gap else [],
+            "commits": commits,
+            "frozen_check": frozen_check,
+            "note": NOTE,
+            "run_at": run_at,
+        }
+    )
+
+
 def run_progress(
     *,
     repo_root: Path,
@@ -398,6 +434,7 @@ def run_progress(
     simulate: Callable[..., dict[str, Any]] = simulate_window,
     check: Callable[[Path], list[str]] = check_frozen,
     verdict: Callable[..., str] = run_verdict,
+    download_problems: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Write the progress report for FORWARD_START to the last closed month and append its history line.
 
@@ -407,6 +444,10 @@ def run_progress(
     same gap survives GAP_RETRIES later months; a kill-switch trip ends the test; otherwise `running`, or,
     once the whole window has closed, the one verdict from `verdict` (`error` if it refuses). A run that
     simulates nothing keeps the last good month's period and figures. The report itself is never a gate input.
+
+    `download_problems` are the failures of this run's download. Missing data that follows a failed download
+    is `error` ("download failed: ..."), never `incomplete data`, so a network outage cannot count toward the
+    void. With complete data the problems change nothing here.
     """
     through: datetime | None = last_closed_minute(now)
     if through < FORWARD_START:
@@ -444,7 +485,9 @@ def run_progress(
         except TrendDataError as exc:
             gap = reason = str(exc)
             status = _INCOMPLETE
-            if _gap_not_filled(history, now, gap):
+            if download_problems:
+                status, reason = "error", "download failed: " + "; ".join(download_problems)
+            elif _gap_not_filled(history, now, gap):
                 reason = f"data gap not filled after {GAP_RETRIES} retries ({gap})"
                 status = f"void: {reason}"
         else:
@@ -470,24 +513,15 @@ def run_progress(
             changes |= {"data_gaps": [gap] if gap else [], "frozen_check": problems or "ok"}
         report = {**previous, **json_safe(changes)}
     else:
-        report = json_safe(
-            {
-                "kind": KIND,
-                "strategy": params.STRATEGY_NAME,
-                "status": status,
-                "reason": reason,
-                "forward_start": FORWARD_START,
-                "forward_end": FORWARD_END,
-                "through": through,
-                "days_done": (through - FORWARD_START + _MINUTE).days if through else None,
-                "days_total": DAYS_TOTAL,
-                **_figures(segment),
-                "data_gaps": [gap] if gap else [],
-                "commits": commits,
-                "frozen_check": problems or "ok",
-                "note": NOTE,
-                "run_at": run_at,
-            }
+        report = _fresh_report(
+            status=status,
+            reason=reason,
+            through=through,
+            segment=segment,
+            gap=gap,
+            commits=commits,
+            frozen_check=problems or "ok",
+            run_at=run_at,
         )
     _write_progress(output_dir, report)
     _append_history(
@@ -532,3 +566,127 @@ def record_void(output_dir: Path, reason: str, now: datetime) -> dict[str, Any]:
         _write_progress(output_dir, {**previous, **changes})
     _append_history(output_dir, entry)
     return entry
+
+
+def record_error(output_dir: Path, reason: str, now: datetime) -> None:
+    """Write `error` with `reason` over the progress file and history, keeping the last good figures.
+
+    For a run that crashed before it could report. Does nothing once the test has ended, so a crash can
+    never replace a kill-switch FAIL, a verdict or a void.
+    """
+    history = _read_history(output_dir)
+    if history and _is_terminal(history[-1]["status"]):
+        return
+    run_at = now.astimezone(UTC)
+    previous = _read_progress(output_dir)
+    if previous is not None:
+        report = {**previous, **json_safe({"status": "error", "reason": reason, "run_at": run_at})}
+    else:
+        report = _fresh_report(
+            status="error",
+            reason=reason,
+            through=None,
+            segment=None,
+            gap=None,
+            commits=[],
+            frozen_check="not checked",
+            run_at=run_at,
+        )
+    _write_progress(output_dir, report)
+    _append_history(
+        output_dir,
+        {
+            "run_at": run_at,
+            "through": report["through"],
+            "status": "error",
+            "reason": reason,
+            "gap": None,
+            "commit": None,
+        },
+    )
+
+
+TITLE = "SILVR forward test"
+FIRST_REPORT_DATE = "2026-12-01"  # the first UTC month (November 2026) closes then
+
+
+def _dollars(amount: float) -> str:
+    cents = round(amount, 2)
+    return f"{'-' if cents < 0 else ''}${abs(cents):.2f}"
+
+
+def summary_line(progress: Mapping[str, Any]) -> str:
+    """One short line for the monthly toast: the net so far while running, otherwise the status itself."""
+    status = progress["status"]
+    if status == "error":
+        return f"{TITLE} error: {progress['reason']}"
+    if status == "running":
+        month = datetime.fromisoformat(progress["through"]).strftime("%b %Y")
+        return f"{TITLE}, {month}: net {_dollars(progress['net'])} so far (progress only)"
+    return f"{TITLE}: {status}"
+
+
+def _toast(line: str) -> None:
+    print(f"TOAST: {line}")
+
+
+def _run_cli(args: argparse.Namespace, now: datetime) -> int:
+    """Do what the arguments ask and print the toast line last; returns the exit code (0, 1 or 2)."""
+    if args.void is not None:
+        try:
+            entry = record_void(args.output_dir, args.void, now)
+        except ValueError as exc:  # the test has already ended; nothing was written
+            print(f"error: {exc}")
+            _toast(summary_line({"status": "error", "reason": str(exc)}))
+            return 2
+        _toast(summary_line(entry))
+        return 0
+    problems = download_new_data(args.data_root, now) if args.download else None
+    report = run_progress(
+        repo_root=Path.cwd(),
+        data_root=args.data_root,
+        output_dir=args.output_dir,
+        now=now,
+        download_problems=problems,
+    )
+    for problem in problems or []:
+        print(f"download problem: {problem}")
+    if report is None:
+        _toast(f"{TITLE}: nothing to report until {FIRST_REPORT_DATE}")
+        return 0
+    _toast(summary_line(report))
+    return 1 if report["status"] == "error" else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the monthly forward-test step. Exit 0: reported (or nothing yet); 1: error; 2: bad arguments."""
+    parser = argparse.ArgumentParser(prog="python -m silvr.backtest.trend_forward", description=__doc__)
+    parser.add_argument("--data-root", type=Path, default=Path("data"))
+    parser.add_argument("--output-dir", type=Path, default=Path("reports/trend_ensemble_forward"))
+    parser.add_argument("--download", action="store_true", help="download the newly closed months first")
+    parser.add_argument("--void", metavar="REASON", help="end the test as void with this reason, then exit")
+    try:
+        args = parser.parse_args(argv)
+        if args.void is not None and not args.void.strip():
+            parser.error("--void needs a reason")
+    except SystemExit as exc:
+        if not exc.code:  # --help
+            raise
+        _toast(f"{TITLE} error: bad command line arguments (see the message above)")
+        return 2
+    now = datetime.now(UTC)
+    try:
+        return _run_cli(args, now)
+    except Exception as exc:  # the toast must still say something; the error report is best effort
+        reason = f"{type(exc).__name__}: {exc}"
+        traceback.print_exc(file=sys.stderr)
+        try:
+            record_error(args.output_dir, reason, now)
+        except Exception as write_exc:
+            print(f"could not write the error report: {write_exc}")
+        _toast(summary_line({"status": "error", "reason": reason}))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
