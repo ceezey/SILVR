@@ -106,7 +106,13 @@ def head_commit(repo_root: Path) -> str:
 
 
 def last_closed_minute(now: datetime) -> datetime:
-    """Last 1m open time of the UTC month before `now`'s UTC month, capped at FORWARD_END."""
+    """Last 1m open time of the UTC month before `now`'s UTC month, capped at FORWARD_END.
+
+    Once the window's last minute has closed (from 2027-11-11 00:00 UTC) it is FORWARD_END itself, so the
+    verdict can be run by hand then (spec section 5).
+    """
+    if now >= FORWARD_END + _MINUTE:
+        return FORWARD_END
     first_of_month = now.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return min(first_of_month - _MINUTE, FORWARD_END)
 
@@ -196,15 +202,23 @@ def _append_history(output_dir: Path, entry: dict[str, Any]) -> None:
         handle.write(json.dumps(json_safe(entry), sort_keys=True) + "\n")
 
 
-def _gap_not_filled(history: list[dict[str, Any]], through: str, gap: str) -> bool:
-    """True when the latest entries of the GAP_RETRIES previous distinct `through` months all hold `gap`.
+def _run_month(run_at: datetime | str) -> str:
+    """The UTC month ("2027-12") a run happened in."""
+    when = datetime.fromisoformat(run_at) if isinstance(run_at, str) else run_at
+    return f"{when.astimezone(UTC):%Y-%m}"
 
-    Reruns for the same month do not count as retries: only a later month's download is a new attempt.
+
+def _gap_not_filled(history: list[dict[str, Any]], now: datetime, gap: str) -> bool:
+    """True when the latest entries of the GAP_RETRIES previous distinct UTC run months all hold `gap`.
+
+    Reruns in the same month do not count as retries: only a later month's download is a new attempt. The
+    run month, not `through`, is counted, because `through` stays FORWARD_END once the window has closed.
     """
+    current = _run_month(now)
     latest: dict[str, dict[str, Any]] = {}
     for entry in reversed(history):
-        month = entry["through"]
-        if month != through and month not in latest:
+        month = _run_month(entry["run_at"])
+        if month != current and month not in latest:
             latest[month] = entry
             if len(latest) == GAP_RETRIES:
                 break
@@ -364,7 +378,7 @@ def run_progress(
         except TrendDataError as exc:
             gap = reason = str(exc)
             status = _INCOMPLETE
-            if _gap_not_filled(history, through.isoformat(), gap):
+            if _gap_not_filled(history, now, gap):
                 reason = f"data gap not filled after {GAP_RETRIES} retries ({gap})"
                 status = f"void: {reason}"
         else:
@@ -412,7 +426,7 @@ def run_progress(
     _write_progress(output_dir, report)
     _append_history(
         output_dir,
-        {  # `through` is the month this run attempted, so same-month reruns stay apart from retries
+        {  # `through` is the month this run attempted; `run_at` gives the run month that gap retries count
             "run_at": run_at,
             "through": through,
             "status": status,

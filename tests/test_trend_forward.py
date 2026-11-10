@@ -114,6 +114,16 @@ def test_last_closed_minute_is_capped_at_forward_end() -> None:
     assert last_closed_minute(datetime(2028, 1, 1, tzinfo=UTC)) == FORWARD_END
 
 
+def test_last_closed_minute_is_the_window_end_once_its_last_minute_has_closed() -> None:
+    """Spec section 5: the verdict can be run by hand from 2027-11-11."""
+    assert last_closed_minute(datetime(2027, 11, 11, tzinfo=UTC)) == FORWARD_END
+
+
+def test_last_closed_minute_before_the_last_minute_closes() -> None:
+    now = datetime(2027, 11, 10, 23, 59, 30, tzinfo=UTC)
+    assert last_closed_minute(now) == datetime(2027, 10, 31, 23, 59, tzinfo=UTC)
+
+
 def test_backtest_config_matches_the_frozen_runner() -> None:
     config = backtest_config()
     assert config.initial_balance == params.INITIAL_BALANCE
@@ -320,6 +330,19 @@ def test_progress_same_month_rerun_does_not_count_as_retry(repo: tuple[Path, str
     assert [report["status"] for report in reports if report] == ["incomplete data"] * 3
 
 
+def test_progress_final_month_gap_voids_after_two_more_run_months(repo: tuple[Path, str], tmp_path: Path) -> None:
+    """After the window closes `through` stays FORWARD_END; retries count by the UTC month of the run."""
+    root, _ = repo
+    runs = [datetime(year, month, 1, 1, 0, tzinfo=UTC) for year, month in ((2027, 12), (2028, 1), (2028, 2))]
+    reports = [_run(root, tmp_path, now, FakeSimulate()) for now in runs]
+    assert [report["status"] for report in reports if report] == [
+        "incomplete data",
+        "incomplete data",
+        f"void: data gap not filled after 2 retries ({GAP})",
+    ]
+    assert {entry["through"] for entry in _history(tmp_path)} == {"2027-11-10T23:59:00+00:00"}
+
+
 def test_progress_a_different_gap_does_not_void(repo: tuple[Path, str], tmp_path: Path) -> None:
     root, _ = repo
     _run(root, tmp_path, DEC_1, FakeSimulate(gap="ETHUSDT: another gap"))
@@ -487,6 +510,11 @@ def test_verdict_runs_gate_once_and_reads_result(tmp_path: Path) -> None:
     gate_main = FakeGate(passed=True)
     assert _verdict(tmp_path, FakeSimulate(_segment()), gate_main) == "verdict PASS"
     assert gate_main.calls == [["--report", str(tmp_path / "out" / REPORT_NAME)]]
+
+
+def test_verdict_can_be_given_by_hand_from_2027_11_11(tmp_path: Path) -> None:
+    now = datetime(2027, 11, 11, 0, 0, tzinfo=UTC)
+    assert _verdict(tmp_path, FakeSimulate(_segment()), FakeGate(), now=now) == "verdict PASS"
 
 
 def test_verdict_fail_is_read_from_the_gate_output(tmp_path: Path) -> None:
