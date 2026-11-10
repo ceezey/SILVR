@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -23,6 +24,7 @@ PANEL_TITLES: tuple[str, ...] = (
     "RISK BUDGET",
     "POSITIONS / TRADES",
     "ALERTS",
+    "FORWARD TEST",  # silvr-cr-005: last collected, shown after EVIDENCE REPORTS (see LAYOUT)
 )
 EVIDENCE_REPORTS: tuple[str, ...] = (
     "backtest_report",
@@ -56,6 +58,14 @@ AUDIT_EVENTS = 20
 RECENT_ROWS = 10
 NO_PAPER_RUN = "none recorded (no paper run, G-3)"
 CONFIG_INVALID = "not available: configuration invalid"
+FORWARD_FILE = Path("reports") / "trend_ensemble_forward" / "forward_progress.json"
+FORWARD_START = "2026-11-11"
+FORWARD_DAYS = 365
+VERDICT_DATE = "2027-11-10"
+FORWARD_NOTE = "Progress only. No verdict until 2027-11-10. Do not change the strategy because of this number."
+FORWARD_OK = ("running", "verdict PASS")
+FORWARD_DECIDED = ("verdict PASS", "verdict FAIL")  # also any "ended: ..." or "void: ..."
+NOT_AVAILABLE = "not available: no usable value in the progress file"
 RISK_PREFIX = "Risk rejected: "
 SIGNAL_TEXT = "Strategy signal detected. Passing to risk engine."
 
@@ -93,6 +103,7 @@ def collect_status(
         lambda: _risk_budget(config, now),
         lambda: _positions(config),
         lambda: _alerts(root),
+        lambda: _forward(root),
     )
     panels = []
     degraded = 0
@@ -427,6 +438,75 @@ def _alerts(root: Path) -> list[Row]:
     if size:
         return [row("off", "", "not available: no complete line in the last 64 KiB")]
     return [row("off", "", "not available: audit log is empty")]
+
+
+def _forward(root: Path) -> list[Row]:
+    """The forward test's monthly progress file as rows (silvr-cr-005); read-only, nothing is computed here."""
+
+    data, problem, _ = _read_json_object(root / FORWARD_FILE)
+    if problem == "missing":
+        return [row("off", "status", "not started: no forward_progress.json yet")]
+    if data is None:
+        return [row("err", "status", f"unreadable: {problem}")]
+    if data.get("kind") != "forward_progress":
+        return [row("err", "status", "unreadable: kind is not forward_progress")]
+    stored = data.get("status")
+    if not isinstance(stored, str) or not stored:
+        return [row("err", "status", "unreadable: status missing")]
+    state = "ok" if stored in FORWARD_OK else "warn" if stored == "incomplete data" else "err"
+    reason = data.get("reason")
+    decided = stored in FORWARD_DECIDED or stored.startswith(("ended:", "void:"))
+    note = data.get("note")
+    gaps = data.get("data_gaps")
+    # A void status already names its reason ("void: X" with reason "X"); say it once.
+    shown = f"{stored}; {reason}" if isinstance(reason, str) and reason and reason not in stored else stored
+    return [
+        row(state, "status", shown),
+        row("plain", "period", _forward_period(data)),
+        row("plain", "net", _figure(data.get("net"), _money)),
+        row("plain", "max drawdown", _figure(data.get("max_drawdown"), _money)),
+        row("plain", "weekly average", _forward_weekly(data)),
+        row("plain", "losing weeks", _figure(data.get("losing_week_share"), lambda share: f"{share * 100:.0f}%")),
+        row("plain", "trades", _figure(data.get("trades"), str, whole=True)),
+        row("plain", "kill switch trips", _figure(data.get("kill_switch_trips"), str, whole=True)),
+        row("plain", "data gaps", ("; ".join(map(str, gaps)) or "none") if isinstance(gaps, list) else NOT_AVAILABLE),
+        row("plain", "verdict date", VERDICT_DATE),
+        # A verdict, an ended state or void must not sit beside "No verdict until ..." (V-2).
+        row("plain", "NOTE", stored if decided else note if isinstance(note, str) and note else FORWARD_NOTE),
+    ]
+
+
+def _is_number(value: Any, *, whole: bool = False) -> bool:
+    kind = int if whole else (int, float)
+    return not isinstance(value, bool) and isinstance(value, kind) and math.isfinite(value)
+
+
+def _figure(value: Any, show: Callable[[Any], str], *, whole: bool = False) -> str:
+    """A stored figure as text; anything missing or of the wrong type is "not available", never zero."""
+
+    return show(value) if _is_number(value, whole=whole) else NOT_AVAILABLE
+
+
+def _money(amount: float) -> str:
+    return f"{'-' if amount < 0 else ''}${abs(amount):.2f}"
+
+
+def _forward_period(data: dict[str, Any]) -> str:
+    done = data.get("days_done")
+    try:
+        through = _parse_time(data.get("through")).astimezone(UTC).date().isoformat()
+    except ValueError:
+        return NOT_AVAILABLE
+    if not _is_number(done, whole=True):
+        return NOT_AVAILABLE
+    return f"{FORWARD_START} to {through}, {done} / {FORWARD_DAYS} days"
+
+
+def _forward_weekly(data: dict[str, Any]) -> str:
+    average, target = data.get("weekly_average"), data.get("weekly_target")
+    if not (_is_number(average) and _is_number(target)):
+        return NOT_AVAILABLE
+    return f"{_money(average)} vs ${_number(target)} target"
 
 
 def _read_json_object(path: Path) -> tuple[dict[str, Any] | None, str, os.stat_result | None]:

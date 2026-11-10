@@ -36,8 +36,8 @@ DEFAULT_PORT = 8765
 PASSWORD_ENV = "DASHBOARD_PASSWORD"
 AUTH_CHALLENGE = 'Basic realm="silvr", charset="UTF-8"'
 TAGS = {"ok": "[ OK ]", "warn": "[ WRN ]", "err": "[ ERR ]", "off": "[ OFF ]", "plain": ""}
-# DSD section 3.2: banner; readiness | evidence; risk budget; positions | alerts.
-LAYOUT: tuple[tuple[int, ...], ...] = ((0,), (1, 2), (3,), (4, 5))
+# DSD section 3.2: banner; readiness | evidence; forward test (silvr-cr-005); risk budget; positions | alerts.
+LAYOUT: tuple[tuple[int, ...], ...] = ((0,), (1, 2), (6,), (3,), (4, 5))
 # Panel number and data source shown in each panel title row (silvr-cr-004); 01 is the ladder, 07 the host.
 PANEL_META: tuple[tuple[int, str], ...] = (
     (0, ".env"),
@@ -46,6 +46,7 @@ PANEL_META: tuple[tuple[int, str], ...] = (
     (4, "risk_state"),
     (5, "paper_trades · paper_events"),
     (6, "logs/audit.jsonl"),
+    (8, "reports/trend_ensemble_forward/"),
 )
 ROW_CLASSES = {(1, 2): "row fix-first", (4, 5): "row fix-last"}
 RISK_LABELS = ("day", "daily realized pnl", "trades today", "consecutive losses", "open positions", "updated")
@@ -431,7 +432,7 @@ def _render_status_panel(index: int, panel: dict[str, Any], restraint: dict[str,
     if index == 4:
         return _render_positions(panel, restraint, number, source)
     headers = ("TIME", "STATE", "EVENT") if index == 5 else ("ITEM", "STATE", "DETAIL")
-    return _render_panel(panel, number=number, source=source, headers=headers)
+    return _render_panel(panel, note_last=index == 6, number=number, source=source, headers=headers)
 
 
 def _readout(rows: list[dict[str, str]]) -> tuple[str, list[dict[str, str]]]:
