@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -26,6 +26,7 @@ from silvr.backtest.trend_forward import (
     VerdictRefused,
     backtest_config,
     check_frozen,
+    download_new_data,
     head_commit,
     last_closed_minute,
     record_void,
@@ -34,6 +35,7 @@ from silvr.backtest.trend_forward import (
     simulate_window,
 )
 from silvr.backtest.trend_runner import REPORT_NAME, SEGMENT_NAMES, run_trend_backtest, segment_bounds
+from silvr.data.funding import FundingRate, FundingSchedule, load_funding_csv, write_funding_csv
 from silvr.risk import RiskConfig
 from silvr.strategy.trend import params
 from tests.test_trend_runner import DAYS, MINUTE, START, SYMBOLS, tiny_universe, write_data, write_month  # noqa: F401
@@ -655,3 +657,126 @@ def test_progress_report_is_refused_by_the_gate(repo: tuple[Path, str], tmp_path
     assert report is not None
     with pytest.raises(GateInputError, match="forward progress report is not a gate input"):
         evaluate_gate(report)
+
+
+# --- the monthly download ----------------------------------------------------------------------------
+
+DOWNLOAD_NOW = datetime(2026, 12, 1, 1, 0, tzinfo=UTC)
+DOWNLOAD_END = datetime(2026, 12, 1, tzinfo=UTC)
+_EIGHT_HOURS = timedelta(hours=8)
+
+
+def _funding_rates(start: datetime, stop: datetime, rate: float = 0.0001) -> list[FundingRate]:
+    rates, when = [], start
+    while when < stop:
+        rates.append(FundingRate(when, rate))
+        when += _EIGHT_HOURS
+    return rates
+
+
+class FakeAdapter:
+    """Stands in for the Binance adapter: records every call, never touches the network."""
+
+    def __init__(self, *, funding_stop: datetime = DOWNLOAD_END, fail_candles: str | None = None) -> None:
+        self.funding_stop = funding_stop
+        self.fail_candles = fail_candles
+        self.candle_calls: list[tuple[str, str, datetime, datetime]] = []
+        self.funding_calls: list[tuple[str, datetime, datetime]] = []
+
+    async def fetch_ohlcv_history(self, *, symbol: str, timeframe: str, start: datetime, end: datetime, limit: int) -> list:
+        self.candle_calls.append((symbol, timeframe, start, end))
+        if symbol == self.fail_candles:
+            raise RuntimeError("boom")
+        return []
+
+    async def fetch_funding_rates(self, *, symbol: str, start: datetime, end: datetime) -> list[FundingRate]:
+        self.funding_calls.append((symbol, start, end))
+        return _funding_rates(start, min(end, self.funding_stop), rate=0.0002)
+
+
+def _old_funding(tmp_path: Path) -> Path:
+    folder = tmp_path / "funding"
+    folder.mkdir()
+    for symbol in params.SYMBOLS:
+        write_funding_csv(folder / f"{symbol}-funding.csv", _funding_rates(ORIGINAL_FIRST, ORIGINAL_LAST, rate=0.0001))
+    return folder
+
+
+def _rate(folder: Path, symbol: str) -> float:
+    return load_funding_csv(folder / f"{symbol}-funding.csv")[0].rate
+
+
+def test_download_keeps_good_funding_when_new_is_partial(tmp_path: Path) -> None:
+    folder = _old_funding(tmp_path)
+    before = (folder / "BTCUSDT-funding.csv").read_bytes()
+    partial = datetime(2026, 6, 1, tzinfo=UTC)
+    problems = download_new_data(tmp_path, DOWNLOAD_NOW, adapter=FakeAdapter(funding_stop=partial))
+    assert (folder / "BTCUSDT-funding.csv").read_bytes() == before
+    assert len(problems) == len(params.SYMBOLS)  # every symbol got the same partial answer
+    assert all("funding" in problem for problem in problems)
+    assert not list(folder.glob("*.part"))
+
+
+def test_download_keeps_good_funding_when_one_symbol_is_partial(tmp_path: Path) -> None:
+    folder = _old_funding(tmp_path)
+
+    class OneShort(FakeAdapter):
+        async def fetch_funding_rates(self, *, symbol: str, start: datetime, end: datetime) -> list[FundingRate]:
+            stop = datetime(2026, 6, 1, tzinfo=UTC) if symbol == "DOTUSDT" else end
+            return _funding_rates(start, stop, rate=0.0002)
+
+    problems = download_new_data(tmp_path, DOWNLOAD_NOW, adapter=OneShort())
+    assert len(problems) == 1 and "DOTUSDT" in problems[0]
+    assert _rate(folder, "DOTUSDT") == 0.0001
+    assert _rate(folder, "BTCUSDT") == 0.0002
+
+
+def test_download_replaces_funding_when_new_covers(tmp_path: Path) -> None:
+    folder = _old_funding(tmp_path)
+    adapter = FakeAdapter()
+    assert download_new_data(tmp_path, DOWNLOAD_NOW, adapter=adapter) == []
+    for symbol in params.SYMBOLS:
+        new = load_funding_csv(folder / f"{symbol}-funding.csv")
+        assert new[0].rate == 0.0002
+        FundingSchedule(new).check_coverage(ORIGINAL_FIRST, DOWNLOAD_END - timedelta(minutes=1))
+    assert not list(folder.glob("*.part"))
+    assert {call[1:] for call in adapter.funding_calls} == {(ORIGINAL_FIRST, DOWNLOAD_END)}
+
+
+def test_download_creates_funding_when_there_is_no_old_file(tmp_path: Path) -> None:
+    assert download_new_data(tmp_path, DOWNLOAD_NOW, adapter=FakeAdapter()) == []
+    assert (tmp_path / "funding" / "BTCUSDT-funding.csv").exists()
+
+
+def test_download_symbol_failure_is_a_problem_not_a_crash(tmp_path: Path) -> None:
+    adapter = FakeAdapter(fail_candles="ETHUSDT")
+    problems = download_new_data(tmp_path, DOWNLOAD_NOW, adapter=adapter)
+    assert len(problems) == 1 and "ETHUSDT" in problems[0]
+    assert list(dict.fromkeys(call[0] for call in adapter.candle_calls)) == list(params.SYMBOLS)
+    assert len(adapter.funding_calls) == len(params.SYMBOLS)
+
+
+def test_download_asks_for_candles_from_october_with_the_given_end(tmp_path: Path) -> None:
+    adapter = FakeAdapter()
+    download_new_data(tmp_path, DOWNLOAD_NOW, adapter=adapter)
+    btc = [call for call in adapter.candle_calls if call[0] == "BTCUSDT"]
+    assert btc[0] == ("BTCUSDT", "1m", datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC))
+    assert btc[-1][3] == DOWNLOAD_END
+    assert (tmp_path / "candles" / "BTCUSDT").is_dir()
+
+
+@pytest.mark.parametrize(
+    ("now", "end"),
+    [
+        (datetime(2026, 12, 1, 1, 0, tzinfo=UTC), datetime(2026, 12, 1, tzinfo=UTC)),
+        (datetime(2027, 11, 10, 23, 59, 30, tzinfo=UTC), datetime(2027, 11, 1, tzinfo=UTC)),
+        (datetime(2027, 11, 11, 0, 0, tzinfo=UTC), datetime(2027, 11, 11, 0, 0, tzinfo=UTC)),
+        (datetime(2027, 12, 5, tzinfo=UTC), datetime(2027, 11, 11, 0, 0, tzinfo=UTC)),
+        (datetime(2026, 12, 1, 7, 30, tzinfo=timezone(timedelta(hours=8))), datetime(2026, 11, 1, tzinfo=UTC)),  # 23:30 UTC on 11-30
+    ],
+)
+def test_download_end_is_the_month_start_until_the_window_closes(tmp_path: Path, now: datetime, end: datetime) -> None:
+    adapter = FakeAdapter(funding_stop=end)
+    download_new_data(tmp_path, now, adapter=adapter)
+    assert max(call[3] for call in adapter.candle_calls) == end
+    assert {call[2] for call in adapter.funding_calls} == {end}

@@ -8,10 +8,13 @@ run_verdict, called once by run_progress when the window has closed, runs the ga
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import subprocess
+import tempfile
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +34,9 @@ from silvr.backtest.trend_runner import (
     segment_bounds,
     success_standard,
 )
+from silvr.data.download import download, download_funding
 from silvr.data.funding import FundingDataError, FundingSchedule, load_funding_csv
+from silvr.exchange.binance_futures import BinanceFuturesAdapter
 from silvr.risk import RiskConfig
 from silvr.strategy.trend import params
 
@@ -115,6 +120,62 @@ def last_closed_minute(now: datetime) -> datetime:
         return FORWARD_END
     first_of_month = now.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return min(first_of_month - _MINUTE, FORWARD_END)
+
+
+def _download_end(now: datetime) -> datetime:
+    """Exclusive end of a download: the first instant of `now`'s UTC month, or one minute past FORWARD_END once the window has closed."""
+    now = now.astimezone(UTC)
+    if now >= FORWARD_END + _MINUTE:
+        return FORWARD_END + _MINUTE
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+async def _download_all(
+    data_root: Path, end: datetime, adapter: BinanceFuturesAdapter, scratch: Path, problems: list[str]
+) -> None:
+    for symbol in params.SYMBOLS:
+        try:
+            await download(
+                symbol=symbol,
+                timeframe="1m",
+                start=date(2026, 10, 1),
+                end=end,
+                out_dir=data_root / "candles" / symbol,
+                adapter=adapter,
+            )
+        except Exception as exc:  # a failed symbol is a problem to report, not a reason to skip the rest
+            problems.append(f"{symbol}: candle download failed: {exc}")
+        try:
+            new = await download_funding(
+                symbol=symbol, start=ORIGINAL_FIRST.date(), end=end, out_dir=scratch, adapter=adapter
+            )
+            if new is None:
+                problems.append(f"{symbol}: funding download returned no rates; kept the old file")
+                continue
+            FundingSchedule(load_funding_csv(new)).check_coverage(ORIGINAL_FIRST, end - _MINUTE)
+            target = data_root / "funding" / new.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(new, target)
+        except Exception as exc:  # includes FundingDataError: the new file is partial, the old one stays
+            problems.append(f"{symbol}: funding not replaced, kept the old file: {exc}")
+
+
+def download_new_data(data_root: Path, now: datetime, *, adapter: BinanceFuturesAdapter | None = None) -> list[str]:
+    """Download the 1m candles from 2026-10-01 and the funding rates from ORIGINAL_FIRST up to the download end.
+
+    The end is the first instant of `now`'s UTC month, or, once the window has closed, one minute past
+    FORWARD_END. Candles go straight into `data_root/candles/<symbol>` (download skips complete months and
+    writes each file atomically). Funding goes to a temporary folder first and replaces the real file only
+    when it covers ORIGINAL_FIRST to the last minute before the end, so a partial answer never overwrites a
+    good file. Returns one plain problem per failure; a failed symbol never stops the others.
+    """
+    problems: list[str] = []
+    end = _download_end(now)
+    # The adapter closes its own client after every request, so there is nothing to close here.
+    adapter = adapter or BinanceFuturesAdapter()
+    with tempfile.TemporaryDirectory() as scratch:
+        asyncio.run(_download_all(data_root, end, adapter, Path(scratch), problems))
+    return problems
 
 
 def backtest_config() -> BacktestConfig:
