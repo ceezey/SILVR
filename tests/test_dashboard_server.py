@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.config import AppConfig
-from silver_bot.monitoring.dashboard_server import (
+from silvr.config import AppConfig
+from silvr.monitoring.dashboard_server import (
     BIND_HOST,
     SECURITY_HEADERS,
     DashboardServer,
@@ -21,7 +21,7 @@ from silver_bot.monitoring.dashboard_server import (
     main,
     render_page,
 )
-from silver_bot.monitoring.status import PANEL_TITLES, collect_status
+from silvr.monitoring.status import PANEL_TITLES, collect_status
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
 SECRETS = {
@@ -47,10 +47,16 @@ def page_for(root: Path, config: AppConfig | None = None) -> str:
     return render_page(collect_status(root, load=lambda: chosen, now=NOW))
 
 
+def ttl(title: str) -> str:
+    """The title span of a panel title row (silvr-cr-004 replaced the table <caption>)."""
+
+    return f'<span class="ttl">{html.escape(title)}</span>'
+
+
 def test_page_shows_six_panels_in_layout_order_with_banner_first(tmp_path):
     page = page_for(tmp_path)
 
-    positions = [page.index(f"<caption>{title.replace('&', '&amp;')}</caption>") for title in PANEL_TITLES]
+    positions = [page.index(ttl(title)) for title in PANEL_TITLES]
     assert positions == sorted(positions)
     banner = page.index('class="row banner"')
     ladder = page.index('class="ladder"')
@@ -101,12 +107,11 @@ def test_title_header_and_mark(tmp_path):
     assert "Silverbot" not in page
     assert "xmlns" not in page
     assert "status &middot; read-only</span>" in header
-    assert "127.0.0.1" not in header
     assert "<a " not in header and "<button" not in header
 
 
 def css_rule(selector: str) -> str:
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     found = re.search(r"(?:^|[}\n])" + re.escape(selector) + r"\{([^}]*)\}", CSS)
     assert found, f"no CSS rule for {selector}"
@@ -124,7 +129,7 @@ def test_navbar_is_a_sticky_full_width_bar_outside_main(tmp_path):
 
 
 def test_content_spans_the_window_with_gutters():
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     assert "max-width:120ch" not in CSS
     assert "padding:16px 24px 0" in css_rule("main")
@@ -136,18 +141,19 @@ def test_mode_and_safety_is_first_and_inside_the_sidebar(tmp_path):
 
     start = page.index('<aside class="sidebar">')
     end = page.index("</aside>")
-    mode = page.index("<caption>MODE &amp; SAFETY</caption>")
+    mode = page.index(ttl("MODE & SAFETY"))
     assert start < mode < end
-    assert page.count("<caption>") == 6
-    assert page[start:end].count("<caption>") == 1
+    # Panels 00 to 07: eight title rows, two (00 MODE & SAFETY and 07 HOST) in the sidebar.
+    assert page.count('class="ttl"') == 8
+    assert page[start:end].count('class="ttl"') == 2
     assert end < page.index('class="ladder"') < page.index('class="next-strip"')
     for title in PANEL_TITLES[1:]:
-        other = page.index(f"<caption>{title.replace('&', '&amp;')}</caption>")
+        other = page.index(ttl(title))
         assert mode < other and end < other
 
 
 def test_sidebar_is_sticky_below_the_navbar_on_wide_screens():
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     rule = css_rule(".sidebar")
 
@@ -161,7 +167,7 @@ def test_sidebar_is_sticky_below_the_navbar_on_wide_screens():
 
 
 def test_wide_sidebar_fills_the_height_below_the_navbar():
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     rule = css_rule(".sidebar")
     wide = CSS[CSS.index("@media (min-width:1280px)") : CSS.index("@media (max-width:1279px)")].replace("\n", "")
@@ -170,8 +176,9 @@ def test_wide_sidebar_fills_the_height_below_the_navbar():
     assert "height:calc(100vh - 80px)" in rule and "max-height" not in rule
     assert "overflow-y:auto" in rule
     assert "display:flex" in rule and "flex-direction:column" in rule
-    assert ".sidebar .row{flex:1 1 auto;flex-direction:column" in wide
-    assert ".sidebar section{flex:1 1 auto;display:flex;flex-direction:column}" in wide
+    # silvr-cr-004 V-8: the panels hug their content so 07 HOST and the tagline sit right below 00.
+    assert ".sidebar .row{flex:0 0 auto;flex-direction:column" in wide
+    assert ".sidebar section{flex:0 0 auto;display:flex;flex-direction:column}" in wide
     assert "height:" not in narrow and "display:flex" not in narrow
 
 
@@ -191,7 +198,7 @@ def test_note_is_a_paragraph_after_the_banner_table_inside_the_sidebar(tmp_path)
 
 
 def test_only_the_banner_panel_gets_the_separate_note():
-    from silver_bot.monitoring.dashboard_server import _render_panel
+    from silvr.monitoring.dashboard_server import _render_panel
 
     panel = {
         "title": "OTHER",
@@ -212,7 +219,7 @@ def test_note_sits_at_the_bottom_of_the_flex_column():
 
 
 def test_root_block_holds_exactly_the_ten_tokens():
-    from silver_bot.monitoring.dashboard_server import CSS
+    from silvr.monitoring.dashboard_server import CSS
 
     block = CSS[CSS.index(":root{") + 6 : CSS.index("}", CSS.index(":root{"))]
     tokens = dict(item.split(":", 1) for item in block.replace("\n", "").split(";") if item.strip())
@@ -223,7 +230,7 @@ def test_root_block_holds_exactly_the_ten_tokens():
 
 
 def test_pages_carry_no_url(tmp_path):
-    from silver_bot.monitoring.dashboard_server import render_not_found
+    from silvr.monitoring.dashboard_server import render_not_found
 
     for page in (page_for(tmp_path), render_not_found()):
         assert "http:" not in page and "https:" not in page
@@ -240,7 +247,10 @@ def test_ladder_with_todays_data_shows_backtest_next(tmp_path):
     first = page[page.index('<li class="step next">') :]
     assert "Backtest" in first[:200] and '<span class="err">[ ERR ]</span>' in first[:300]
     assert "0 B" in first[:300] and "<strong>NEXT</strong>" in first[:300]
-    assert '<p class="next-strip">Next: run a backtest (runbook-backtest.md steps 5 and 6)</p>' in page
+    assert (
+        '<p class="next-strip"><span class="label">NEXT ▸</span> '
+        "run a backtest (runbook-backtest.md steps 5 and 6)</p>"
+    ) in page
     assert "READY · stale" in page
     assert "blocked (PRD-F12)" in page
 
@@ -432,7 +442,7 @@ def test_get_root_returns_page_with_security_headers(server):
     assert response.getheader("X-Content-Type-Options") == "nosniff"
     assert response.getheader("Cache-Control") == "no-store"
     assert response.getheader("Referrer-Policy") == "no-referrer"
-    assert "<caption>MODE &amp; SAFETY</caption>" in body
+    assert ttl("MODE & SAFETY") in body
 
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
@@ -618,8 +628,8 @@ def test_unauthenticated_get_gets_401_with_challenge_and_security_headers(gated)
         response, body = call(gated, path=path)
 
         assert response.status == 401
-        assert response.getheader("WWW-Authenticate") == 'Basic realm="silverbot", charset="UTF-8"'
-        assert "caption" not in body and "generated" not in body
+        assert response.getheader("WWW-Authenticate") == 'Basic realm="silvr", charset="UTF-8"'
+        assert 'class="ttl"' not in body and "generated" not in body
         for name, value in SECURITY_HEADERS.items():
             assert response.getheader(name) == value
             assert len(response.msg.get_all(name)) == 1
@@ -652,7 +662,7 @@ def test_correct_password_gets_the_page_with_any_user_name(gated):
         response, body = call(gated, auth=basic("pw", user=user))
 
         assert response.status == 200
-        assert "<caption>MODE &amp; SAFETY</caption>" in body
+        assert ttl("MODE & SAFETY") in body
         assert response.getheader("Content-Security-Policy") == SECURITY_HEADERS["Content-Security-Policy"]
 
 
@@ -737,3 +747,388 @@ def test_main_startup_line_names_the_directory(monkeypatch, capsys, tmp_path):
     assert main(["--port", "0"]) == 0
 
     assert f"reading {Path.cwd()};" in capsys.readouterr().out
+
+
+# ---- silvr-cr-004: mission control ---------------------------------------------------------------
+
+STEP_STEMS = ("backtest_report", "out_of_sample_validation_report", "paper_trading_report")
+STEP_NAMES = ("Backtest", "Out-of-sample", "Paper", "Demo")
+
+
+def status_for(root: Path) -> dict:
+    config = make_config(root)
+    return collect_status(root, load=lambda: config, now=NOW)
+
+
+def clear_gates(root: Path, count: int) -> None:
+    """Make the first ``count`` of the four evidence gates [ OK ], in ladder order."""
+
+    old = (NOW - timedelta(hours=40)).timestamp()
+    for stem in STEP_STEMS[: min(count, 3)]:
+        write_report(root, stem, "{}", old)
+    if count == 4:
+        fresh = {"ready": True, "generated_at": (NOW - timedelta(hours=1)).isoformat(), "checks": []}
+        write_report(root, "demo_readiness_report", json.dumps(fresh), old)
+
+
+def rail_kinds(page: str) -> list[str]:
+    rail = re.search(r'<div class="rail" aria-hidden="true">(.*?)</div>', page).group(1)
+    return re.findall(r'<span class="(s-[a-z]+)"></span>', rail)
+
+
+@pytest.mark.parametrize("count", [0, 1, 2, 3, 4])
+def test_gates_clear_count_line_and_rail(tmp_path, count):
+    clear_gates(tmp_path, count)
+
+    page = render_page(status_for(tmp_path))
+
+    assert f'<span class="big">{count}</span><span class="denom"> / 4</span>' in page
+    assert '<span class="label muted">EVIDENCE GATES CLEAR</span>' in page
+    if count == 4:
+        line = "All evidence gates pass. Live trading stays blocked (PRD-F12)."
+    else:
+        line = f"{count} of 4 evidence gates clear. Next gate: {STEP_NAMES[count]}."
+    assert f'<span class="label muted">STATUS</span><p>{line}</p>' in page
+    expected = ["s-ok"] * count + (["s-next"] if count < 4 else []) + ["s-todo"] * (3 - count) + ["s-live"]
+    assert rail_kinds(page) == expected
+    assert "LIVE &middot; blocked (PRD-F12)" in page
+
+
+def test_live_is_never_counted_or_filled_whatever_a_report_says(tmp_path):
+    live = {"ready": True, "generated_at": (NOW - timedelta(hours=1)).isoformat(), "checks": []}
+    write_report(tmp_path, "live_readiness_report", json.dumps(live))
+    status = status_for(tmp_path)
+
+    page = render_page(status)
+
+    assert '<span class="big">0</span>' in page
+    assert rail_kinds(page)[-1] == "s-live" and "s-ok" not in rail_kinds(page)
+    status["ladder"]["steps"][4]["state"] = "ok"  # even a forged ok state must not fill or count it
+    forged = render_page(status)
+    assert rail_kinds(forged)[-1] == "s-live" and '<span class="big">0</span>' in forged
+    live_card = re.search(r'<li class="step live">.*?</li>', page).group(0)
+    assert "PRD-F12 · stays closed" in live_card and "blocked (PRD-F12)" in live_card
+    clear_gates(tmp_path, 4)
+    assert '<span class="big">4</span>' in render_page(status_for(tmp_path))
+
+
+def test_rail_is_decorative_and_cards_carry_the_state(tmp_path):
+    clear_gates(tmp_path, 2)
+
+    page = render_page(status_for(tmp_path))
+
+    assert page.count('aria-hidden="true"') == 1
+    assert '<div class="rail" aria-hidden="true">' in page
+    cards = re.findall(r'<li class="step[^"]*">.*?</li>', page)
+    assert len(cards) == 5
+    for index, card in enumerate(cards):
+        assert f'<span class="idx">{index + 1:02d}</span>' in card
+        assert re.search(r"\[ (OK|WRN|ERR|OFF) \]", card)
+    assert '<span class="ok">[ OK ]</span>' in cards[0]
+    assert "<strong>NEXT</strong>" in cards[2] and cards[2].startswith('<li class="step next">')
+    assert page.count("<strong>NEXT</strong>") == 1
+    assert "backtest_report" in cards[0] and "demo_readiness_report" in cards[3]
+
+
+def test_title_rows_run_00_to_07_with_mode_and_safety_first(tmp_path):
+    page = page_for(tmp_path)
+
+    titles = re.findall(r'<span class="idx">(\d\d)</span><span class="ttl">(.*?)</span>', page)
+    assert titles == [
+        ("00", "MODE &amp; SAFETY"),
+        ("07", "HOST"),
+        ("01", "EVIDENCE LADDER · MISSION TRACK"),
+        ("02", "READINESS"),
+        ("03", "EVIDENCE REPORTS"),
+        ("04", "RISK BUDGET"),
+        ("05", "POSITIONS / TRADES"),
+        ("06", "ALERTS"),
+    ]
+    sources = re.findall(r'<span class="rule"></span><span class="src">(.*?)</span>', page)
+    assert sources == [
+        ".env",
+        "loopback",
+        "reports/",
+        "*_readiness_report.json",
+        "reports/",
+        "risk_state",
+        "paper_trades · paper_events",
+        "logs/audit.jsonl",
+    ]
+
+
+def test_row_classes_give_readiness_and_alerts_their_fixed_widths(tmp_path):
+    from silvr.monitoring.dashboard_server import CSS
+
+    page = page_for(tmp_path)
+
+    assert page.count('<div class="row fix-first">') == 1 and page.count('<div class="row fix-last">') == 1
+    wide = CSS[CSS.index("@media (min-width:960px)") : CSS.index("@media (min-width:1280px)")]
+    assert ".fix-first>section:first-child{flex:0 0 400px}" in wide
+    assert ".fix-last>section:last-child{flex:0 0 440px}" in wide
+    stacked = CSS[CSS.index("@media (max-width:959px)") :]
+    assert "flex-direction:column" in stacked and "400px" not in stacked and "440px" not in stacked
+
+
+def test_navbar_telemetry_names_the_bound_host_feeds_and_utc_time(tmp_path):
+    status = status_for(tmp_path)
+
+    page = render_page(status, bind=("127.0.0.1", 8765))
+
+    header = page[page.index("<header>") : page.index("</header>")]
+    assert '<span class="label muted">HOST</span>127.0.0.1:8765' in header
+    assert "reports &middot; risk_state &middot; audit.jsonl" in header
+    assert '<span class="label muted">UTC</span>2026-10-09 12:00<' in header
+    assert "<a " not in header and "<button" not in header
+    assert "HOST</span>127.0.0.1<" in render_page(status)  # no port known: the host only
+    assert "[::1]:9" in render_page(status, bind=("::1", 9))
+
+
+def test_served_page_names_the_actual_port(server):
+    port = server.server_address[1]
+
+    _, body = call(server)
+
+    assert f'<span class="label muted">HOST</span>127.0.0.1:{port}' in body
+    assert "<td>127.0.0.1 only</td>" in body
+
+
+def test_host_panel_rows_and_non_loopback_bind(tmp_path):
+    status = status_for(tmp_path)
+
+    page = render_page(status, bind=("127.0.0.1", 1))
+    host = page[page.index('<section class="host">') : page.index("</section>", page.index('<section class="host">'))]
+
+    for key, value in (
+        ("BIND", "127.0.0.1 only"),
+        ("ROOT", html.escape(str(tmp_path))),
+        ("READ", "2026-10-09 12:00 UTC"),
+        ("REFRESH", "reload the page"),
+    ):
+        assert f'<th scope="row">{key}</th><td>{value}</td>' in host
+    hosted = render_page(status, bind=("0.0.0.0", 80))
+    assert "<td>0.0.0.0</td>" in hosted and "0.0.0.0 only" not in hosted
+    assert '<span class="src">bound host</span>' in hosted
+
+
+def test_sidebar_holds_mode_readout_host_and_tagline(tmp_path):
+    page = page_for(tmp_path)
+    sidebar = page[page.index('<aside class="sidebar">') : page.index("</aside>")]
+
+    assert '<span class="label muted">OPERATING MODE</span><span class="mode">PAPER</span>' in sidebar
+    assert '<span class="muted">Simulated fills only. No real order exists.</span>' in sidebar
+    assert '<th scope="row">MODE</th>' not in sidebar  # the readout replaces the table row
+    for key in ("LIVE", "PAPER", "DEMO", "KILL"):
+        assert f'<th scope="row">{key}</th>' in sidebar
+    assert sidebar.index("OPERATING MODE") < sidebar.index('<th scope="row">LIVE</th>') < sidebar.index("HOST")
+    assert '<p class="name">Discipline over id.</p>' in sidebar
+    assert '<p class="line">Rules, not impulse, decide every trade.</p>' in sidebar
+    assert sidebar.index("Discipline over id.") > sidebar.index("REFRESH")
+
+
+def test_simulated_line_only_in_paper_mode(tmp_path):
+    status = status_for(tmp_path)
+    status["panels"][0]["rows"][0]["text"] = "DEMO"
+
+    page = render_page(status)
+
+    assert '<span class="mode">DEMO</span>' in page
+    assert "Simulated fills only" not in page
+
+
+def test_invalid_config_shows_no_mode_readout(tmp_path):
+    from silvr.config import ConfigError
+
+    def reject() -> AppConfig:
+        raise ConfigError("bad")
+
+    page = render_page(collect_status(tmp_path, load=reject, now=NOW))
+
+    assert "OPERATING MODE" not in page and 'class="mode"' not in page
+    assert "config invalid: bad" in page
+
+
+def restraint_page(tmp_path, restraint: dict) -> str:
+    status = status_for(tmp_path)
+    status["restraint"] = restraint
+    return render_page(status)
+
+
+def test_restraint_strip_shows_count_reason_and_status_cell(tmp_path):
+    text = "Risk engine held 3 setups today. Reason: Max daily loss limit reached."
+
+    page = restraint_page(tmp_path, {"state": "ok", "count": 3, "text": text})
+
+    assert '<span class="label muted">RESTRAINT</span><span><span class="ok">[ OK ]</span> held</span>' in page
+    assert f"<span>{text}</span>" in page
+    assert page.index('class="restraint"') > page.index(ttl("POSITIONS / TRADES"))
+
+
+def test_restraint_strip_empty_and_unavailable_states(tmp_path):
+    empty = restraint_page(tmp_path, {"state": "ok", "count": 0, "text": "No setups held today."})
+    assert "<span>No setups held today.</span>" in empty and "[ OK ]</span> held" in empty
+
+    off = restraint_page(tmp_path, {"state": "off", "count": None, "text": "not available: no database configured (G-3)"})
+    assert '<span><span class="off">[ OFF ]</span></span><span>not available: no database configured (G-3)</span>' in off
+    assert "held</span>" not in off.split('class="restraint"', 1)[1].split("</div>", 1)[0]
+
+
+def test_default_page_without_database_shows_restraint_unavailable(tmp_path):
+    page = page_for(tmp_path)
+
+    assert "not available: no database configured (G-3)" in page
+
+
+def test_restraint_text_is_escaped(tmp_path):
+    page = restraint_page(tmp_path, {"state": "ok", "count": 1, "text": "<b>x</b> & y"})
+
+    assert "<b>x</b>" not in page and "&lt;b&gt;x&lt;/b&gt; &amp; y" in page
+
+
+def positions_page(tmp_path, rows: list[dict]) -> str:
+    status = status_for(tmp_path)
+    status["panels"][4]["rows"] = rows
+    return render_page(status)
+
+
+def test_events_render_as_log_rows_with_sim_tag_and_muted_event_type(tmp_path):
+    rows = [
+        {"state": "plain", "label": "open positions", "text": "1"},
+        {"state": "plain", "label": "SIM 2026-10-09 10:30 UTC", "text": "BTCUSDT long 60000 to 60300, pnl 3.00, take_profit", "event": "closed trade"},
+        {
+            "state": "plain",
+            "label": "SIM 2026-10-09 10:00 UTC",
+            "text": "Risk engine held. Setup declined: Max daily loss limit reached.",
+            "event": "risk_rejected",
+        },
+        {"state": "plain", "label": "SIM 2026-10-09 09:00 UTC", "text": "<i>x</i>", "event": "paper_trade_opened"},
+    ]
+
+    page = positions_page(tmp_path, rows)
+
+    assert '<th scope="row">open positions</th><td class="plain"></td><td>1</td>' in page
+    assert (
+        '<li><span class="ts">2026-10-09 10:00 UTC</span><span class="sim">SIM</span>'
+        '<span class="text"><span class="ev">risk_rejected</span> '
+        "Risk engine held. Setup declined: Max daily loss limit reached.</span></li>"
+    ) in page
+    assert '<span class="ev">closed trade</span> BTCUSDT long 60000 to 60300' in page
+    assert page.count('<span class="sim">SIM</span>') == 3
+    assert "<i>x</i>" not in page and "&lt;i&gt;x&lt;/i&gt;" in page
+    assert page.index("open positions") < page.index('<ul class="log">')
+
+
+def test_positions_empty_state_has_no_log_list(tmp_path):
+    page = page_for(tmp_path)
+
+    assert "none recorded (no paper run, G-3)" in page
+    assert '<ul class="log">' not in page
+
+
+def risk_rows(day_state: str = "plain", day_text: str = "2026-10-09") -> list[dict]:
+    return [
+        {"state": day_state, "label": "day", "text": day_text},
+        {"state": "plain", "label": "daily realized pnl", "text": "-12.50"},
+        {"state": "plain", "label": "trades today", "text": "3"},
+        {"state": "plain", "label": "consecutive losses", "text": "2"},
+        {"state": "plain", "label": "open positions", "text": "1"},
+        {"state": "plain", "label": "updated", "text": "2026-10-09 11:59 UTC"},
+        {"state": "plain", "label": "max daily loss", "text": "0.02 of equity"},
+        {"state": "plain", "label": "max risk per trade", "text": "0.005 of equity"},
+    ]
+
+
+def risk_page(tmp_path, rows: list[dict]) -> str:
+    status = status_for(tmp_path)
+    status["panels"][3]["rows"] = rows
+    return render_page(status)
+
+
+def test_risk_budget_is_one_cluster_of_six_readouts_with_limits_below(tmp_path):
+    page = risk_page(tmp_path, risk_rows())
+
+    cluster = page[page.index('<div class="cluster">') : page.index('<div class="limits">')]
+    labels = re.findall(r'<span class="label muted">(.*?)</span><span class="val">(.*?)</span>', cluster)
+    assert labels == [
+        ("day", "2026-10-09"),
+        ("daily realized pnl", "-12.50"),
+        ("trades today", "3"),
+        ("consecutive losses", "2"),
+        ("open positions", "1"),
+        ("updated", "2026-10-09 11:59 UTC"),
+    ]
+    assert cluster.count('<div class="cell">') == 6
+    for state in ("ok", "warn", "err"):
+        assert f'class="{state}"' not in cluster  # pnl is never coloured as a score
+    limits = page[page.index('<div class="limits">') :].split("</div>", 1)[0]
+    assert "LIMITS" in limits and "max daily loss 0.02 of equity" in limits
+    assert "max risk per trade 0.005 of equity" in limits
+    assert "<table" not in page[page.index(ttl("RISK BUDGET")) : page.index('<div class="limits">')]
+
+
+def test_stale_risk_day_keeps_its_glyph_and_word_in_the_cell(tmp_path):
+    page = risk_page(tmp_path, risk_rows("warn", "2026-10-08; stale: not today (2026-10-09 UTC)"))
+
+    assert '<span class="val">2026-10-08</span>' in page
+    assert '<span class="warn">[ WRN ]</span> stale: not today (2026-10-09 UTC)' in page
+
+
+def test_risk_unavailable_state_replaces_the_cluster(tmp_path):
+    page = page_for(tmp_path)
+
+    assert 'class="cluster"' not in page and 'class="limits"' not in page
+    assert '<td class="off">[ OFF ]</td><td>not available: risk_state empty, no running bot (G-3)</td>' in page
+
+
+def test_pages_have_no_external_reference_or_script(tmp_path):
+    from silvr.monitoring.dashboard_server import CSS
+
+    page = page_for(tmp_path)
+
+    for needle in ("http", "//", "<script", "<link", "<img", "@import", "<iframe", "<form", "<button"):
+        assert needle not in page.replace("</", "")  # closing tags carry "/", never "//"
+    assert re.findall(r'url\("([^"]+)"\)', CSS) == list(FONT_SHA256)
+
+
+def test_css_grid_brackets_and_type_sizes_follow_the_record():
+    from silvr.monitoring.dashboard_server import CSS
+
+    assert "linear-gradient(to right,rgba(42,47,56,.18) 1px,transparent 1px)" in CSS
+    assert "linear-gradient(to bottom,rgba(42,47,56,.18) 1px,transparent 1px)" in CSS
+    assert "background-size:48px 48px" in CSS
+    section = css_rule("section")
+    assert "background:var(--surface)" in section and "border:1px solid var(--border)" in section
+    assert "border-radius:4px" in section and "padding:16px" in section
+    brackets = css_rule("section::before")
+    assert brackets.count("linear-gradient(var(--muted),var(--muted))") == 8
+    assert "10px 1.5px" in brackets and "1.5px 10px" in brackets
+    sizes = {int(size) for size in re.findall(r"font-size:(\d+)px", CSS)}
+    assert sizes <= {10, 11, 12, 14, 22, 32, 40}
+    assert {10, 11, 22, 40} <= sizes
+    for forbidden in ("transition", "animation", "@keyframes", "box-shadow", "blur(", "radial-gradient", "backdrop"):
+        assert forbidden not in CSS
+    assert css_rule(".mode").count("font-size:40px") == 1 and css_rule(".big").count("font-size:40px") == 1
+
+
+def test_stacked_layout_keeps_the_cr_003_rules_and_shrinks_the_readouts():
+    from silvr.monitoring.dashboard_server import CSS
+
+    narrow = CSS[CSS.index("@media (max-width:1279px)") : CSS.index("@media (max-width:959px)")].replace("\n", "")
+    stacked = CSS[CSS.index("@media (max-width:959px)") : CSS.index("@media (max-width:639px)")].replace("\n", "")
+
+    assert ".sidebar{position:sticky;top:48px;z-index:2;background:var(--canvas)}" in narrow
+    assert "height:" not in narrow  # the pinned strip keeps its natural height
+    assert ".row{flex-direction:column}section{flex:1 1 auto;width:100%}" in stacked
+    assert ".big,.mode{font-size:32px}" in stacked
+
+
+def test_new_markup_never_adds_a_control_or_state_changing_route(server):
+    port = server.server_address[1]
+    response, body = call(server)
+
+    assert response.status == 200
+    assert "<form" not in body and "<input" not in body and "<button" not in body and "<a " not in body
+    assert call(server, "POST")[0].status == 405
+    assert call(server, path="/mission")[0].status == 404
+    assert response.getheader("Content-Security-Policy") == SECURITY_HEADERS["Content-Security-Policy"]
+    assert f":{port}" in body

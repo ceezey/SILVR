@@ -6,8 +6,8 @@ from pathlib import Path
 import psycopg
 
 from conftest import execute
-from silver_bot.config import AppConfig, ConfigError
-from silver_bot.monitoring.status import (
+from silvr.config import AppConfig, ConfigError
+from silvr.monitoring.status import (
     AUDIT_EVENTS,
     AUDIT_TAIL_BYTES,
     EVIDENCE_REPORTS,
@@ -15,7 +15,7 @@ from silver_bot.monitoring.status import (
     _read_json_object,
     collect_status,
 )
-from silver_bot.storage import PostgresStorage
+from silvr.storage import PostgresStorage
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
 BANNER, READINESS, EVIDENCE, RISK, POSITIONS, ALERTS = range(6)
@@ -340,11 +340,11 @@ def test_ladder_live_is_blocked_even_when_live_report_says_ready(tmp_path):
 
 
 def test_next_is_first_non_ok_step_with_exact_strip_text(tmp_path):
-    from silver_bot.monitoring.status import ALL_GATES_PASS, NEXT_TEXT
+    from silvr.monitoring.status import ALL_GATES_PASS, NEXT_TEXT
 
     backtest = "Next: run a backtest (runbook-backtest.md steps 5 and 6)"
     paper = "Next: paper trading (not available yet, G-3)"
-    demo = "Next: refresh demo readiness  python -m silver_bot.demo_readiness (runbook-demo-testnet.md steps 3 and 4)"
+    demo = "Next: refresh demo readiness  python -m silvr.demo_readiness (runbook-demo-testnet.md steps 3 and 4)"
     assert NEXT_TEXT == (backtest, backtest, paper, demo)
     assert ALL_GATES_PASS == "All evidence gates pass. Live trading stays blocked (PRD-F12)."
 
@@ -468,7 +468,7 @@ def test_database_panels_empty_when_tables_missing(tmp_path, database_url):
 
 
 def test_unreachable_database_degrades_only_its_panels(tmp_path, fast_connect_timeout):
-    status = collect_db(tmp_path, "postgresql://bot:pw@127.0.0.1:1/silverbot?connect_timeout=2")
+    status = collect_db(tmp_path, "postgresql://bot:pw@127.0.0.1:1/silvr?connect_timeout=2")
 
     assert rows(status, RISK)[0]["label"] == "unreadable"
     assert rows(status, POSITIONS)[0]["label"] == "unreadable"
@@ -508,7 +508,10 @@ def test_positions_lists_simulated_trades_and_events(tmp_path, database_url):
     assert result[0] == {"state": "plain", "label": "open positions", "text": "1"}
     assert result[1]["label"].startswith("SIM ")
     assert result[1]["text"] == "BTCUSDT long 60000 to 60300, pnl 3.00, take_profit"
-    assert result[2]["text"] == "paper_trade_opened: opened"
+    # silvr-cr-004 V-6: the event type moved out of the text into its own key (shown muted before it).
+    assert result[2]["text"] == "opened"
+    assert result[2]["event"] == "paper_trade_opened"
+    assert result[1]["event"] == "closed trade"
 
 
 def test_collecting_writes_nothing_to_the_database(tmp_path, database_url):
@@ -601,3 +604,218 @@ def test_risk_panel_reads_committed_row_while_a_writer_transaction_is_open(tmp_p
 
         assert risk["trades today"]["text"] == "3"
         assert risk["daily realized pnl"]["text"] == "-12.50"
+
+
+# ---- silvr-cr-004: gates clear, restraint, V-6 wording -----------------------------------------
+
+
+def clear_gates(root: Path, count: int) -> None:
+    for stem in STEP_STEMS[: min(count, 3)]:
+        write_report(root, stem, "{}", mtime=old_mtime())
+    if count == 4:
+        fresh_demo(root)
+
+
+def test_gates_clear_counts_ok_steps_one_to_four(tmp_path):
+    for count in range(5):
+        clear_gates(tmp_path, count)
+        ladder = collect(tmp_path)["ladder"]
+        assert ladder["gates_clear"] == count
+        assert [step["state"] == "ok" for step in ladder["steps"][:4]].count(True) == count
+
+
+def test_gates_clear_does_not_count_a_stale_demo_or_live(tmp_path):
+    clear_gates(tmp_path, 3)
+    fresh_demo(tmp_path, hours=25)  # READY but stale: [ WRN ], not clear
+    write_report(tmp_path, "live_readiness_report", readiness(True, (NOW - timedelta(hours=1)).isoformat()))
+
+    ladder = collect(tmp_path)["ladder"]
+
+    assert ladder["steps"][3]["state"] == "warn" and ladder["gates_clear"] == 3
+    assert ladder["steps"][4] == {"state": "off", "label": "Live", "text": "blocked (PRD-F12)"}
+    fresh_demo(tmp_path)
+    assert collect(tmp_path)["ladder"]["gates_clear"] == 4  # never 5, whatever the live report says
+
+
+def test_gates_clear_counts_only_non_empty_json_objects(tmp_path):
+    write_report(tmp_path, STEP_STEMS[0], b"", mtime=old_mtime())
+    write_report(tmp_path, STEP_STEMS[1], "not json", mtime=old_mtime())
+    write_report(tmp_path, STEP_STEMS[2], "[1]", mtime=old_mtime())
+
+    assert collect(tmp_path)["ladder"]["gates_clear"] == 0
+
+
+def insert_event(database_url: str, event_type: str, timestamp: str, message: str = "m") -> None:
+    execute(
+        database_url,
+        "INSERT INTO paper_events (event_type, symbol, timestamp, message, context_json) "
+        "VALUES (%s, 'BTCUSDT', %s, %s, '{}')",
+        (event_type, timestamp, message),
+    )
+
+
+def restraint(status: dict) -> dict:
+    return status["restraint"]
+
+
+def test_restraint_unavailable_without_database_or_with_invalid_config(tmp_path):
+    assert restraint(collect(tmp_path)) == {
+        "state": "off",
+        "count": None,
+        "text": "not available: no database configured (G-3)",
+    }
+
+    def reject() -> AppConfig:
+        raise ConfigError("bad")
+
+    invalid = collect_status(tmp_path, load=reject, now=NOW)
+    assert restraint(invalid) == {"state": "off", "count": None, "text": "not available: configuration invalid"}
+
+
+def test_restraint_unavailable_when_paper_events_table_is_absent(tmp_path, database_url):
+    execute(database_url, "CREATE TABLE candles (id INTEGER PRIMARY KEY)")
+
+    result = restraint(collect_db(tmp_path, database_url))
+
+    assert result["state"] == "off" and result["count"] is None
+    assert result["text"] == "not available: paper_events table absent, no paper run (G-3)"
+
+
+def test_restraint_unreachable_database_names_only_the_error_type(tmp_path, fast_connect_timeout):
+    result = restraint(collect_db(tmp_path, "postgresql://bot:pw@127.0.0.1:1/silvr?connect_timeout=2"))
+
+    assert result["state"] == "off" and result["count"] is None
+    assert result["text"].startswith("not available: restraint unreadable (")
+    assert "bot:pw" not in result["text"] and "127.0.0.1" not in result["text"]
+
+
+def test_restraint_with_no_events_says_no_setups_held(tmp_path, database_url):
+    init_db(database_url)
+
+    assert restraint(collect_db(tmp_path, database_url)) == {
+        "state": "ok",
+        "count": 0,
+        "text": "No setups held today.",
+    }
+
+
+def test_restraint_counts_only_todays_utc_risk_rejected_rows(tmp_path, database_url):
+    init_db(database_url)
+    counted = [
+        "2026-10-09T00:00:00+00:00",  # first instant of today (UTC)
+        "2026-10-09T11:59:00+00:00",
+        "2026-10-08T22:00:00-05:00",  # 2026-10-09 03:00 UTC: today although its local date is yesterday
+        "2026-10-09T08:00:00",  # naive text is read as UTC
+        "2026-10-09T13:00:00+02:00",  # 2026-10-09 11:00 UTC
+    ]
+    ignored = [
+        "2026-10-08T23:59:59+00:00",  # yesterday
+        "2026-10-09T01:00:00+02:00",  # 2026-10-08 23:00 UTC: today locally, yesterday in UTC
+        "2026-10-10T00:00:00+00:00",  # tomorrow
+        "2026-10-01T10:00:00+00:00",
+        "not a time",
+    ]
+    for timestamp in counted + ignored:
+        insert_event(database_url, "risk_rejected", timestamp)
+    insert_event(database_url, "signal_detected", "2026-10-09T10:00:00+00:00")
+    insert_event(database_url, "signal_rejected", "2026-10-09T10:00:00+00:00")
+    insert_event(database_url, "paper_trade_opened", "2026-10-09T10:00:00+00:00")
+
+    result = restraint(collect_db(tmp_path, database_url))
+
+    assert result["state"] == "ok" and result["count"] == len(counted)
+    assert result["text"].startswith("Risk engine held 5 setups today.")
+
+
+def test_restraint_only_old_rows_means_no_setups_held_today(tmp_path, database_url):
+    init_db(database_url)
+    insert_event(database_url, "risk_rejected", "2026-10-08T23:59:00+00:00", "Risk rejected: old")
+
+    assert restraint(collect_db(tmp_path, database_url))["text"] == "No setups held today."
+
+
+def test_restraint_count_is_not_capped_by_the_recent_rows_limit(tmp_path, database_url):
+    from silvr.monitoring.status import RECENT_ROWS
+
+    init_db(database_url)
+    total = RECENT_ROWS * 3 + 1
+    for minute in range(total):
+        insert_event(database_url, "risk_rejected", f"2026-10-09T10:{minute % 60:02d}:00+00:00")
+
+    result = restraint(collect_db(tmp_path, database_url))
+
+    assert result["count"] == total
+    assert f"held {total} setups today" in result["text"]
+
+
+def test_restraint_latest_reason_is_the_newest_row_with_the_prefix_removed(tmp_path, database_url):
+    init_db(database_url)
+    insert_event(database_url, "risk_rejected", "2026-10-09T09:00:00+00:00", "Risk rejected: Kill switch is active")
+    insert_event(database_url, "risk_rejected", "2026-10-09T10:00:00+00:00", "Risk rejected: Max daily loss limit reached")
+    insert_event(database_url, "risk_rejected", "2026-10-08T10:00:00+00:00", "Risk rejected: yesterday only")
+
+    result = restraint(collect_db(tmp_path, database_url))
+
+    assert result["text"] == "Risk engine held 2 setups today. Reason: Max daily loss limit reached."
+
+
+def test_restraint_one_setup_is_singular_and_a_reason_with_a_stop_is_not_doubled(tmp_path, database_url):
+    init_db(database_url)
+    insert_event(database_url, "risk_rejected", "2026-10-09T09:00:00+00:00", "Risk rejected: Spread too wide.")
+
+    result = restraint(collect_db(tmp_path, database_url))
+
+    assert result["text"] == "Risk engine held 1 setup today. Reason: Spread too wide."
+
+
+def test_restraint_message_without_the_prefix_and_with_an_empty_reason(tmp_path, database_url):
+    init_db(database_url)
+    insert_event(database_url, "risk_rejected", "2026-10-09T09:00:00+00:00", "Daily limit (2%) hit; no entry")
+    assert restraint(collect_db(tmp_path, database_url))["text"].endswith("Reason: Daily limit (2%) hit; no entry.")
+
+    insert_event(database_url, "risk_rejected", "2026-10-09T10:00:00+00:00", "Risk rejected: ")
+    assert restraint(collect_db(tmp_path, database_url))["text"] == "Risk engine held 2 setups today."
+
+
+def test_restraint_query_is_read_only_and_leaves_the_tables_unchanged(tmp_path, database_url):
+    init_db(database_url)
+    insert_event(database_url, "risk_rejected", "2026-10-09T09:00:00+00:00", "Risk rejected: x")
+    with psycopg.connect(database_url) as connection:
+        before = connection.execute("SELECT id, event_type, timestamp, message FROM paper_events ORDER BY id").fetchall()
+
+    collect_db(tmp_path, database_url)
+
+    with psycopg.connect(database_url) as connection:
+        assert connection.execute("SELECT id, event_type, timestamp, message FROM paper_events ORDER BY id").fetchall() == before
+
+
+def test_event_text_follows_the_dsd_voice_and_keeps_the_reason_exactly():
+    from silvr.monitoring.status import _event_text
+
+    assert (
+        _event_text("risk_rejected", "Risk rejected: Max daily loss limit reached")
+        == "Risk engine held. Setup declined: Max daily loss limit reached."
+    )
+    assert _event_text("risk_rejected", "Risk rejected: A (b), 1.5% & <c>") == (
+        "Risk engine held. Setup declined: A (b), 1.5% & <c>."
+    )
+    assert _event_text("risk_rejected", "Risk rejected: ends here.") == "Risk engine held. Setup declined: ends here."
+    assert _event_text("risk_rejected", "no prefix here") == "Risk engine held. Setup declined: no prefix here."
+    assert _event_text("risk_rejected", "Risk rejected: ") == "Risk engine held. Setup declined."
+    assert _event_text("signal_detected", "anything stored") == "Strategy signal detected. Passing to risk engine."
+    assert _event_text("paper_trade_opened", "opened") == "opened"
+    assert _event_text("signal_rejected", "Risk rejected: kept as stored") == "Risk rejected: kept as stored"
+
+
+def test_positions_events_carry_v6_text_and_the_event_type(tmp_path, database_url):
+    init_db(database_url)
+    insert_event(database_url, "signal_detected", "2026-10-09T09:00:00+00:00", "Signal detected: long")
+    insert_event(database_url, "risk_rejected", "2026-10-09T09:01:00+00:00", "Risk rejected: Kill switch is active")
+
+    result = [item for item in rows(collect_db(tmp_path, database_url), POSITIONS) if item.get("event")]
+
+    assert [(item["event"], item["text"]) for item in result] == [
+        ("risk_rejected", "Risk engine held. Setup declined: Kill switch is active."),
+        ("signal_detected", "Strategy signal detected. Passing to risk engine."),
+    ]
+    assert all(item["label"].startswith("SIM ") for item in result)

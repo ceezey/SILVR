@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.config import ConfigError
-from silver_bot.data import download as download_module
-from silver_bot.data.csv_loader import load_binance_kline_csv
-from silver_bot.data.download import DownloadSummary, download, main, month_file_name
-from silver_bot.data.funding import FundingRate, load_funding_csv
-from silver_bot.models import Candle
+from silvr.config import ConfigError
+from silvr.data import download as download_module
+from silvr.data.csv_loader import load_binance_kline_csv
+from silvr.data.download import DownloadSummary, download, main, month_file_name
+from silvr.data.funding import FundingRate, load_funding_csv
+from silvr.models import Candle
 
 MINUTE = timedelta(minutes=1)
 

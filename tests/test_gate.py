@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from silver_bot.backtest import gate
-from silver_bot.backtest.gate import GateInputError, evaluate_gate, main
+from silvr.backtest import gate
+from silvr.backtest.gate import GateInputError, evaluate_gate, main
 
 FINAL_OK = {
     "total_trades": 120,
@@ -366,8 +366,8 @@ def test_second_look_bar_3_fails_t_2_5(tmp_path, capsys):
 
 def test_looks_counted_across_strategies(tmp_path, capsys):
     data = report(r_t_stat=2.5)
-    data["strategy"] = "top_down_ob"
-    _seed_log(tmp_path, _old_line(strategy="silver_bullet", t_stat_bar=2.0, passed=True))
+    data["strategy"] = "other_strategy"
+    _seed_log(tmp_path, _old_line(strategy="unnamed", t_stat_bar=2.0, passed=True))
     code, path = run(tmp_path, data)
     assert code == 1
     assert "look 2 at this data range" in capsys.readouterr().out
@@ -378,19 +378,19 @@ def test_looks_counted_across_strategies(tmp_path, capsys):
 
 def test_strategy_in_json_and_log(tmp_path):
     data = report()
-    data["strategy"] = "top_down_ob"
+    data["strategy"] = "other_strategy"
     code, path = run(tmp_path, data)
     assert code == 0
     written = json.loads((path.parent / "promotion_gate.json").read_text(encoding="utf-8"))
-    assert (written["strategy"], written["t_stat_bar"]) == ("top_down_ob", 2.0)
-    assert (_log_lines(path)[0]["strategy"], _log_lines(path)[0]["t_stat_bar"]) == ("top_down_ob", 2.0)
+    assert (written["strategy"], written["t_stat_bar"]) == ("other_strategy", 2.0)
+    assert (_log_lines(path)[0]["strategy"], _log_lines(path)[0]["t_stat_bar"]) == ("other_strategy", 2.0)
 
-    # reports from before the strategy key existed are silver_bullet
+    # reports from before the strategy key existed are "unnamed"
     code, path = run(tmp_path, report(r_t_stat=3.5))
     line = _log_lines(path)[-1]
-    assert (line["strategy"], line["t_stat_bar"]) == ("silver_bullet", 3.0)
+    assert (line["strategy"], line["t_stat_bar"]) == ("unnamed", 3.0)
     written = json.loads((path.parent / "promotion_gate.json").read_text(encoding="utf-8"))
-    assert (written["strategy"], written["t_stat_bar"]) == ("silver_bullet", 3.0)
+    assert (written["strategy"], written["t_stat_bar"]) == ("unnamed", 3.0)
 
 
 def test_existing_log_without_strategy_still_counts(tmp_path, capsys):
@@ -409,3 +409,34 @@ def test_unparseable_log_line_fails_closed(tmp_path, capsys, bad):
     assert "promotion_gate_log.jsonl" in capsys.readouterr().err
     assert log.read_bytes() == before
     assert not (path.parent / "promotion_gate.json").exists()
+
+
+def test_trend_drawdown_limit_030():
+    data = report(max_drawdown_percent=0.25)
+    data["strategy"] = "trend_ensemble"
+    verdict = evaluate_gate(data)
+    assert 5 not in failed_numbers(verdict)
+    assert "<= 0.3" in _criterion(verdict, 5).threshold
+    data["strategy"] = "other_strategy"
+    assert 5 in failed_numbers(evaluate_gate(data))
+    assert gate.MAX_DRAWDOWN_PERCENT_BY_STRATEGY == {"trend_ensemble": 0.30}
+
+
+def test_trend_drawdown_above_030_fails():
+    data = report(max_drawdown_percent=0.31)
+    data["strategy"] = "trend_ensemble"
+    assert 5 in failed_numbers(evaluate_gate(data))
+
+
+def test_default_drawdown_limit_unchanged():
+    assert gate.MAX_DRAWDOWN_PERCENT == 0.10
+    assert "<= 0.1" in _criterion(evaluate_gate(report()), 5).threshold
+
+
+def test_skipped_final_test_is_input_error(tmp_path, capsys):
+    data = report()
+    data["segments"]["final_test"] = {"skipped": True}
+    with pytest.raises(GateInputError, match="final_test"):
+        evaluate_gate(data)
+    code, _ = run(tmp_path, data)
+    assert code == 2

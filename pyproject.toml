@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "silver-bot"
+name = "silvr"
 version = "0.1.0"
-description = "ICT Silver Bullet research, backtesting, and paper trading bot."
+description = "Quant trend-following research and backtesting system for Binance USDT-M futures."
 requires-python = ">=3.11"
 dependencies = ["ccxt>=4.5,<5", "psycopg[binary]>=3.3,<4"]
 
@@ -15,13 +15,13 @@ dev = [
 ]
 
 [project.scripts]
-silver-bot = "silver_bot.main:main"
+silvr = "silvr.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"silver_bot.monitoring" = ["fonts/*.woff2", "fonts/OFL.txt"]
+"silvr.monitoring" = ["fonts/*.woff2", "fonts/OFL.txt"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

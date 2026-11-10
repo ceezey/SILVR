@@ -1,0 +1,8 @@
+/opt/silvr/logs/*.log /opt/silvr/logs/*.jsonl {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    copytruncate
+}

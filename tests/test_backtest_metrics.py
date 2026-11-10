@@ -1,12 +1,13 @@
+import math
 import statistics
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from silver_bot.backtest import ExitReason
-from silver_bot.backtest.metrics import calculate_metrics
-from silver_bot.backtest.models import EquityPoint, TradeRecord
+from silvr.backtest import ExitReason
+from silvr.backtest.metrics import calculate_metrics, day_r_t_stat
+from silvr.backtest.models import EquityPoint, TradeRecord
 
 START = datetime(2026, 1, 5, 9, 0, tzinfo=UTC)
 NEW_KEYS = ("average_win_r", "average_loss_r", "realized_rr", "r_stdev", "r_t_stat", "return_to_drawdown")
@@ -107,3 +108,23 @@ def test_total_funding_metric() -> None:
     trades = [replace(t, funding=f) for t, f in zip(trades_with_pnl([10.0, -5.0]), [0.5, -0.2])]
     assert calculate_metrics(trades, curve(dd=5.0), initial_balance=10_000.0)["total_funding"] == pytest.approx(0.3)
     assert calculate_metrics([], [], initial_balance=10_000.0)["total_funding"] == 0.0
+
+
+def test_day_r_t_stat_matches_old_pooled_value() -> None:
+    # Same fixture values as the pooled-gate day-t tests (tests/test_pooled_gate.py): R summed per UTC entry day.
+    def on(day: int, r: float, hour: int = 0) -> TradeRecord:
+        return replace(trade(0, realized_r=r, realized_pnl=50.0 * r), entry_time=datetime(2025, 11, day, hour, tzinfo=UTC))
+
+    def t_stat(values: list[float]) -> float:
+        return statistics.fmean(values) / (statistics.stdev(values) / math.sqrt(len(values)))
+
+    rs = [2.0, -1.0, 2.0, -1.0, 2.0]
+    same_days = [on(5 + i, r) for i, r in enumerate(rs)] + [on(5 + i, r, hour=3) for i, r in enumerate(rs)]
+    assert day_r_t_stat(same_days) == pytest.approx(t_stat([2 * r for r in rs]))
+
+    offsetting = [on(5, 2.0), on(6, 2.0), on(7, -1.0), on(8, 2.0)]
+    offsetting += [on(5, -1.0, 3), on(6, -1.0, 3), on(7, 2.0, 3), on(8, -1.5, 3)]
+    assert day_r_t_stat(offsetting) == pytest.approx(t_stat([1.0, 1.0, 1.0, 0.5]))
+
+    assert day_r_t_stat([on(5, 2.0), on(5, -1.0, 3)]) == 0.0  # one day
+    assert day_r_t_stat([on(5, 1.0), on(6, 1.0)]) == 0.0  # no spread

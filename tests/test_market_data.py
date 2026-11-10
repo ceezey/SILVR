@@ -8,9 +8,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from silver_bot.data import BinancePollingMarketDataStream, MarketDataStream, ReconnectPolicy, ReconnectingMarketDataStream
-from silver_bot.exchange import BinanceFuturesAdapter
-from silver_bot.models import Candle
+from silvr.data import BinancePollingMarketDataStream, MarketDataStream, ReconnectPolicy, ReconnectingMarketDataStream
+from silvr.exchange import BinanceFuturesAdapter
+from silvr.models import Candle
 
 T0 = datetime(2026, 1, 2, 15, 0, tzinfo=UTC)
 
@@ -229,7 +229,7 @@ def test_adapter_accepts_production_and_testnet_hosts() -> None:
 
 
 def test_redirects_are_refused() -> None:
-    from silver_bot.exchange.binance_futures import _NoRedirect
+    from silvr.exchange.binance_futures import _NoRedirect
 
     request = urllib.request.Request("https://fapi.binance.com/fapi/v1/klines")
     with pytest.raises(urllib.error.HTTPError, match="redirect refused"):

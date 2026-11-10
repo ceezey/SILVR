@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.config import ConfigError, TradingMode, load_config
+from silvr.config import ConfigError, TradingMode, load_config
 
 
 def test_default_config_is_safe(tmp_path: Path) -> None:
@@ -16,8 +16,6 @@ def test_default_config_is_safe(tmp_path: Path) -> None:
     assert config.live_trading is False
     assert config.paper_trading is True
     assert config.ml_filter_enabled is False
-    assert config.ml_min_probability == 0.60
-    assert config.ml_reduce_risk_threshold == 0.55
 
 
 def test_env_file_overrides_defaults_without_enabling_live(tmp_path: Path) -> None:
@@ -27,7 +25,7 @@ def test_env_file_overrides_defaults_without_enabling_live(tmp_path: Path) -> No
             [
                 "TRADING_MODE=backtest",
                 "PAPER_TRADING=false",
-                "DATABASE_URL=postgresql://bot:pw@db.internal:5432/silverbot",
+                "DATABASE_URL=postgresql://bot:pw@db.internal:5432/silvr",
                 "SYMBOL=ethusdt",
             ]
         ),
@@ -38,7 +36,7 @@ def test_env_file_overrides_defaults_without_enabling_live(tmp_path: Path) -> No
 
     assert config.mode == TradingMode.BACKTEST
     assert config.paper_trading is False
-    assert config.database_url == "postgresql://bot:pw@db.internal:5432/silverbot"
+    assert config.database_url == "postgresql://bot:pw@db.internal:5432/silvr"
     assert config.symbol == "ETHUSDT"
 
 
@@ -75,7 +73,7 @@ def test_partial_binance_credentials_are_rejected(tmp_path: Path) -> None:
         load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
 
 
-@pytest.mark.parametrize("url", ["sqlite:///silver_bot.sqlite3", "data/silver_bot.sqlite3", "mysql://db/silverbot"])
+@pytest.mark.parametrize("url", ["sqlite:///silvr.sqlite3", "data/silvr.sqlite3", "mysql://db/silvr"])
 def test_database_url_must_be_postgres(tmp_path: Path, url: str) -> None:
     with pytest.raises(ConfigError, match="postgresql://"):
         load_config(env_path=tmp_path / ".env", yaml_path=tmp_path / "missing.yaml", environ={"DATABASE_URL": url})
@@ -86,7 +84,7 @@ def test_malformed_database_url_is_a_config_error(tmp_path: Path) -> None:
         load_config(
             env_path=tmp_path / ".env",
             yaml_path=tmp_path / "missing.yaml",
-            environ={"DATABASE_URL": "postgresql://[bad/silverbot"},
+            environ={"DATABASE_URL": "postgresql://[bad/silvr"},
         )
 
 
@@ -95,34 +93,33 @@ def test_database_url_accepts_postgres_scheme_and_defaults_to_none(tmp_path: Pat
         return load_config(env_path=tmp_path / ".env", yaml_path=tmp_path / "missing.yaml", environ=environ)
 
     assert load({}).database_url is None
-    assert load({"DATABASE_URL": "postgres://bot:pw@db/silverbot"}).database_url == "postgres://bot:pw@db/silverbot"
+    assert load({"DATABASE_URL": "postgres://bot:pw@db/silvr"}).database_url == "postgres://bot:pw@db/silvr"
 
 
 def test_database_url_is_not_in_config_repr(tmp_path: Path) -> None:
     config = load_config(
         env_path=tmp_path / ".env",
         yaml_path=tmp_path / "missing.yaml",
-        environ={"DATABASE_URL": "postgresql://bot:secret-password@db/silverbot"},
+        environ={"DATABASE_URL": "postgresql://bot:secret-password@db/silvr"},
     )
 
     assert "secret-password" not in repr(config)
 
 
-def test_ml_thresholds_must_be_valid(tmp_path: Path) -> None:
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "\n".join(
-            [
-                "ML_FILTER_ENABLED=true",
-                "ML_MIN_PROBABILITY=0.50",
-                "ML_REDUCE_RISK_THRESHOLD=0.60",
-            ]
-        ),
-        encoding="utf-8",
-    )
+ML_REJECTED = "ML filter has no feature set for trend_ensemble; keep ML_FILTER_ENABLED=false"
 
-    with pytest.raises(ConfigError, match="less than or equal"):
-        load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
+
+def test_ml_filter_enabled_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError) as error:
+        load_config(env_path=tmp_path / ".env", yaml_path=tmp_path / "missing.yaml", environ={"ML_FILTER_ENABLED": "true"})
+    assert str(error.value) == ML_REJECTED
+
+    yaml_path = tmp_path / "config.yaml"
+    for key in ("enabled", "filter_enabled"):
+        yaml_path.write_text(f"ml:\n  {key}: true\n", encoding="utf-8")
+        with pytest.raises(ConfigError) as error:
+            load_config(env_path=tmp_path / ".env", yaml_path=yaml_path, environ={})
+        assert str(error.value) == ML_REJECTED
 
 
 def test_config_yaml_aliases_are_loaded(tmp_path: Path) -> None:
@@ -137,10 +134,7 @@ def test_config_yaml_aliases_are_loaded(tmp_path: Path) -> None:
                 "  symbol: ethusdt",
                 "  timeframe: 5m",
                 "ml:",
-                "  filter_enabled: true",
-                "  registry_path: models/example_registry.json",
-                "  min_probability: 0.70",
-                "  reduce_risk_threshold: 0.60",
+                "  filter_enabled: false",
             ]
         ),
         encoding="utf-8",
@@ -152,8 +146,7 @@ def test_config_yaml_aliases_are_loaded(tmp_path: Path) -> None:
     assert config.paper_trading is False
     assert config.symbol == "ETHUSDT"
     assert config.timeframe == "5m"
-    assert config.ml_filter_enabled is True
-    assert config.ml_registry_path == Path("models/example_registry.json")
+    assert config.ml_filter_enabled is False
 
 
 def test_symbol_timeframe_and_exchange_are_validated(tmp_path: Path) -> None:
@@ -168,14 +161,6 @@ def test_symbol_timeframe_and_exchange_are_validated(tmp_path: Path) -> None:
 
     env_path.write_text("EXCHANGE_NAME=binance-futures\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="EXCHANGE_NAME"):
-        load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
-
-
-def test_ml_registry_path_cannot_escape_workspace(tmp_path: Path) -> None:
-    env_path = tmp_path / ".env"
-    env_path.write_text("ML_REGISTRY_PATH=../model_registry.json\n", encoding="utf-8")
-
-    with pytest.raises(ConfigError, match="ML_REGISTRY_PATH"):
         load_config(env_path=env_path, yaml_path=tmp_path / "missing.yaml", environ={})
 
 

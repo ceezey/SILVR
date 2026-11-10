@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from silver_bot.data import CandleDataError, load_binance_kline_csv, timeframe_interval
+from silvr.data import CandleDataError, load_binance_kline_csv, timeframe_interval
 
 START_MS = int(datetime(2026, 1, 2, 15, 0, tzinfo=UTC).timestamp() * 1000)
 MINUTE_MS = 60_000

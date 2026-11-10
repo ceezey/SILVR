@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from silver_bot.data.funding import (
+from silvr.data.funding import (
     FundingDataError,
     FundingRate,
     FundingSchedule,

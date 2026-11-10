@@ -4,10 +4,10 @@ from decimal import Decimal
 
 import pytest
 
-from silver_bot.config import load_config
-from silver_bot.exchange import BinanceFuturesAdapter, OrderPlacementDisabled, OrderRequest
-from silver_bot.exchange.binance_futures import BINANCE_FUTURES_TESTNET_BASE_URL
-from silver_bot.models import TradeSide
+from silvr.config import load_config
+from silvr.exchange import BinanceFuturesAdapter, OrderPlacementDisabled, OrderRequest
+from silvr.exchange.binance_futures import BINANCE_FUTURES_TESTNET_BASE_URL
+from silvr.models import TradeSide
 
 
 def test_binance_adapter_rejects_real_order_placement() -> None:
@@ -82,7 +82,7 @@ def test_binance_adapter_rejects_production_url_for_testnet_mode() -> None:
         BinanceFuturesAdapter(testnet=True, base_url="https://fapi.binance.com")
 
 
-from silver_bot.exchange import is_binance_futures_testnet_url
+from silvr.exchange import is_binance_futures_testnet_url
 
 
 @pytest.mark.parametrize(
@@ -130,7 +130,7 @@ from urllib.parse import urlsplit
 
 import ccxt
 
-from silver_bot.exchange import binance_futures as bf
+from silvr.exchange import binance_futures as bf
 
 _MINUTE_MS = 60_000
 _T0 = datetime(2026, 1, 1, tzinfo=UTC)

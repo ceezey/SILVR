@@ -31,8 +31,6 @@ telegram:
   bot_token: ""
   chat_id: ""
 
+# No ML filter exists for trend_ensemble; true is rejected at startup.
 ml:
   filter_enabled: false
-  registry_path: models/model_registry.json
-  min_probability: 0.60
-  reduce_risk_threshold: 0.55
