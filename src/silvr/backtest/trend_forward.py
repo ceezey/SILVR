@@ -627,7 +627,8 @@ def summary_line(progress: Mapping[str, Any]) -> str:
 
 
 def _toast(line: str) -> None:
-    print(f"TOAST: {line}")
+    """Print the toast as one line: any newline or tab in a reason would otherwise split it."""
+    print(f"TOAST: {' '.join(line.split())}")
 
 
 def _run_cli(args: argparse.Namespace, now: datetime) -> int:
@@ -665,6 +666,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path, default=Path("reports/trend_ensemble_forward"))
     parser.add_argument("--download", action="store_true", help="download the newly closed months first")
     parser.add_argument("--void", metavar="REASON", help="end the test as void with this reason, then exit")
+    for stream in (sys.stdout, sys.stderr):  # a redirected cp1252 stream must never lose the toast line
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     try:
         args = parser.parse_args(argv)
         if args.void is not None and not args.void.strip():

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
+import sys
 from datetime import UTC, datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
@@ -1036,3 +1038,22 @@ def test_progress_download_problems_with_a_running_status_keep_running(repo: tup
     assert report is not None
     assert report["status"] == "running"
     assert report["reason"] is None
+
+
+def test_main_toast_is_one_line_even_when_the_reason_has_newlines(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(_cli(tmp_path, "--void", "a\nb\n")) == 0
+    lines = _lines(capsys)
+    assert lines[-1] == "TOAST: SILVR forward test: void: a b"
+    assert [line for line in lines if line.startswith("TOAST: ")] == [lines[-1]]
+
+
+def test_main_toast_survives_text_the_stdout_encoding_cannot_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252", errors="strict"))
+    assert main(_cli(tmp_path, "--void", "price \u2192 gone")) == 0
+    sys.stdout.flush()
+    assert raw.getvalue().decode("cp1252").splitlines()[-1] == "TOAST: SILVR forward test: void: price ? gone"
