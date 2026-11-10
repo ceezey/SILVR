@@ -1,17 +1,21 @@
 """Forward test of the frozen trend_ensemble backtest.
 
 The trend_ensemble run is frozen at FREEZE_COMMIT and replayed on data from 2026-11-11 onward, with one
-verdict after 2027-11-10. check_frozen proves the trade-deciding code is unchanged since that commit.
+verdict after 2027-11-10. check_frozen proves the trade-deciding code is unchanged since that commit;
+run_progress writes the monthly progress report (never a verdict) and keeps the status history.
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from silvr.backtest.models import BacktestConfig
+from silvr.backtest.reporting import json_safe
 from silvr.backtest.trend_engine import TrendDataError, TrendPortfolioEngine
 from silvr.backtest.trend_runner import (
     _MINUTE,
@@ -48,6 +52,16 @@ FORWARD_START = datetime(2026, 11, 11, tzinfo=UTC)
 FORWARD_END = datetime(2027, 11, 10, 23, 59, tzinfo=UTC)
 ORIGINAL_FIRST = datetime(2022, 1, 1, tzinfo=UTC)
 ORIGINAL_LAST = datetime(2026, 10, 20, 23, 59, tzinfo=UTC)
+
+KIND = "forward_progress"
+PROGRESS_NAME = "forward_progress.json"
+HISTORY_NAME = "forward_history.jsonl"
+NOTE = "Progress only. No verdict until 2027-11-10. Do not change the strategy because of this number."
+GAP_RETRIES = 2
+DAYS_TOTAL = 365
+
+_INCOMPLETE = "incomplete data"
+_ENDED = ("ended: kill switch", "verdict PASS", "verdict FAIL")
 
 
 def _git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -145,3 +159,167 @@ def simulate_window(
         "realized_volatility": realized_volatility(result.daily_equity, config.initial_balance),
         "rejections": dict(result.rejections),
     }
+
+
+def _is_terminal(status: str) -> bool:
+    return status in _ENDED or status.startswith("void: ")
+
+
+def _read_history(output_dir: Path) -> list[dict[str, Any]]:
+    path = output_dir / HISTORY_NAME
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _append_history(output_dir: Path, entry: dict[str, Any]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with (output_dir / HISTORY_NAME).open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(json_safe(entry), sort_keys=True) + "\n")
+
+
+def _gap_not_filled(history: list[dict[str, Any]], through: str, gap: str) -> bool:
+    """True when the latest entries of the GAP_RETRIES previous distinct `through` months all hold `gap`.
+
+    Reruns for the same month do not count as retries: only a later month's download is a new attempt.
+    """
+    latest: dict[str, dict[str, Any]] = {}
+    for entry in reversed(history):
+        month = entry["through"]
+        if month != through and month not in latest:
+            latest[month] = entry
+            if len(latest) == GAP_RETRIES:
+                break
+    return len(latest) == GAP_RETRIES and all(
+        entry["status"] == _INCOMPLETE and entry["gap"] == gap for entry in latest.values()
+    )
+
+
+def _figures(segment: dict[str, Any] | None) -> dict[str, Any]:
+    """The dollar and trade figures of one simulated segment; all None when nothing was simulated."""
+    metrics = (segment or {}).get("metrics") or {}
+    weekly = (segment or {}).get("success_standard") or {}
+    return {
+        "net": metrics.get("net_profit"),
+        "max_drawdown": metrics.get("max_drawdown"),
+        "fees": metrics.get("total_fees"),
+        "funding": metrics.get("total_funding"),
+        "trades": metrics.get("total_trades"),
+        "average_r": metrics.get("average_r"),
+        "profit_factor": metrics.get("profit_factor"),
+        "realized_rr": metrics.get("realized_rr"),
+        "weekly_average": weekly.get("average_weekly_net"),
+        "weekly_target": weekly.get("target_weekly_net"),
+        "losing_week_share": weekly.get("losing_week_share"),
+        "worst_week": weekly.get("worst_week"),
+        "kill_switch_trips": segment["kill_switch"]["trips"] if segment else None,
+    }
+
+
+def run_progress(
+    *,
+    repo_root: Path,
+    data_root: Path,
+    output_dir: Path,
+    now: datetime,
+    simulate: Callable[..., dict[str, Any]] = simulate_window,
+    check: Callable[[Path], list[str]] = check_frozen,
+) -> dict[str, Any] | None:
+    """Write the progress report for FORWARD_START to the last closed month, append its history line, return it.
+
+    Returns None and writes nothing before the first month has closed. The status follows the rules in
+    order: an ended test stays ended (no simulation); a frozen-files mismatch is `error`; missing data is
+    `incomplete data`, or void once the same gap survives GAP_RETRIES later months; a kill-switch trip ends
+    the test; otherwise `running`. This is progress only, never a verdict.
+    """
+    through: datetime | None = last_closed_minute(now)
+    if through < FORWARD_START:
+        return None
+    history = _read_history(output_dir)
+    problems = list(check(repo_root))
+    try:
+        commit: str | None = head_commit(repo_root)
+    except RuntimeError as exc:  # a run must name its commit; without one it is an error, not a guess
+        commit = None
+        problems.append(str(exc))
+
+    reason: str | None = None
+    gap: str | None = None
+    segment: dict[str, Any] | None = None
+    last = history[-1] if history else None
+    if last is not None and _is_terminal(last["status"]):
+        status, reason, gap = last["status"], last["reason"], last["gap"]
+        through = datetime.fromisoformat(last["through"]) if last["through"] else None
+    elif problems:
+        status, reason = "error", "frozen files changed: " + "; ".join(problems)
+    else:
+        try:
+            segment = simulate(
+                candles_root=data_root / "candles",
+                funding_root=data_root / "funding",
+                start=FORWARD_START,
+                end=through,
+                k=params.SCALE_K,
+            )
+        except TrendDataError as exc:
+            gap = reason = str(exc)
+            status = _INCOMPLETE
+            if _gap_not_filled(history, through.isoformat(), gap):
+                reason = f"data gap not filled after {GAP_RETRIES} retries ({gap})"
+                status = f"void: {reason}"
+        else:
+            if segment["kill_switch"]["trips"] >= 1:
+                status = "ended: kill switch"
+                reason = f"tripped at {json_safe(segment['kill_switch']['tripped_at'])}"
+            else:
+                status = "running"
+
+    run_at = now.astimezone(UTC)
+    commits = [entry["commit"] for entry in history] + [commit]
+    report = json_safe(
+        {
+            "kind": KIND,
+            "strategy": params.STRATEGY_NAME,
+            "status": status,
+            "reason": reason,
+            "forward_start": FORWARD_START,
+            "forward_end": FORWARD_END,
+            "through": through,
+            "days_done": (through - FORWARD_START + _MINUTE).days if through else None,
+            "days_total": DAYS_TOTAL,
+            **_figures(segment),
+            "data_gaps": [gap] if gap else [],
+            "commits": list(dict.fromkeys(sha for sha in commits if sha)),
+            "frozen_check": problems or "ok",
+            "note": NOTE,
+            "run_at": run_at,
+        }
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / PROGRESS_NAME).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    _append_history(
+        output_dir,
+        {"run_at": run_at, "through": through, "status": status, "reason": reason, "gap": gap, "commit": commit},
+    )
+    return report
+
+
+def record_void(output_dir: Path, reason: str, now: datetime) -> dict[str, Any]:
+    """End the test as `void: <reason>` by hand (a confirmed frozen-file bug, a delisted coin); return the entry.
+
+    Later runs copy the void and simulate nothing. Refuses once the test has ended, so a void can never
+    replace a kill-switch FAIL or a verdict.
+    """
+    history = _read_history(output_dir)
+    if history and _is_terminal(history[-1]["status"]):
+        raise ValueError(f"the forward test has already ended: {history[-1]['status']}")
+    entry = {
+        "run_at": now.astimezone(UTC),
+        "through": None,
+        "status": f"void: {reason}",
+        "reason": reason,
+        "gap": None,
+        "commit": None,
+    }
+    _append_history(output_dir, entry)
+    return json_safe(entry)
