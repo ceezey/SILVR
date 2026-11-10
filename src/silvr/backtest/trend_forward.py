@@ -172,6 +172,20 @@ def _read_history(output_dir: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _read_progress(output_dir: Path) -> dict[str, Any] | None:
+    path = output_dir / PROGRESS_NAME
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def _write_progress(output_dir: Path, report: dict[str, Any]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / PROGRESS_NAME).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _distinct(commits: list[str | None]) -> list[str]:
+    return list(dict.fromkeys(sha for sha in commits if sha))
+
+
 def _append_history(output_dir: Path, entry: dict[str, Any]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     with (output_dir / HISTORY_NAME).open("a", encoding="utf-8") as handle:
@@ -225,10 +239,11 @@ def run_progress(
     simulate: Callable[..., dict[str, Any]] = simulate_window,
     check: Callable[[Path], list[str]] = check_frozen,
 ) -> dict[str, Any] | None:
-    """Write the progress report for FORWARD_START to the last closed month, append its history line, return it.
+    """Write the progress report for FORWARD_START to the last closed month and append its history line.
 
-    Returns None and writes nothing before the first month has closed. The status follows the rules in
-    order: an ended test stays ended (no simulation); a frozen-files mismatch is `error`; missing data is
+    Returns the report, or None (writing nothing) before the first month has closed. The status follows
+    the rules in order: an ended test stays ended with its last known figures (no simulation); a
+    frozen-files mismatch, or a commit git cannot name, is `error`; missing data is
     `incomplete data`, or void once the same gap survives GAP_RETRIES later months; a kill-switch trip ends
     the test; otherwise `running`. This is progress only, never a verdict.
     """
@@ -237,11 +252,12 @@ def run_progress(
         return None
     history = _read_history(output_dir)
     problems = list(check(repo_root))
+    commit: str | None = None
+    commit_error: str | None = None
     try:
-        commit: str | None = head_commit(repo_root)
+        commit = head_commit(repo_root)
     except RuntimeError as exc:  # a run must name its commit; without one it is an error, not a guess
-        commit = None
-        problems.append(str(exc))
+        commit_error = str(exc)
 
     reason: str | None = None
     gap: str | None = None
@@ -252,6 +268,8 @@ def run_progress(
         through = datetime.fromisoformat(last["through"]) if last["through"] else None
     elif problems:
         status, reason = "error", "frozen files changed: " + "; ".join(problems)
+    elif commit_error is not None:
+        status, reason = "error", f"git cannot name the commit: {commit_error}"
     else:
         try:
             segment = simulate(
@@ -275,51 +293,72 @@ def run_progress(
                 status = "running"
 
     run_at = now.astimezone(UTC)
-    commits = [entry["commit"] for entry in history] + [commit]
-    report = json_safe(
-        {
-            "kind": KIND,
-            "strategy": params.STRATEGY_NAME,
-            "status": status,
-            "reason": reason,
-            "forward_start": FORWARD_START,
-            "forward_end": FORWARD_END,
-            "through": through,
-            "days_done": (through - FORWARD_START + _MINUTE).days if through else None,
-            "days_total": DAYS_TOTAL,
-            **_figures(segment),
-            "data_gaps": [gap] if gap else [],
-            "commits": list(dict.fromkeys(sha for sha in commits if sha)),
-            "frozen_check": problems or "ok",
-            "note": NOTE,
-            "run_at": run_at,
-        }
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / PROGRESS_NAME).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    commits = _distinct([entry["commit"] for entry in history] + [commit])
+    previous = _read_progress(output_dir)
+    if last is not None and _is_terminal(last["status"]) and previous is not None:
+        # An ended test keeps its last known figures; only the status line and the run stamp move on.
+        changes = {"status": status, "reason": reason, "run_at": run_at, "commits": commits}
+        report = {**previous, **json_safe(changes)}
+    else:
+        report = json_safe(
+            {
+                "kind": KIND,
+                "strategy": params.STRATEGY_NAME,
+                "status": status,
+                "reason": reason,
+                "forward_start": FORWARD_START,
+                "forward_end": FORWARD_END,
+                "through": through,
+                "days_done": (through - FORWARD_START + _MINUTE).days if through else None,
+                "days_total": DAYS_TOTAL,
+                **_figures(segment),
+                "data_gaps": [gap] if gap else [],
+                "commits": commits,
+                "frozen_check": problems or "ok",
+                "note": NOTE,
+                "run_at": run_at,
+            }
+        )
+    _write_progress(output_dir, report)
     _append_history(
         output_dir,
-        {"run_at": run_at, "through": through, "status": status, "reason": reason, "gap": gap, "commit": commit},
+        {
+            "run_at": run_at,
+            "through": report["through"],
+            "status": status,
+            "reason": reason,
+            "gap": gap,
+            "commit": commit,
+        },
     )
     return report
 
 
 def record_void(output_dir: Path, reason: str, now: datetime) -> dict[str, Any]:
-    """End the test as `void: <reason>` by hand (a confirmed frozen-file bug, a delisted coin); return the entry.
+    """End the test as `void: <reason>` by hand (a confirmed frozen-file bug, a delisted coin).
 
-    Later runs copy the void and simulate nothing. Refuses once the test has ended, so a void can never
-    replace a kill-switch FAIL or a verdict.
+    Returns the history entry it appended.
+
+    The progress file, if any, keeps its last known figures and period with the void status. Later runs
+    copy the void and simulate nothing. Refuses once the test has ended, so a void can never replace a
+    kill-switch FAIL or a verdict.
     """
     history = _read_history(output_dir)
     if history and _is_terminal(history[-1]["status"]):
         raise ValueError(f"the forward test has already ended: {history[-1]['status']}")
-    entry = {
-        "run_at": now.astimezone(UTC),
-        "through": None,
-        "status": f"void: {reason}",
-        "reason": reason,
-        "gap": None,
-        "commit": None,
-    }
+    previous = _read_progress(output_dir)
+    entry = json_safe(
+        {
+            "run_at": now.astimezone(UTC),
+            "through": previous["through"] if previous else None,
+            "status": f"void: {reason}",
+            "reason": reason,
+            "gap": None,
+            "commit": None,
+        }
+    )
+    if previous is not None:
+        changes = {"status": entry["status"], "reason": reason, "run_at": entry["run_at"]}
+        _write_progress(output_dir, {**previous, **changes})
     _append_history(output_dir, entry)
-    return json_safe(entry)
+    return entry

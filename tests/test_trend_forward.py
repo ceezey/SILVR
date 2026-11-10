@@ -280,8 +280,17 @@ def test_progress_kill_switch_trip_ends_the_test(repo: tuple[Path, str], tmp_pat
     assert again["status"] == "ended: kill switch"
     assert again["reason"] == "tripped at 2026-11-20T05:00:00+00:00"
     assert again["run_at"] == JAN_1.isoformat()
-    assert again["net"] is None
     assert len(_history(tmp_path)) == 2
+
+
+def test_progress_after_the_end_keeps_the_last_figures(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    ended = _run(root, tmp_path, DEC_1, FakeSimulate(_segment(trips=1)))
+    again = _run(root, tmp_path, JAN_1, FakeSimulate(_segment()))
+    assert ended is not None and again is not None
+    assert again == {**ended, "run_at": JAN_1.isoformat()}
+    assert (again["net"], again["through"], again["days_done"]) == (12.5, "2026-11-30T23:59:00+00:00", 20)
+    assert _history(tmp_path)[-1]["through"] == "2026-11-30T23:59:00+00:00"
 
 
 def test_progress_gap_voids_after_two_more_months(repo: tuple[Path, str], tmp_path: Path) -> None:
@@ -336,6 +345,39 @@ def test_record_void_is_terminal(repo: tuple[Path, str], tmp_path: Path) -> None
     assert report["status"] == "void: bug in trend_engine"
     assert report["reason"] == "bug in trend_engine"
     assert simulate.calls == []
+
+
+def test_record_void_keeps_the_last_period_and_figures(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    running = _run(root, tmp_path, DEC_1, FakeSimulate(_segment()))
+    assert running is not None
+    void_at = datetime(2026, 12, 5, tzinfo=UTC)
+    entry = record_void(tmp_path / "out", "bug in trend_engine", void_at)
+    assert entry["through"] == running["through"]
+    report = json.loads((tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8"))
+    assert report == {
+        **running,
+        "status": "void: bug in trend_engine",
+        "reason": "bug in trend_engine",
+        "run_at": void_at.isoformat(),
+    }
+    later = _run(root, tmp_path, JAN_1, FakeSimulate(_segment()))
+    assert later is not None
+    assert (later["through"], later["days_done"], later["net"]) == (running["through"], 20, 12.5)
+
+
+def test_progress_without_a_commit_is_error(tmp_path: Path) -> None:
+    not_git = tmp_path / "not-git"
+    not_git.mkdir()
+    simulate = FakeSimulate(_segment())
+    report = _run(not_git, tmp_path, DEC_1, simulate)
+    assert report is not None
+    assert report["status"] == "error"
+    assert report["reason"].startswith("git cannot name the commit: ")
+    assert report["frozen_check"] == "ok"
+    assert report["commits"] == []
+    assert simulate.calls == []
+    assert _history(tmp_path)[-1]["commit"] is None
 
 
 def test_record_void_refuses_after_the_test_has_ended(repo: tuple[Path, str], tmp_path: Path) -> None:
