@@ -65,3 +65,23 @@ def test_forward_task_has_a_12_hour_limit_and_dashboard_none() -> None:
     assert "-ExecutionTimeLimit (New-TimeSpan -Hours 12)" in forward
     assert "-ExecutionTimeLimit ([TimeSpan]::Zero)" in dashboard
     assert "-Settings $forwardSettings" in script and "-Settings $dashboardSettings" in script
+
+
+def test_installer_pins_trigger_and_task_settings() -> None:
+    script = read("install-forward-tasks.ps1")
+
+    assert "MSFT_TaskMonthlyTrigger" in script
+    assert "DaysOfMonth   = [uint16]1" in script
+    assert "-StartWhenAvailable" in script
+    assert "-LogonType Interactive" in script
+    assert script.count("-WorkingDirectory $Root") == 2
+
+
+def test_forward_test_toasts_instead_of_throwing_when_python_is_missing() -> None:
+    script = read("forward-test.ps1")
+
+    missing = script.split("if (-not (Test-Path $python)) {", 1)[1].split("}", 1)[0]
+    assert "throw" not in script
+    assert "Add-Content $log" in missing and "Show-Toast $crash" in missing and "exit 1" in missing
+    assert "$null -eq $LASTEXITCODE" in script
+    assert "$_ -and $_.StartsWith('TOAST: ')" in script
