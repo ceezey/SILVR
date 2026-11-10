@@ -440,3 +440,20 @@ def test_skipped_final_test_is_input_error(tmp_path, capsys):
         evaluate_gate(data)
     code, _ = run(tmp_path, data)
     assert code == 2
+
+
+def test_gate_refuses_forward_progress_report(tmp_path, capsys):
+    """A monthly forward progress report is never a gate input: exit 2, nothing written or logged."""
+    data = {**report(), "kind": "forward_progress"}
+    with pytest.raises(GateInputError, match="forward progress report is not a gate input"):
+        evaluate_gate(data)
+    code, path = run(tmp_path, data)
+    assert code == 2
+    assert not (path.parent / gate.OUTPUT_NAME).exists()
+    assert not (path.parent / gate.LOG_NAME).exists()
+    assert "only the forward verdict report is" in capsys.readouterr().err
+
+
+def test_gate_accepts_the_forward_verdict_report(tmp_path):
+    code, _ = run(tmp_path, {**report(), "kind": "forward_verdict"})
+    assert code == 0

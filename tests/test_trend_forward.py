@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import subprocess
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from silvr.backtest import gate
+from silvr.backtest.gate import LOG_NAME, OUTPUT_NAME, GateInputError, evaluate_gate
 from silvr.backtest.reporting import json_safe
 from silvr.backtest.trend_engine import TrendDataError
 from silvr.backtest.trend_forward import (
@@ -17,16 +20,20 @@ from silvr.backtest.trend_forward import (
     FORWARD_START,
     HISTORY_NAME,
     NOTE,
+    ORIGINAL_FIRST,
+    ORIGINAL_LAST,
     PROGRESS_NAME,
+    VerdictRefused,
     backtest_config,
     check_frozen,
     head_commit,
     last_closed_minute,
     record_void,
     run_progress,
+    run_verdict,
     simulate_window,
 )
-from silvr.backtest.trend_runner import SEGMENT_NAMES, run_trend_backtest, segment_bounds
+from silvr.backtest.trend_runner import REPORT_NAME, SEGMENT_NAMES, run_trend_backtest, segment_bounds
 from silvr.risk import RiskConfig
 from silvr.strategy.trend import params
 from tests.test_trend_runner import DAYS, MINUTE, START, SYMBOLS, tiny_universe, write_data, write_month  # noqa: F401
@@ -203,7 +210,7 @@ def _no_problems(_root: Path) -> list[str]:
 
 
 def _run(
-    root: Path, tmp_path: Path, now: datetime, simulate: FakeSimulate, check: Any = _no_problems
+    root: Path, tmp_path: Path, now: datetime, simulate: FakeSimulate, check: Any = _no_problems, **extra: Any
 ) -> dict[str, Any] | None:
     return run_progress(
         repo_root=root,
@@ -212,6 +219,7 @@ def _run(
         now=now,
         simulate=simulate,
         check=check,
+        **extra,
     )
 
 
@@ -442,3 +450,180 @@ def test_progress_commits_lists_each_commit_run_from(repo: tuple[Path, str], tmp
     report = _run(root, tmp_path, JAN_1, FakeSimulate(_segment()))
     assert report is not None
     assert report["commits"] == [first, second]
+
+
+# --- the one verdict ---------------------------------------------------------------------------------
+
+VERDICT_NOW = datetime(2027, 12, 1, 1, 0, tzinfo=UTC)
+FORWARD_END_ISO = "2027-11-10T23:59:00+00:00"
+
+
+class FakeGate:
+    """Stands in for gate.main: records argv, writes promotion_gate.json and one log line, returns `code`."""
+
+    def __init__(self, passed: bool = True, code: int | None = None) -> None:
+        self.passed = passed
+        self.code = (0 if passed else 1) if code is None else code
+        self.calls: list[list[str]] = []
+
+    def __call__(self, argv: list[str]) -> int:
+        self.calls.append(argv)
+        if self.code == 2:  # the real gate writes nothing on an input error
+            return 2
+        folder = Path(argv[1]).parent
+        (folder / OUTPUT_NAME).write_text(json.dumps({"passed": self.passed}), encoding="utf-8")
+        with (folder / LOG_NAME).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"passed": self.passed}) + "\n")
+        return self.code
+
+
+def _verdict(tmp_path: Path, simulate: Any, gate_main: Any, now: datetime = VERDICT_NOW) -> str:
+    return run_verdict(
+        data_root=tmp_path / "data", output_dir=tmp_path / "out", now=now, simulate=simulate, gate_main=gate_main
+    )
+
+
+def test_verdict_runs_gate_once_and_reads_result(tmp_path: Path) -> None:
+    gate_main = FakeGate(passed=True)
+    assert _verdict(tmp_path, FakeSimulate(_segment()), gate_main) == "verdict PASS"
+    assert gate_main.calls == [["--report", str(tmp_path / "out" / REPORT_NAME)]]
+
+
+def test_verdict_fail_is_read_from_the_gate_output(tmp_path: Path) -> None:
+    assert _verdict(tmp_path, FakeSimulate(_segment()), FakeGate(passed=False)) == "verdict FAIL"
+
+
+@pytest.mark.parametrize(
+    ("passed", "code"),
+    [(True, 2), (True, 1), (False, 0), (True, 3)],
+    ids=["input-error", "pass-file-fail-code", "fail-file-pass-code", "odd-code"],
+)
+def test_verdict_gate_error_or_disagreement_is_refused(tmp_path: Path, passed: bool, code: int) -> None:
+    """An input error, or an exit code that disagrees with promotion_gate.json, is never a PASS or FAIL."""
+    with pytest.raises(VerdictRefused):
+        _verdict(tmp_path, FakeSimulate(_segment()), FakeGate(passed=passed, code=code))
+
+
+def test_verdict_refused_when_log_has_a_line(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / LOG_NAME).write_text(json.dumps({"passed": False}) + "\n", encoding="utf-8")
+    simulate, gate_main = FakeSimulate(_segment()), FakeGate()
+    with pytest.raises(VerdictRefused, match="already given"):
+        _verdict(tmp_path, simulate, gate_main)
+    assert gate_main.calls == []
+    assert simulate.calls == []
+
+
+def test_verdict_refused_before_the_window_closes(tmp_path: Path) -> None:
+    gate_main = FakeGate()
+    with pytest.raises(VerdictRefused, match="not closed"):
+        _verdict(tmp_path, FakeSimulate(_segment()), gate_main, now=datetime(2027, 11, 1, 1, 0, tzinfo=UTC))
+    assert gate_main.calls == []
+
+
+def test_verdict_refused_when_data_is_missing(tmp_path: Path) -> None:
+    gate_main = FakeGate()
+    with pytest.raises(VerdictRefused, match="data"):
+        _verdict(tmp_path, FakeSimulate(), gate_main)
+    assert gate_main.calls == []
+    assert not (tmp_path / "out" / REPORT_NAME).exists()
+
+
+def test_verdict_report_segments_use_original_and_forward_bounds(tmp_path: Path) -> None:
+    simulate = FakeSimulate(_segment())
+    _verdict(tmp_path, simulate, FakeGate())
+    original = segment_bounds(ORIGINAL_FIRST, ORIGINAL_LAST)
+    windows = [(call["start"], call["end"]) for call in simulate.calls]
+    assert windows == [original["training"], original["validation"], (FORWARD_START, FORWARD_END)]
+    assert all(call["k"] == params.SCALE_K for call in simulate.calls)
+    assert all(call["candles_root"] == tmp_path / "data" / "candles" for call in simulate.calls)
+    assert original["training"][0].isoformat() == "2022-01-01T00:00:00+00:00"
+    assert FORWARD_END.isoformat() == FORWARD_END_ISO
+    report = json.loads((tmp_path / "out" / REPORT_NAME).read_text(encoding="utf-8"))
+    assert report["kind"] == "forward_verdict"
+    assert report["strategy"] == params.STRATEGY_NAME
+    assert report["symbols"] == list(params.SYMBOLS)
+    assert report["k"] == params.SCALE_K
+    assert report["parameters_tuned"] is False
+    assert sorted(report["segments"]) == sorted(SEGMENT_NAMES)
+
+
+def _gate_segment(**window: Any) -> dict[str, Any]:
+    """A segment the real gate can judge, carrying the window it was asked for."""
+    segment = _segment()
+    segment["metrics"] |= {
+        "total_trades": 120,
+        "average_r": 0.30,
+        "r_t_stat": 2.5,
+        "profit_factor": 1.8,
+        "realized_rr": 1.7,
+        "max_drawdown_percent": 0.06,
+        "return_to_drawdown": 5.0,
+    }
+    return {**segment, "candles": 10, "start": window["start"].isoformat(), "end": window["end"].isoformat()}
+
+
+def test_verdict_with_the_real_gate_is_look_one_and_cannot_repeat(tmp_path: Path) -> None:
+    def simulate(**kwargs: Any) -> dict[str, Any]:
+        return _gate_segment(**kwargs)
+
+    assert _verdict(tmp_path, simulate, gate.main) == "verdict PASS"
+    out = tmp_path / "out"
+    result = json.loads((out / OUTPUT_NAME).read_text(encoding="utf-8"))
+    assert result["passed"] is True
+    assert result["t_stat_bar"] == 2.0
+    lines = (out / LOG_NAME).read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    logged = json.loads(lines[0])
+    assert (logged["data_start"], logged["data_end"]) == ("2022-01-01T00:00:00+00:00", FORWARD_END_ISO)
+    with pytest.raises(VerdictRefused, match="already given"):
+        _verdict(tmp_path, simulate, gate.main)
+    assert len((out / LOG_NAME).read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_progress_at_the_window_end_gives_the_verdict(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    _run(root, tmp_path, DEC_1, FakeSimulate(_segment()))
+    gate_main = FakeGate(passed=False)
+    verdict = partial(run_verdict, gate_main=gate_main)
+    report = _run(root, tmp_path, VERDICT_NOW, FakeSimulate(_segment()), verdict=verdict)
+    assert report is not None
+    assert report["status"] == "verdict FAIL"
+    assert report["through"] == FORWARD_END_ISO
+    assert len(gate_main.calls) == 1
+    assert _history(tmp_path)[-1]["status"] == "verdict FAIL"
+
+
+def test_progress_after_verdict_reports_stored_verdict(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    verdict = partial(run_verdict, gate_main=FakeGate())
+    first = _run(root, tmp_path, VERDICT_NOW, FakeSimulate(_segment()), verdict=verdict)
+    assert first is not None and first["status"] == "verdict PASS"
+    simulate, gate_main = FakeSimulate(_segment()), FakeGate(passed=False)
+    later_now = datetime(2028, 1, 1, 1, 0, tzinfo=UTC)
+    later = _run(root, tmp_path, later_now, simulate, verdict=partial(run_verdict, gate_main=gate_main))
+    assert later is not None
+    assert later["status"] == "verdict PASS"
+    assert simulate.calls == []
+    assert gate_main.calls == []
+
+
+def test_progress_verdict_refusal_is_error_with_last_figures(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    good = _figures_of(_run(root, tmp_path, DEC_1, FakeSimulate(_segment())))
+    verdict = partial(run_verdict, gate_main=FakeGate(code=2))
+    report = _run(root, tmp_path, VERDICT_NOW, FakeSimulate(_segment()), verdict=verdict)
+    assert report is not None
+    assert report["status"] == "error"
+    assert report["reason"].startswith("verdict refused: ")
+    assert _figures_of(report) == good
+    assert _history(tmp_path)[-1]["status"] == "error"
+
+
+def test_progress_report_is_refused_by_the_gate(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    report = _run(root, tmp_path, DEC_1, FakeSimulate(_segment()))
+    assert report is not None
+    with pytest.raises(GateInputError, match="forward progress report is not a gate input"):
+        evaluate_gate(report)

@@ -2,7 +2,8 @@
 
 The trend_ensemble run is frozen at FREEZE_COMMIT and replayed on data from 2026-11-11 onward, with one
 verdict after 2027-11-10. check_frozen proves the trade-deciding code is unchanged since that commit;
-run_progress writes the monthly progress report (never a verdict) and keeps the status history.
+run_progress writes the monthly progress report (never a verdict) and keeps the status history;
+run_verdict, called once by run_progress when the window has closed, runs the gate on the one verdict report.
 """
 
 from __future__ import annotations
@@ -14,17 +15,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from silvr.backtest import gate
 from silvr.backtest.models import BacktestConfig
 from silvr.backtest.reporting import json_safe
 from silvr.backtest.trend_engine import TrendDataError, TrendPortfolioEngine
 from silvr.backtest.trend_runner import (
     _MINUTE,
+    REPORT_NAME,
     _check_months,
     _history,
     _minutes,
     _month_candles,
     _month_files,
     realized_volatility,
+    segment_bounds,
     success_standard,
 )
 from silvr.data.funding import FundingDataError, FundingSchedule, load_funding_csv
@@ -230,6 +234,81 @@ def _figures(segment: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+class VerdictRefused(Exception):
+    """The one verdict cannot be given; the message says why in plain words."""
+
+
+def _log_lines(output_dir: Path) -> list[str]:
+    path = output_dir / gate.LOG_NAME
+    if not path.exists():
+        return []
+    return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def run_verdict(
+    *,
+    data_root: Path,
+    output_dir: Path,
+    now: datetime,
+    simulate: Callable[..., dict[str, Any]] = simulate_window,
+    gate_main: Callable[[list[str]], int] = gate.main,
+) -> str:
+    """Write the one forward verdict report, run the promotion gate on it and return `verdict PASS`/`FAIL`.
+
+    training and validation are the original range's segments (the efficiency reference, recomputed by the
+    same code); final_test is the forward window. The report sits in `output_dir`, so the gate's log is that
+    folder's own: a data range nobody has looked at, look 1, t-bar 2.0. Raises VerdictRefused, before the
+    gate runs, if that log already holds a look, the window has not closed or data is missing; and after
+    it, if the gate rejects the input or its exit code and promotion_gate.json disagree.
+    """
+    if _log_lines(output_dir):
+        raise VerdictRefused(f"a verdict was already given: {output_dir / gate.LOG_NAME} holds a gate run")
+    through = last_closed_minute(now)
+    if through != FORWARD_END:
+        raise VerdictRefused(f"the forward window has not closed: data is closed only through {through.isoformat()}")
+    windows = {**segment_bounds(ORIGINAL_FIRST, ORIGINAL_LAST), "final_test": (FORWARD_START, FORWARD_END)}
+    try:
+        segments = {
+            name: simulate(
+                candles_root=data_root / "candles",
+                funding_root=data_root / "funding",
+                start=start,
+                end=end,
+                k=params.SCALE_K,
+            )
+            for name, (start, end) in windows.items()
+        }
+    except TrendDataError as exc:
+        raise VerdictRefused(f"data is missing: {exc}") from exc
+
+    report = {
+        "strategy": params.STRATEGY_NAME,
+        "symbols": list(params.SYMBOLS),
+        "k": params.SCALE_K,
+        "parameters_tuned": False,
+        "kind": "forward_verdict",
+        "segments": segments,
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / REPORT_NAME
+    path.write_text(json.dumps(json_safe(report), indent=2, sort_keys=True), encoding="utf-8")
+    code = gate_main(["--report", str(path)])
+    if code == 2:
+        raise VerdictRefused("the gate rejected the verdict report as input (exit 2); see its error output")
+    # The gate writes its result before its log line, so exactly one line proves the result is this run's.
+    if len(_log_lines(output_dir)) != 1:
+        raise VerdictRefused(f"the gate log should hold exactly this one run after exit {code}")
+    try:
+        passed = json.loads((output_dir / gate.OUTPUT_NAME).read_text(encoding="utf-8"))["passed"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise VerdictRefused(f"cannot read the gate result {gate.OUTPUT_NAME}: {exc}") from exc
+    if code == 0 and passed is True:
+        return "verdict PASS"
+    if code == 1 and passed is False:
+        return "verdict FAIL"
+    raise VerdictRefused(f"the gate exit code {code} disagrees with {gate.OUTPUT_NAME} passed={passed!r}")
+
+
 def run_progress(
     *,
     repo_root: Path,
@@ -238,14 +317,16 @@ def run_progress(
     now: datetime,
     simulate: Callable[..., dict[str, Any]] = simulate_window,
     check: Callable[[Path], list[str]] = check_frozen,
+    verdict: Callable[..., str] = run_verdict,
 ) -> dict[str, Any] | None:
     """Write the progress report for FORWARD_START to the last closed month and append its history line.
 
     Returns the report, or None (writing nothing) before the first month has closed. The status follows
-    the rules in order: an ended test stays ended (no simulation); a frozen-files mismatch, or a commit
-    git cannot name, is `error`; missing data is `incomplete data`, or void once the same gap survives
-    GAP_RETRIES later months; a kill-switch trip ends the test; otherwise `running`. A run that simulates
-    nothing keeps the last good month's period and figures. This is progress only, never a verdict.
+    the rules in order: an ended test (a verdict included) stays ended (no simulation); a frozen-files
+    mismatch, or a commit git cannot name, is `error`; missing data is `incomplete data`, or void once the
+    same gap survives GAP_RETRIES later months; a kill-switch trip ends the test; otherwise `running`, or,
+    once the whole window has closed, the one verdict from `verdict` (`error` if it refuses). A run that
+    simulates nothing keeps the last good month's period and figures. The report itself is never a gate input.
     """
     through: datetime | None = last_closed_minute(now)
     if through < FORWARD_START:
@@ -292,6 +373,11 @@ def run_progress(
                 reason = f"tripped at {json_safe(segment['kill_switch']['tripped_at'])}"
             else:
                 status = "running"
+                if through == FORWARD_END:
+                    try:
+                        status = verdict(data_root=data_root, output_dir=output_dir, now=now, simulate=simulate)
+                    except VerdictRefused as exc:  # never a PASS/FAIL; keep the last good figures
+                        status, reason, segment = "error", f"verdict refused: {exc}", None
 
     run_at = now.astimezone(UTC)
     commits = _distinct([entry["commit"] for entry in history] + [commit])
