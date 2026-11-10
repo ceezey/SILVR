@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta, timezone
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -38,13 +39,15 @@ from silvr.backtest.trend_forward import (
     simulate_window,
     summary_line,
 )
-from silvr.backtest.trend_runner import REPORT_NAME, SEGMENT_NAMES, run_trend_backtest, segment_bounds
+from silvr.backtest.trend_runner import REPORT_NAME, SEGMENT_NAMES, _month_files, run_trend_backtest, segment_bounds
 from silvr.data.funding import FundingRate, FundingSchedule, load_funding_csv, write_funding_csv
+from silvr.models import Candle
 from silvr.risk import RiskConfig
 from silvr.strategy.trend import params
 from tests.test_trend_runner import DAYS, MINUTE, START, SYMBOLS, tiny_universe, write_data, write_month  # noqa: F401
 
 PATHS = ("a.py", "pkg")
+OUT_DIR = Path("reports", "trend_ensemble_forward")  # the one folder the CLI writes to
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -225,22 +228,33 @@ def _no_problems(_root: Path) -> list[str]:
     return []
 
 
+def _imported_here(_root: Path) -> None:
+    return None
+
+
 def _run(
-    root: Path, tmp_path: Path, now: datetime, simulate: FakeSimulate, check: Any = _no_problems, **extra: Any
+    root: Path,
+    tmp_path: Path,
+    now: datetime,
+    simulate: FakeSimulate,
+    check: Any = _no_problems,
+    imported: Any = _imported_here,
+    **extra: Any,
 ) -> dict[str, Any] | None:
     return run_progress(
         repo_root=root,
         data_root=tmp_path / "data",
-        output_dir=tmp_path / "out",
+        output_dir=tmp_path / OUT_DIR,
         now=now,
         simulate=simulate,
         check=check,
+        imported=imported,
         **extra,
     )
 
 
 def _history(tmp_path: Path) -> list[dict[str, Any]]:
-    lines = (tmp_path / "out" / HISTORY_NAME).read_text(encoding="utf-8").splitlines()
+    lines = (tmp_path / OUT_DIR / HISTORY_NAME).read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines]
 
 
@@ -269,7 +283,7 @@ def test_progress_running_writes_report_and_history(repo: tuple[Path, str], tmp_
             "k": params.SCALE_K,
         }
     ]
-    assert json.loads((tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8")) == report
+    assert json.loads((tmp_path / OUT_DIR / PROGRESS_NAME).read_text(encoding="utf-8")) == report
     assert _history(tmp_path) == [
         {
             "run_at": DEC_1.isoformat(),
@@ -278,8 +292,10 @@ def test_progress_running_writes_report_and_history(repo: tuple[Path, str], tmp_
             "reason": None,
             "gap": None,
             "commit": commit,
+            "code": _history(tmp_path)[0]["code"],
         }
     ]
+    assert sorted(_history(tmp_path)[0]["code"]) == sorted(trend_forward.CODE_PATHS)
 
 
 def test_progress_before_first_closed_month_writes_nothing(repo: tuple[Path, str], tmp_path: Path) -> None:
@@ -287,7 +303,7 @@ def test_progress_before_first_closed_month_writes_nothing(repo: tuple[Path, str
     simulate = FakeSimulate(_segment())
     assert _run(root, tmp_path, datetime(2026, 11, 20, tzinfo=UTC), simulate) is None
     assert simulate.calls == []
-    assert not (tmp_path / "out").exists()
+    assert not (tmp_path / OUT_DIR).exists()
 
 
 def test_progress_kill_switch_trip_ends_the_test(repo: tuple[Path, str], tmp_path: Path) -> None:
@@ -418,7 +434,7 @@ def test_error_month_keeps_the_last_good_figures(repo: tuple[Path, str], tmp_pat
 def test_record_void_is_terminal(repo: tuple[Path, str], tmp_path: Path) -> None:
     root, _ = repo
     _run(root, tmp_path, DEC_1, FakeSimulate(_segment()))
-    entry = record_void(tmp_path / "out", "bug in trend_engine", datetime(2026, 12, 5, tzinfo=UTC))
+    entry = record_void(tmp_path / OUT_DIR, "bug in trend_engine", datetime(2026, 12, 5, tzinfo=UTC))
     assert entry["status"] == "void: bug in trend_engine"
     simulate = FakeSimulate(_segment())
     report = _run(root, tmp_path, JAN_1, simulate)
@@ -433,9 +449,9 @@ def test_record_void_keeps_the_last_period_and_figures(repo: tuple[Path, str], t
     running = _run(root, tmp_path, DEC_1, FakeSimulate(_segment()))
     assert running is not None
     void_at = datetime(2026, 12, 5, tzinfo=UTC)
-    entry = record_void(tmp_path / "out", "bug in trend_engine", void_at)
+    entry = record_void(tmp_path / OUT_DIR, "bug in trend_engine", void_at)
     assert entry["through"] == running["through"]
-    report = json.loads((tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8"))
+    report = json.loads((tmp_path / OUT_DIR / PROGRESS_NAME).read_text(encoding="utf-8"))
     assert report == {
         **running,
         "status": "void: bug in trend_engine",
@@ -466,7 +482,7 @@ def test_record_void_refuses_after_the_test_has_ended(repo: tuple[Path, str], tm
     root, _ = repo
     _run(root, tmp_path, DEC_1, FakeSimulate(_segment(trips=1)))
     with pytest.raises(ValueError, match="already ended"):
-        record_void(tmp_path / "out", "bug in trend_engine", JAN_1)
+        record_void(tmp_path / OUT_DIR, "bug in trend_engine", JAN_1)
     assert len(_history(tmp_path)) == 1
 
 
@@ -506,16 +522,24 @@ class FakeGate:
         return self.code
 
 
-def _verdict(tmp_path: Path, simulate: Any, gate_main: Any, now: datetime = VERDICT_NOW) -> str:
+def _verdict(
+    tmp_path: Path, simulate: Any, gate_main: Any, now: datetime = VERDICT_NOW, check: Any = _no_problems
+) -> str:
     return run_verdict(
-        data_root=tmp_path / "data", output_dir=tmp_path / "out", now=now, simulate=simulate, gate_main=gate_main
+        repo_root=tmp_path,
+        data_root=tmp_path / "data",
+        output_dir=tmp_path / OUT_DIR,
+        now=now,
+        simulate=simulate,
+        gate_main=gate_main,
+        check=check,
     )
 
 
 def test_verdict_runs_gate_once_and_reads_result(tmp_path: Path) -> None:
     gate_main = FakeGate(passed=True)
     assert _verdict(tmp_path, FakeSimulate(_segment()), gate_main) == "verdict PASS"
-    assert gate_main.calls == [["--report", str(tmp_path / "out" / REPORT_NAME)]]
+    assert gate_main.calls == [["--report", str(tmp_path / OUT_DIR / REPORT_NAME)]]
 
 
 def test_verdict_can_be_given_by_hand_from_2027_11_11(tmp_path: Path) -> None:
@@ -539,8 +563,8 @@ def test_verdict_gate_error_or_disagreement_is_refused(tmp_path: Path, passed: b
 
 
 def test_verdict_refused_when_log_has_a_line(tmp_path: Path) -> None:
-    out = tmp_path / "out"
-    out.mkdir()
+    out = tmp_path / OUT_DIR
+    out.mkdir(parents=True)
     (out / LOG_NAME).write_text(json.dumps({"passed": False}) + "\n", encoding="utf-8")
     simulate, gate_main = FakeSimulate(_segment()), FakeGate()
     with pytest.raises(VerdictRefused, match="already given"):
@@ -561,7 +585,7 @@ def test_verdict_refused_when_data_is_missing(tmp_path: Path) -> None:
     with pytest.raises(VerdictRefused, match="data"):
         _verdict(tmp_path, FakeSimulate(), gate_main)
     assert gate_main.calls == []
-    assert not (tmp_path / "out" / REPORT_NAME).exists()
+    assert not (tmp_path / OUT_DIR / REPORT_NAME).exists()
 
 
 def test_verdict_report_segments_use_original_and_forward_bounds(tmp_path: Path) -> None:
@@ -574,7 +598,7 @@ def test_verdict_report_segments_use_original_and_forward_bounds(tmp_path: Path)
     assert all(call["candles_root"] == tmp_path / "data" / "candles" for call in simulate.calls)
     assert original["training"][0].isoformat() == "2022-01-01T00:00:00+00:00"
     assert FORWARD_END.isoformat() == FORWARD_END_ISO
-    report = json.loads((tmp_path / "out" / REPORT_NAME).read_text(encoding="utf-8"))
+    report = json.loads((tmp_path / OUT_DIR / REPORT_NAME).read_text(encoding="utf-8"))
     assert report["kind"] == "forward_verdict"
     assert report["strategy"] == params.STRATEGY_NAME
     assert report["symbols"] == list(params.SYMBOLS)
@@ -603,7 +627,7 @@ def test_verdict_with_the_real_gate_is_look_one_and_cannot_repeat(tmp_path: Path
         return _gate_segment(**kwargs)
 
     assert _verdict(tmp_path, simulate, gate.main) == "verdict PASS"
-    out = tmp_path / "out"
+    out = tmp_path / OUT_DIR
     result = json.loads((out / OUTPUT_NAME).read_text(encoding="utf-8"))
     assert result["passed"] is True
     assert result["t_stat_bar"] == 2.0
@@ -845,14 +869,17 @@ def test_summary_line_terminal_states() -> None:
     assert summary_line(_report(status="ended: kill switch", reason="tripped at x")) == (
         "SILVR forward test: ended: kill switch"
     )
-    assert summary_line(_report(status="incomplete data", reason=GAP)) == "SILVR forward test: incomplete data"
+    assert summary_line(_report(status="incomplete data", reason=GAP)) == f"SILVR forward test: incomplete data: {GAP}"
     assert summary_line(_report(status="error", reason="RuntimeError: boom")) == (
         "SILVR forward test error: RuntimeError: boom"
     )
 
 
-def _cli(tmp_path: Path, *args: str) -> list[str]:
-    return ["--data-root", str(tmp_path / "data"), "--output-dir", str(tmp_path / "out"), *args]
+@pytest.fixture
+def cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., int]:
+    """main() run from tmp_path, so its fixed output folder is tmp_path / OUT_DIR."""
+    monkeypatch.chdir(tmp_path)
+    return lambda *args: main(["--data-root", str(tmp_path / "data"), *args])
 
 
 def _lines(capsys: pytest.CaptureFixture[str]) -> list[str]:
@@ -863,45 +890,51 @@ def _boom(**_kw: Any) -> None:
     raise RuntimeError("boom")
 
 
-def test_main_void_records_and_exits_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(_cli(tmp_path, "--void", "bug in trend_engine")) == 0
+def test_main_void_records_and_exits_zero(
+    cli: Callable[..., int], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli("--void", "bug in trend_engine") == 0
     assert _lines(capsys)[-1] == "TOAST: SILVR forward test: void: bug in trend_engine"
     assert _history(tmp_path)[-1]["status"] == "void: bug in trend_engine"
 
 
-def test_main_void_after_the_end_exits_two(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    out = tmp_path / "out"
-    out.mkdir()
+def test_main_void_after_the_end_exits_two(
+    cli: Callable[..., int], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / OUT_DIR
+    out.mkdir(parents=True)
     ended = {"run_at": JAN_1.isoformat(), "through": None, "status": "verdict FAIL"}
     (out / HISTORY_NAME).write_text(json.dumps(ended) + "\n", encoding="utf-8")
-    assert main(_cli(tmp_path, "--void", "late")) == 2
+    assert cli("--void", "late") == 2
     last = _lines(capsys)[-1]
     assert last.startswith("TOAST: SILVR forward test error: ") and "already ended" in last
     assert len(_history(tmp_path)) == 1
 
 
-def test_main_empty_void_reason_or_bad_arguments_exit_two(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(_cli(tmp_path, "--void", "  ")) == 2
+def test_main_empty_void_reason_or_bad_arguments_exit_two(
+    cli: Callable[..., int], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli("--void", "  ") == 2
     assert _lines(capsys)[-1].startswith("TOAST: SILVR forward test error: ")
     assert main(["--no-such-flag"]) == 2
     assert _lines(capsys)[-1].startswith("TOAST: SILVR forward test error: ")
-    assert not (tmp_path / "out").exists()
+    assert not (tmp_path / OUT_DIR).exists()
 
 
 def test_main_error_exits_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    cli: Callable[..., int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     error = _report(status="error", reason="frozen files changed: changed: x")
     monkeypatch.setattr(trend_forward, "run_progress", lambda **_kw: error)
-    assert main(_cli(tmp_path)) == 1
+    assert cli() == 1
     assert _lines(capsys)[-1] == "TOAST: SILVR forward test error: frozen files changed: changed: x"
 
 
 def test_main_nothing_to_report_exits_zero(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    cli: Callable[..., int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(trend_forward, "run_progress", lambda **_kw: None)
-    assert main(_cli(tmp_path)) == 0
+    assert cli() == 0
     assert _lines(capsys)[-1] == "TOAST: SILVR forward test: nothing to report until 2026-12-01"
 
 
@@ -916,33 +949,34 @@ def test_main_passes_an_aware_now_and_the_current_directory(
 
     monkeypatch.setattr(trend_forward, "run_progress", fake)
     monkeypatch.chdir(tmp_path)
-    assert main(["--data-root", "d", "--output-dir", "o"]) == 0
+    assert main(["--data-root", "d"]) == 0
     assert seen["now"].tzinfo is not None and seen["repo_root"] == Path.cwd()
-    assert (seen["data_root"], seen["output_dir"]) == (Path("d"), Path("o"))
+    assert (seen["data_root"], seen["output_dir"]) == (Path("d"), OUT_DIR)
     assert seen["download_problems"] is None
     assert _lines(capsys)[-1].startswith("TOAST: ")
 
 
 def test_main_crash_writes_error_report(
+    cli: Callable[..., int],
     repo: tuple[Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root, _ = repo
     good = _figures_of(_run(root, tmp_path, DEC_1, FakeSimulate(_segment())))
     monkeypatch.setattr(trend_forward, "run_progress", _boom)
-    assert main(_cli(tmp_path)) == 1
+    assert cli() == 1
     assert _lines(capsys)[-1] == "TOAST: SILVR forward test error: RuntimeError: boom"
-    report = json.loads((tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8"))
+    report = json.loads((tmp_path / OUT_DIR / PROGRESS_NAME).read_text(encoding="utf-8"))
     assert (report["status"], report["reason"]) == ("error", "RuntimeError: boom")
     assert _figures_of(report) == good
     assert _history(tmp_path)[-1]["status"] == "error"
 
 
 def test_main_crash_with_no_earlier_report_still_writes_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    cli: Callable[..., int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(trend_forward, "run_progress", _boom)
-    assert main(_cli(tmp_path)) == 1
-    report = json.loads((tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8"))
+    assert cli() == 1
+    report = json.loads((tmp_path / OUT_DIR / PROGRESS_NAME).read_text(encoding="utf-8"))
     assert (report["status"], report["reason"], report["kind"], report["net"]) == (
         "error",
         "RuntimeError: boom",
@@ -952,36 +986,37 @@ def test_main_crash_with_no_earlier_report_still_writes_one(
 
 
 def test_main_crash_never_overwrites_an_ended_test(
+    cli: Callable[..., int],
     repo: tuple[Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root, _ = repo
     _run(root, tmp_path, DEC_1, FakeSimulate(_segment(trips=1)))
-    before = (tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8")
+    before = (tmp_path / OUT_DIR / PROGRESS_NAME).read_text(encoding="utf-8")
     monkeypatch.setattr(trend_forward, "run_progress", _boom)
-    assert main(_cli(tmp_path)) == 1
+    assert cli() == 1
     assert _lines(capsys)[-1] == "TOAST: SILVR forward test error: RuntimeError: boom"
-    assert (tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8") == before
+    assert (tmp_path / OUT_DIR / PROGRESS_NAME).read_text(encoding="utf-8") == before
     assert len(_history(tmp_path)) == 1
 
 
 def test_main_crash_survives_a_failing_report_write(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    cli: Callable[..., int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     def cannot_write(*_a: Any, **_kw: Any) -> None:
         raise OSError("disk full")
 
     monkeypatch.setattr(trend_forward, "run_progress", _boom)
     monkeypatch.setattr(trend_forward, "record_error", cannot_write)
-    assert main(_cli(tmp_path)) == 1
+    assert cli() == 1
     assert _lines(capsys)[-1] == "TOAST: SILVR forward test error: RuntimeError: boom"
 
 
 def test_main_prints_toast_line_last(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    cli: Callable[..., int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(trend_forward, "run_progress", lambda **_kw: _report())
     monkeypatch.setattr(trend_forward, "download_new_data", lambda *_a, **_kw: ["BTCUSDT: candle download failed: x"])
-    assert main(_cli(tmp_path, "--download")) == 0
+    assert cli("--download") == 0
     lines = _lines(capsys)
     assert lines[-1] == "TOAST: SILVR forward test, Nov 2026: net -$42.10 so far (progress only)"
     assert [line for line in lines if line.startswith("TOAST: ")] == [lines[-1]]
@@ -989,12 +1024,12 @@ def test_main_prints_toast_line_last(
 
 
 def test_main_download_passes_problems_to_the_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    cli: Callable[..., int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     seen: dict[str, Any] = {}
     monkeypatch.setattr(trend_forward, "run_progress", lambda **kw: seen.update(kw) or _report())
     monkeypatch.setattr(trend_forward, "download_new_data", lambda *_a, **_kw: ["a", "b"])
-    main(_cli(tmp_path, "--download"))
+    cli("--download")
     assert seen["download_problems"] == ["a", "b"]
 
 
@@ -1010,7 +1045,7 @@ def test_progress_download_failure_with_missing_data_is_error_not_a_gap(
     assert report["reason"] == "download failed: BTCUSDT: candle download failed: x; y"
     assert _figures_of(report) == good
     assert _history(tmp_path)[-1]["status"] == "error"
-    assert json.loads((tmp_path / "out" / PROGRESS_NAME).read_text(encoding="utf-8")) == report
+    assert json.loads((tmp_path / OUT_DIR / PROGRESS_NAME).read_text(encoding="utf-8")) == report
 
 
 def test_progress_three_months_of_download_failures_never_void(repo: tuple[Path, str], tmp_path: Path) -> None:
@@ -1041,19 +1076,218 @@ def test_progress_download_problems_with_a_running_status_keep_running(repo: tup
 
 
 def test_main_toast_is_one_line_even_when_the_reason_has_newlines(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    cli: Callable[..., int], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(_cli(tmp_path, "--void", "a\nb\n")) == 0
+    assert cli("--void", "a\nb\n") == 0
     lines = _lines(capsys)
     assert lines[-1] == "TOAST: SILVR forward test: void: a b"
     assert [line for line in lines if line.startswith("TOAST: ")] == [lines[-1]]
 
 
 def test_main_toast_survives_text_the_stdout_encoding_cannot_hold(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cli: Callable[..., int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     raw = io.BytesIO()
     monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252", errors="strict"))
-    assert main(_cli(tmp_path, "--void", "price \u2192 gone")) == 0
+    assert cli("--void", "price \u2192 gone") == 0
     sys.stdout.flush()
     assert raw.getvalue().decode("cp1252").splitlines()[-1] == "TOAST: SILVR forward test: void: price ? gone"
+
+
+# --- final review fixes ------------------------------------------------------------------------------
+
+
+class OneCandle(FakeAdapter):
+    """Returns one candle at the start of every candle request, so each month gets a file."""
+
+    async def fetch_ohlcv_history(
+        self, *, symbol: str, timeframe: str, start: datetime, end: datetime, limit: int
+    ) -> list:
+        self.candle_calls.append((symbol, timeframe, start, end))
+        return [Candle(symbol, timeframe, start, 1.0, 1.0, 1.0, 1.0, 1.0)]
+
+
+def test_download_writes_into_the_folder_a_symbol_already_uses(tmp_path: Path) -> None:
+    """The owner's BTCUSDT files sit flat in candles/; a second October in candles/BTCUSDT/ would void the test."""
+    candles = tmp_path / "candles"
+    write_month(candles / "BTCUSDT-1m-2026-10.csv", datetime(2026, 10, 1, tzinfo=UTC), 60)  # partial: refetched
+    assert download_new_data(tmp_path, DOWNLOAD_NOW, adapter=OneCandle()) == []
+    btc = sorted(path.relative_to(candles).as_posix() for path in candles.rglob("BTCUSDT-1m-*.csv"))
+    assert btc == ["BTCUSDT-1m-2026-10.csv", "BTCUSDT-1m-2026-11.csv"]
+    assert sorted(_month_files(candles, "BTCUSDT")) == ["2026-10", "2026-11"]
+    assert (candles / "ETHUSDT" / "ETHUSDT-1m-2026-11.csv").is_file()  # no files yet: the default folder
+
+
+def test_check_import_accepts_silvr_from_the_repo_src(tmp_path: Path) -> None:
+    here = tmp_path / "src" / "silvr" / "__init__.py"
+    assert trend_forward.check_import(tmp_path, silvr_file=here) is None
+
+
+def test_check_import_names_both_paths_when_silvr_comes_from_elsewhere(tmp_path: Path) -> None:
+    other = tmp_path / "SILVR" / "src" / "silvr" / "__init__.py"
+    repo_root = tmp_path / "SILVR-wt"
+    assert trend_forward.check_import(repo_root, silvr_file=other) == (
+        f"silvr is not imported from {(repo_root / 'src').resolve()} ({other.resolve()}); "
+        "install with pip install -e ."
+    )
+
+
+def test_check_import_defaults_to_the_running_package() -> None:
+    assert trend_forward.check_import(Path(__file__).parents[1]) is None  # pytest puts this checkout's src first
+
+
+def test_progress_errors_when_silvr_is_imported_from_elsewhere(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    problem = "silvr is not imported from X (Y); install with pip install -e ."
+    simulate = FakeSimulate(_segment())
+    report = _run(root, tmp_path, DEC_1, simulate, imported=lambda _root: problem)
+    assert report is not None
+    assert (report["status"], report["reason"]) == ("error", problem)
+    assert simulate.calls == []
+    assert _history(tmp_path)[-1]["reason"] == problem
+
+
+def test_progress_checks_the_import_by_default(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo  # holds no src/silvr, so the running package cannot be its own
+    simulate = FakeSimulate(_segment())
+    report = run_progress(
+        repo_root=root,
+        data_root=tmp_path / "data",
+        output_dir=tmp_path / OUT_DIR,
+        now=DEC_1,
+        simulate=simulate,
+        check=_no_problems,
+    )
+    assert report is not None
+    assert report["status"] == "error"
+    assert report["reason"].startswith("silvr is not imported from ")
+    assert simulate.calls == []
+
+
+def test_main_has_no_output_dir_option(cli: Callable[..., int], tmp_path: Path) -> None:
+    assert cli("--output-dir", str(tmp_path / "elsewhere"), "--void", "x") == 2
+    assert not (tmp_path / "elsewhere").exists()
+
+
+def _log_line(folder: Path, data_end: str = FORWARD_END_ISO) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    line = {"data_start": "2022-01-01T00:00:00+00:00", "data_end": data_end, "passed": False}
+    with (folder / LOG_NAME).open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(line) + "\n")
+
+
+def test_verdict_refused_when_another_reports_folder_holds_this_range(tmp_path: Path) -> None:
+    _log_line(tmp_path / "reports" / "other" / "deeper")
+    simulate, gate_main = FakeSimulate(_segment()), FakeGate()
+    with pytest.raises(VerdictRefused, match="a verdict on this range already exists: .*deeper"):
+        _verdict(tmp_path, simulate, gate_main)
+    assert gate_main.calls == []
+    assert simulate.calls == []
+
+
+def test_verdict_is_not_blocked_by_a_log_of_another_range(tmp_path: Path) -> None:
+    _log_line(tmp_path / "reports" / "trend_ensemble", data_end="2026-10-20T23:59:00+00:00")
+    assert _verdict(tmp_path, FakeSimulate(_segment()), FakeGate()) == "verdict PASS"
+
+
+def test_verdict_refused_when_a_gate_log_cannot_be_read(tmp_path: Path) -> None:
+    folder = tmp_path / "reports" / "other"
+    folder.mkdir(parents=True)
+    (folder / LOG_NAME).write_text("not json\n", encoding="utf-8")
+    gate_main = FakeGate()
+    with pytest.raises(VerdictRefused, match="cannot read"):
+        _verdict(tmp_path, FakeSimulate(_segment()), gate_main)
+    assert gate_main.calls == []
+
+
+def test_pinned_gate_thresholds_are_todays() -> None:
+    assert trend_forward.GATE_THRESHOLDS == {
+        "MIN_TRADES": 100,
+        "MIN_T_STAT": 2.0,
+        "MIN_T_STAT_REPEAT": 3.0,
+        "MIN_PROFIT_FACTOR": 1.5,
+        "MIN_REALIZED_RR": 1.5,
+        "MAX_DRAWDOWN_PERCENT_BY_STRATEGY[trend_ensemble]": 0.30,
+        "MIN_RETURN_TO_DRAWDOWN": 2.0,
+        "MIN_OOS_EFFICIENCY": 0.5,
+    }
+
+
+@pytest.mark.parametrize(("name", "value"), [("MIN_T_STAT", 1.5), ("MIN_TRADES", 50), ("MIN_OOS_EFFICIENCY", 0.4)])
+def test_verdict_refused_when_a_gate_threshold_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, value: float
+) -> None:
+    monkeypatch.setattr(gate, name, value)
+    simulate, gate_main = FakeSimulate(_segment()), FakeGate()
+    with pytest.raises(VerdictRefused, match=f"gate thresholds changed: {name}"):
+        _verdict(tmp_path, simulate, gate_main)
+    assert gate_main.calls == []
+    assert simulate.calls == []
+
+
+def test_verdict_refused_when_the_trend_drawdown_limit_changed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(gate.MAX_DRAWDOWN_PERCENT_BY_STRATEGY, "trend_ensemble", 0.5)
+    gate_main = FakeGate()
+    with pytest.raises(VerdictRefused, match=r"gate thresholds changed: MAX_DRAWDOWN_PERCENT_BY_STRATEGY\[trend_ens"):
+        _verdict(tmp_path, FakeSimulate(_segment()), gate_main)
+    assert gate_main.calls == []
+
+
+def test_history_records_the_code_blob_hashes(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    paths = trend_forward.CODE_PATHS
+    assert paths == ("src/silvr/backtest/trend_forward.py", "src/silvr/backtest/gate.py", "src/silvr/data/download.py")
+    for rel in paths[:2]:  # the third is left missing, so git fails on it
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(f"# {rel}\n", encoding="utf-8")
+    _run(root, tmp_path, DEC_1, FakeSimulate(_segment()))
+    code = _history(tmp_path)[-1]["code"]
+    assert sorted(code) == sorted(paths)
+    assert all(code[rel] == _git(root, "hash-object", rel) for rel in paths[:2])
+    assert code[paths[2]].startswith("git hash-object failed: ")
+
+
+def test_history_records_the_error_when_git_cannot_run(
+    repo: tuple[Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = repo
+
+    def no_git(*_a: Any, **_kw: Any) -> None:
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(trend_forward.subprocess, "run", no_git)
+    report = _run(root, tmp_path, DEC_1, FakeSimulate(_segment()))
+    assert report is not None and report["status"] == "error"
+    code = _history(tmp_path)[-1]["code"]
+    assert len(code) == 3 and all(text.startswith("cannot run git: ") for text in code.values())
+
+
+def test_verdict_runs_the_frozen_check_itself(tmp_path: Path) -> None:
+    simulate, gate_main = FakeSimulate(_segment()), FakeGate()
+    problems = ["changed: src/silvr/risk/engine.py"]
+    with pytest.raises(VerdictRefused, match="frozen files changed: changed: src/silvr/risk/engine.py"):
+        _verdict(tmp_path, simulate, gate_main, check=lambda _root: problems)
+    assert gate_main.calls == []
+    assert simulate.calls == []
+
+
+def test_verdict_frozen_check_defaults_to_check_frozen(tmp_path: Path) -> None:
+    gate_main = FakeGate()
+    with pytest.raises(VerdictRefused, match="frozen files changed: "):
+        run_verdict(  # tmp_path is no git checkout, so check_frozen fails closed
+            repo_root=tmp_path,
+            data_root=tmp_path / "data",
+            output_dir=tmp_path / OUT_DIR,
+            now=VERDICT_NOW,
+            simulate=FakeSimulate(_segment()),
+            gate_main=gate_main,
+        )
+    assert gate_main.calls == []
+
+
+def test_first_run_that_simulates_nothing_has_no_days_done(repo: tuple[Path, str], tmp_path: Path) -> None:
+    root, _ = repo
+    report = _run(root, tmp_path, DEC_1, FakeSimulate())
+    assert report is not None
+    assert report["status"] == "incomplete data"
+    assert report["days_done"] is None

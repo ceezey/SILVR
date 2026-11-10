@@ -21,10 +21,13 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+import silvr
 from silvr.backtest import gate
 from silvr.backtest.models import BacktestConfig
 from silvr.backtest.reporting import json_safe
 from silvr.backtest.trend_engine import TrendDataError, TrendPortfolioEngine
+
+# trend_runner is frozen at FREEZE_COMMIT, so these private names cannot change without ending the test.
 from silvr.backtest.trend_runner import (
     _MINUTE,
     REPORT_NAME,
@@ -75,6 +78,21 @@ DAYS_TOTAL = 365
 _INCOMPLETE = "incomplete data"
 _ENDED = ("ended: kill switch", "verdict PASS", "verdict FAIL")
 
+# The code each history line records by git blob hash, so a later reader can tell which version ran.
+CODE_PATHS = ("src/silvr/backtest/trend_forward.py", "src/silvr/backtest/gate.py", "src/silvr/data/download.py")
+
+# gate.py's thresholds when the forward test was frozen (2026-11-11); the verdict refuses if any has moved.
+GATE_THRESHOLDS = {
+    "MIN_TRADES": 100,
+    "MIN_T_STAT": 2.0,
+    "MIN_T_STAT_REPEAT": 3.0,
+    "MIN_PROFIT_FACTOR": 1.5,
+    "MIN_REALIZED_RR": 1.5,
+    "MAX_DRAWDOWN_PERCENT_BY_STRATEGY[trend_ensemble]": 0.30,
+    "MIN_RETURN_TO_DRAWDOWN": 2.0,
+    "MIN_OOS_EFFICIENCY": 0.5,
+}
+
 
 def _git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True)
@@ -102,6 +120,20 @@ def check_frozen(
     return problems
 
 
+def code_hashes(repo_root: Path) -> dict[str, str]:
+    """The git blob hash of each CODE_PATHS file in `repo_root`; a git failure records its error text instead."""
+    hashes: dict[str, str] = {}
+    for path in CODE_PATHS:
+        try:
+            result = _git(repo_root, "hash-object", path)
+        except OSError as exc:
+            hashes[path] = f"cannot run git: {exc}"
+            continue
+        error = result.stderr.strip() or "no error text"
+        hashes[path] = result.stdout.strip() if result.returncode == 0 else f"git hash-object failed: {error}"
+    return hashes
+
+
 def head_commit(repo_root: Path) -> str:
     """Return the full SHA of HEAD in `repo_root`; raise RuntimeError if git cannot say."""
     try:
@@ -111,6 +143,19 @@ def head_commit(repo_root: Path) -> str:
     if result.returncode != 0:
         raise RuntimeError(f"git rev-parse HEAD failed: {result.stderr.strip()}")
     return result.stdout.strip()
+
+
+def check_import(repo_root: Path, *, silvr_file: str | Path | None = None) -> str | None:
+    """None when the running silvr package is the one under `repo_root/src`, else the problem in plain words.
+
+    check_frozen checks the files in `repo_root`; this proves those files are the code that runs (a plain
+    `pip install .` or another checkout's editable install would run a copy).
+    """
+    src = (repo_root / "src").resolve()
+    actual = Path(silvr_file or silvr.__file__).resolve()
+    if actual.is_relative_to(src):
+        return None
+    return f"silvr is not imported from {src} ({actual}); install with pip install -e ."
 
 
 def last_closed_minute(now: datetime) -> datetime:
@@ -136,6 +181,16 @@ def _download_end(now: datetime) -> datetime:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+def _candle_dir(candles_root: Path, symbol: str) -> Path:
+    """The folder holding the symbol's newest month file, or `candles_root/<symbol>` when it has none yet.
+
+    The owner's BTCUSDT files sit flat in candles/ while the others have a folder each; writing a month into
+    a second folder would make the runner refuse the duplicate file every month.
+    """
+    existing = list(candles_root.rglob(f"{symbol}-1m-*.csv"))
+    return max(existing, key=lambda path: path.name).parent if existing else candles_root / symbol
+
+
 async def _download_all(
     data_root: Path, end: datetime, adapter: BinanceFuturesAdapter, scratch: Path, problems: list[str]
 ) -> None:
@@ -146,7 +201,7 @@ async def _download_all(
                 timeframe="1m",
                 start=date(2026, 10, 1),
                 end=end,
-                out_dir=data_root / "candles" / symbol,
+                out_dir=_candle_dir(data_root / "candles", symbol),
                 adapter=adapter,
             )
         except Exception as exc:  # a failed symbol is a problem to report, not a reason to skip the rest
@@ -170,8 +225,9 @@ def download_new_data(data_root: Path, now: datetime, *, adapter: BinanceFutures
     """Download the 1m candles from 2026-10-01 and the funding rates from ORIGINAL_FIRST up to the download end.
 
     The end is the first instant of `now`'s UTC month, or, once the window has closed, one minute past
-    FORWARD_END. Candles go straight into `data_root/candles/<symbol>` (download skips complete months and
-    writes each file atomically). Funding goes to a temporary folder first and replaces the real file only
+    FORWARD_END. Candles go straight into the folder each symbol's files already sit in, or
+    `data_root/candles/<symbol>` for a symbol with none (download skips complete months and writes each file
+    atomically). Funding goes to a temporary folder first and replaces the real file only
     when it covers ORIGINAL_FIRST to the last minute before the end, so a partial answer never overwrites a
     good file. Returns one plain problem per failure; a failed symbol never stops the others.
     """
@@ -328,24 +384,62 @@ def _log_lines(output_dir: Path) -> list[str]:
     return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _gate_threshold_changes() -> list[str]:
+    """One "NAME pinned -> now" per gate threshold that differs from GATE_THRESHOLDS."""
+    now = {name: getattr(gate, name, None) for name in GATE_THRESHOLDS}
+    now["MAX_DRAWDOWN_PERCENT_BY_STRATEGY[trend_ensemble]"] = gate.MAX_DRAWDOWN_PERCENT_BY_STRATEGY.get(
+        "trend_ensemble"
+    )
+    return [f"{name} {pinned!r} -> {now[name]!r}" for name, pinned in GATE_THRESHOLDS.items() if now[name] != pinned]
+
+
+def _verdict_logged_elsewhere(repo_root: Path) -> Path | None:
+    """The first gate log under `repo_root/reports` holding a look at the forward verdict range.
+
+    Fails closed like the gate: a line that cannot be read raises VerdictRefused, since skipping it could
+    hide an earlier verdict.
+    """
+    verdict_range = (ORIGINAL_FIRST.isoformat(), FORWARD_END.isoformat())
+    for path in sorted((repo_root / "reports").rglob(gate.LOG_NAME)):
+        for number, line in enumerate(_log_lines(path.parent), start=1):
+            try:
+                past = json.loads(line)
+                logged = (past.get("data_start"), past.get("data_end"))
+            except (ValueError, AttributeError) as exc:
+                raise VerdictRefused(f"cannot read {path} line {number}: {exc}") from exc
+            if logged == verdict_range:
+                return path
+    return None
+
+
 def run_verdict(
     *,
+    repo_root: Path,
     data_root: Path,
     output_dir: Path,
     now: datetime,
     simulate: Callable[..., dict[str, Any]] = simulate_window,
     gate_main: Callable[[list[str]], int] = gate.main,
+    check: Callable[[Path], list[str]] = check_frozen,
 ) -> str:
     """Write the one forward verdict report, run the promotion gate on it and return `verdict PASS`/`FAIL`.
 
     training and validation are the original range's segments (the efficiency reference, recomputed by the
     same code); final_test is the forward window. The report sits in `output_dir`, so the gate's log is that
     folder's own: a data range nobody has looked at, look 1, t-bar 2.0. Raises VerdictRefused, before the
-    gate runs, if that log already holds a look, the window has not closed or data is missing; and after
-    it, if the gate rejects the input or its exit code and promotion_gate.json disagree.
+    gate runs, if that log already holds a look, any gate log under `repo_root/reports` holds a look at the
+    forward range, a gate threshold differs from GATE_THRESHOLDS, `check` finds a frozen file changed, the
+    window has not closed or data is missing; and after it, if the gate rejects the input or its exit code
+    and promotion_gate.json disagree.
     """
     if _log_lines(output_dir):
         raise VerdictRefused(f"a verdict was already given: {output_dir / gate.LOG_NAME} holds a gate run")
+    if (elsewhere := _verdict_logged_elsewhere(repo_root)) is not None:
+        raise VerdictRefused(f"a verdict on this range already exists: {elsewhere}")
+    if changes := _gate_threshold_changes():
+        raise VerdictRefused("gate thresholds changed: " + "; ".join(changes))
+    if problems := check(repo_root):
+        raise VerdictRefused("frozen files changed: " + "; ".join(problems))
     through = last_closed_minute(now)
     if through != FORWARD_END:
         raise VerdictRefused(f"the forward window has not closed: data is closed only through {through.isoformat()}")
@@ -413,7 +507,7 @@ def _fresh_report(
             "forward_start": FORWARD_START,
             "forward_end": FORWARD_END,
             "through": through,
-            "days_done": (through - FORWARD_START + _MINUTE).days if through else None,
+            "days_done": (through - FORWARD_START + _MINUTE).days if through and segment is not None else None,
             "days_total": DAYS_TOTAL,
             **_figures(segment),
             "data_gaps": [gap] if gap else [],
@@ -433,17 +527,20 @@ def run_progress(
     now: datetime,
     simulate: Callable[..., dict[str, Any]] = simulate_window,
     check: Callable[[Path], list[str]] = check_frozen,
+    imported: Callable[[Path], str | None] = check_import,
     verdict: Callable[..., str] = run_verdict,
     download_problems: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Write the progress report for FORWARD_START to the last closed month and append its history line.
 
     Returns the report, or None (writing nothing) before the first month has closed. The status follows
-    the rules in order: an ended test (a verdict included) stays ended (no simulation); a frozen-files
-    mismatch, or a commit git cannot name, is `error`; missing data is `incomplete data`, or void once the
-    same gap survives GAP_RETRIES later months; a kill-switch trip ends the test; otherwise `running`, or,
-    once the whole window has closed, the one verdict from `verdict` (`error` if it refuses). A run that
-    simulates nothing keeps the last good month's period and figures. The report itself is never a gate input.
+    the rules in order: an ended test (a verdict included) stays ended (no simulation); silvr imported from
+    anywhere but `repo_root/src`, a frozen-files mismatch, or a commit git cannot name, is `error`; missing
+    data is `incomplete data`, or void once the same gap survives GAP_RETRIES later months; a kill-switch trip
+    ends the test; otherwise `running`, or, once the whole window has closed, the one verdict from `verdict`
+    (`error` if it refuses). A run that simulates nothing keeps the last good month's period and figures (a
+    first run with nothing to keep has no `days_done`). Each history line records `code_hashes`. The report
+    itself is never a gate input.
 
     `download_problems` are the failures of this run's download. Missing data that follows a failed download
     is `error` ("download failed: ..."), never `incomplete data`, so a network outage cannot count toward the
@@ -453,6 +550,7 @@ def run_progress(
     if through < FORWARD_START:
         return None
     history = _read_history(output_dir)
+    import_problem = imported(repo_root)
     problems = list(check(repo_root))
     commit: str | None = None
     commit_error: str | None = None
@@ -469,6 +567,8 @@ def run_progress(
     if last is not None and ended:
         status, reason, gap = last["status"], last["reason"], last["gap"]
         through = datetime.fromisoformat(last["through"]) if last["through"] else None
+    elif import_problem is not None:
+        status, reason = "error", import_problem
     elif problems:
         status, reason = "error", "frozen files changed: " + "; ".join(problems)
     elif commit_error is not None:
@@ -498,7 +598,14 @@ def run_progress(
                 status = "running"
                 if through == FORWARD_END:
                     try:
-                        status = verdict(data_root=data_root, output_dir=output_dir, now=now, simulate=simulate)
+                        status = verdict(
+                            repo_root=repo_root,
+                            data_root=data_root,
+                            output_dir=output_dir,
+                            now=now,
+                            simulate=simulate,
+                            check=check,
+                        )
                     except VerdictRefused as exc:  # never a PASS/FAIL; keep the last good figures
                         status, reason, segment = "error", f"verdict refused: {exc}", None
 
@@ -533,6 +640,7 @@ def run_progress(
             "reason": reason,
             "gap": gap,
             "commit": commit,
+            "code": code_hashes(repo_root),
         },
     )
     return report
@@ -607,6 +715,7 @@ def record_error(output_dir: Path, reason: str, now: datetime) -> None:
 
 
 TITLE = "SILVR forward test"
+OUTPUT_DIR = Path("reports") / "trend_ensemble_forward"  # under the current directory; there is no option
 FIRST_REPORT_DATE = "2026-12-01"  # the first UTC month (November 2026) closes then
 
 
@@ -620,6 +729,8 @@ def summary_line(progress: Mapping[str, Any]) -> str:
     status = progress["status"]
     if status == "error":
         return f"{TITLE} error: {progress['reason']}"
+    if status == _INCOMPLETE:
+        return f"{TITLE}: {_INCOMPLETE}: {progress['reason']}"
     if status == "running":
         month = datetime.fromisoformat(progress["through"]).strftime("%b %Y")
         return f"{TITLE}, {month}: net {_dollars(progress['net'])} so far (progress only)"
@@ -635,7 +746,7 @@ def _run_cli(args: argparse.Namespace, now: datetime) -> int:
     """Do what the arguments ask and print the toast line last; returns the exit code (0, 1 or 2)."""
     if args.void is not None:
         try:
-            entry = record_void(args.output_dir, args.void, now)
+            entry = record_void(OUTPUT_DIR, args.void, now)
         except ValueError as exc:  # the test has already ended; nothing was written
             print(f"error: {exc}")
             _toast(summary_line({"status": "error", "reason": str(exc)}))
@@ -646,7 +757,7 @@ def _run_cli(args: argparse.Namespace, now: datetime) -> int:
     report = run_progress(
         repo_root=Path.cwd(),
         data_root=args.data_root,
-        output_dir=args.output_dir,
+        output_dir=OUTPUT_DIR,
         now=now,
         download_problems=problems,
     )
@@ -663,7 +774,6 @@ def main(argv: list[str] | None = None) -> int:
     """Run the monthly forward-test step. Exit 0: reported (or nothing yet); 1: error; 2: bad arguments."""
     parser = argparse.ArgumentParser(prog="python -m silvr.backtest.trend_forward", description=__doc__)
     parser.add_argument("--data-root", type=Path, default=Path("data"))
-    parser.add_argument("--output-dir", type=Path, default=Path("reports/trend_ensemble_forward"))
     parser.add_argument("--download", action="store_true", help="download the newly closed months first")
     parser.add_argument("--void", metavar="REASON", help="end the test as void with this reason, then exit")
     for stream in (sys.stdout, sys.stderr):  # a redirected cp1252 stream must never lose the toast line
@@ -685,7 +795,7 @@ def main(argv: list[str] | None = None) -> int:
         reason = f"{type(exc).__name__}: {exc}"
         traceback.print_exc(file=sys.stderr)
         try:
-            record_error(args.output_dir, reason, now)
+            record_error(OUTPUT_DIR, reason, now)
         except Exception as write_exc:
             print(f"could not write the error report: {write_exc}")
         _toast(summary_line({"status": "error", "reason": reason}))
