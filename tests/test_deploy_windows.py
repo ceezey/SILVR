@@ -60,21 +60,25 @@ def test_installer_names_only_the_two_silvr_tasks() -> None:
 def test_forward_task_has_a_12_hour_limit_and_dashboard_none() -> None:
     script = read("install-forward-tasks.ps1")
 
-    forward = script.split("$forwardSettings = ", 1)[1].split("$dashboardSettings", 1)[0]
+    forward = script.split("$forwardXml = ", 1)[1].split("Register-ScheduledTask", 1)[0]
     dashboard = script.split("$dashboardSettings = ", 1)[1].split("\n$", 1)[0]
-    assert "-ExecutionTimeLimit (New-TimeSpan -Hours 12)" in forward
+    assert "<ExecutionTimeLimit>PT12H</ExecutionTimeLimit>" in forward
     assert "-ExecutionTimeLimit ([TimeSpan]::Zero)" in dashboard
-    assert "-Settings $forwardSettings" in script and "-Settings $dashboardSettings" in script
+    assert "-Xml $forwardXml" in script and "-Settings $dashboardSettings" in script
 
 
 def test_installer_pins_trigger_and_task_settings() -> None:
     script = read("install-forward-tasks.ps1")
+    forward = script.split("$forwardXml = ", 1)[1].split("Register-ScheduledTask", 1)[0]
 
-    assert "MSFT_TaskMonthlyTrigger" in script
-    assert "DaysOfMonth   = [uint16]1" in script
-    assert "-StartWhenAvailable" in script
-    assert "-LogonType Interactive" in script
-    assert script.count("-WorkingDirectory $Root") == 2
+    # Windows rejects a CIM MSFT_TaskMonthlyTrigger ("The parameter is incorrect"), so the monthly task is XML.
+    assert "MSFT_TaskMonthlyTrigger" not in script
+    assert "<ScheduleByMonth><DaysOfMonth><Day>1</Day></DaysOfMonth>" in forward
+    assert "<StartWhenAvailable>true</StartWhenAvailable>" in forward
+    assert "<LogonType>InteractiveToken</LogonType>" in forward
+    assert "<WorkingDirectory>$rootXml</WorkingDirectory>" in forward
+    assert "-StartWhenAvailable" in script and "-LogonType Interactive" in script  # the dashboard task
+    assert script.count("-WorkingDirectory $Root") == 1
 
 
 def test_forward_test_toasts_instead_of_throwing_when_python_is_missing() -> None:
