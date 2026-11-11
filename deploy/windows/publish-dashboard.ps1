@@ -7,7 +7,8 @@
 $Root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 Set-Location $Root
 New-Item -ItemType Directory -Force logs | Out-Null
-$log = 'logs\forward-test.log'
+# Absolute: the deploy runs inside $site (Push-Location), where a relative path would not exist.
+$log = Join-Path $Root 'logs\forward-test.log'
 $site = Join-Path $Root '.tmp\silvr-dashboard'
 function Write-Log([string]$text) { "$(Get-Date -Format o) publish: $text" | Add-Content $log }
 
