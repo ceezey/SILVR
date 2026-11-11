@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 WINDOWS = Path(__file__).resolve().parents[1] / "deploy" / "windows"
-SCRIPTS = ("forward-test.ps1", "toast.ps1", "install-forward-tasks.ps1")
+SCRIPTS = ("forward-test.ps1", "toast.ps1", "install-forward-tasks.ps1", "publish-dashboard.ps1")
 
 
 def read(name: str) -> str:
@@ -105,3 +105,24 @@ def test_forward_test_asks_for_an_editable_install_when_the_venv_is_missing() ->
 
     missing = script.split("if (-not (Test-Path $python)) {", 1)[1].split("}", 1)[0]
     assert "pip install -e ." in missing
+
+
+def test_publish_exports_the_snapshot_and_deploys_only_that_folder() -> None:
+    """silvr-cr-006: the hosted page is the exported dashboard; nothing else is run or uploaded."""
+    script = read("publish-dashboard.ps1")
+
+    assert "silvr.monitoring.dashboard_server --export $site" in script
+    assert r"'.tmp\silvr-dashboard'" in script
+    assert "Push-Location $site" in script and "deploy --prod --yes" in script
+    assert script.count("& $python") == 1 and script.count("& $vercel.Source") == 1
+    assert "throw" not in script
+    assert r"logs\forward-test.log" in script
+
+
+def test_forward_test_publishes_after_the_toast_and_keeps_its_exit_code() -> None:
+    script = read("forward-test.ps1")
+
+    tail = script.split("Show-Toast $(if ($toastLine)", 1)[1]
+    assert "publish-dashboard.ps1" in tail
+    assert tail.rstrip().endswith("exit $code")
+    assert "$code = " not in tail.split("publish-dashboard.ps1", 1)[1]
