@@ -61,6 +61,7 @@ PANEL_META: tuple[tuple[int, str], ...] = (
 ROW_CLASSES = {(1, 2): "row fix-first", (4, 5): "row fix-last"}
 RISK_LABELS = ("day", "daily realized pnl", "trades today", "consecutive losses", "open positions", "updated")
 PAPER_LINE = "Simulated fills only. No real order exists."
+PUBLIC_PAPER_LINE = "Setting only, not a running bot. No real order exists."
 SNAPSHOT_HOST = "static snapshot"
 SNAPSHOT_REFRESH = "after each monthly forward run"
 # Detail line under each ladder card: the report that feeds the step.
@@ -277,7 +278,7 @@ def render_page(status: dict[str, Any], *, bind: tuple[str, int | None] | None =
     host, port = bind or (BIND_HOST, None)
     panels = status["panels"]
     restraint = status["restraint"]
-    rendered = [_render_status_panel(index, panel, restraint) for index, panel in enumerate(panels)]
+    rendered = [_render_status_panel(index, panel, restraint, public) for index, panel in enumerate(panels)]
     groups = []
     for group in PUBLIC_LAYOUT if public else LAYOUT:
         css_class = "row banner" if group == LAYOUT[0] else ROW_CLASSES.get(group, "row")
@@ -459,7 +460,8 @@ def _render_card(index: int, step: dict[str, str], next_index: int | None, full:
     else:
         marker = "s-next" if is_next else "s-todo"
     flag = "<strong>NEXT</strong>" if is_next else ""
-    detail = f'<span class="detail">{html.escape(STEP_DETAILS[index])}</span>' if full else ""
+    shown = step.get("detail") or (STEP_DETAILS[index] if full else "")  # the gate run names its own file (V-9)
+    detail = f'<span class="detail">{html.escape(shown)}</span>' if shown else ""
     return (
         f'<li class="{classes}"><div class="head"><span class="mk {marker}"></span>'
         f'<span class="idx">{index + 1:02d}</span>{flag}</div>'
@@ -469,10 +471,10 @@ def _render_card(index: int, step: dict[str, str], next_index: int | None, full:
     )
 
 
-def _render_status_panel(index: int, panel: dict[str, Any], restraint: dict[str, Any]) -> str:
+def _render_status_panel(index: int, panel: dict[str, Any], restraint: dict[str, Any], public: bool = False) -> str:
     number, source = PANEL_META[index]
     if index == 0:
-        lead, rows = _readout(panel["rows"])
+        lead, rows = _readout(panel["rows"], public)
         return _render_panel({**panel, "rows": rows}, note_last=True, number=number, source=source, lead=lead)
     if index == 3:
         return _render_risk(panel, number, source)
@@ -484,16 +486,20 @@ def _render_status_panel(index: int, panel: dict[str, Any], restraint: dict[str,
     return _render_panel(panel, note_last=index == 6, number=number, source=source, headers=headers)
 
 
-def _readout(rows: list[dict[str, str]]) -> tuple[str, list[dict[str, str]]]:
-    """The operating-mode readout (V-1) and the banner rows without the MODE row it replaces."""
+def _readout(rows: list[dict[str, str]], public: bool = False) -> tuple[str, list[dict[str, str]]]:
+    """The operating-mode readout (V-1) and the banner rows without the MODE row it replaces.
+
+    The public snapshot says CONFIGURED MODE and that PAPER is a setting, not a running bot (silvr-cr-006 V-10).
+    """
 
     mode = next((item for item in rows if item["label"] == "MODE"), None)
     if mode is None:
         return "", rows
     text = mode["text"]
-    line = f'<span class="muted">{PAPER_LINE}</span>' if text.upper() == "PAPER" else ""
+    paper_line = PUBLIC_PAPER_LINE if public else PAPER_LINE
+    line = f'<span class="muted">{paper_line}</span>' if text.upper() == "PAPER" else ""
     readout = (
-        '<div class="readout"><span class="label muted">OPERATING MODE</span>'
+        f'<div class="readout"><span class="label muted">{"CONFIGURED" if public else "OPERATING"} MODE</span>'
         f'<span class="mode">{html.escape(text)}</span>{line}</div><div class="hair"></div>'
     )
     return readout, [item for item in rows if item is not mode]
