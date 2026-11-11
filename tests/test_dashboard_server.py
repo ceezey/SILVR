@@ -15,13 +15,17 @@ import pytest
 from silvr.config import AppConfig
 from silvr.monitoring.dashboard_server import (
     BIND_HOST,
+    LAYOUT,
     SECURITY_HEADERS,
     DashboardServer,
+    export_site,
     is_loopback_host,
     main,
+    render_not_found,
     render_page,
 )
 from silvr.monitoring.status import PANEL_TITLES, collect_status
+from test_dashboard_status import GATE_FILE, VALIDATION_FILE, gate_data, validation_data, write_analytics
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
 SECRETS = {
@@ -53,12 +57,12 @@ def ttl(title: str) -> str:
     return f'<span class="ttl">{html.escape(title)}</span>'
 
 
-def test_page_shows_seven_panels_in_layout_order_with_banner_first(tmp_path):
+def test_page_shows_eight_panels_in_layout_order_with_banner_first(tmp_path):
     page = page_for(tmp_path)
 
-    # LAYOUT puts FORWARD TEST (index 6) after EVIDENCE REPORTS and before RISK BUDGET.
-    order = (*PANEL_TITLES[:3], PANEL_TITLES[6], *PANEL_TITLES[3:6])
-    assert len(PANEL_TITLES) == 7
+    # LAYOUT puts FORWARD TEST (index 6) and ANALYTICS (index 7) after EVIDENCE REPORTS and before RISK BUDGET.
+    order = (*PANEL_TITLES[:3], PANEL_TITLES[6], PANEL_TITLES[7], *PANEL_TITLES[3:6])
+    assert len(PANEL_TITLES) == 8
     positions = [page.index(ttl(title)) for title in order]
     assert positions == sorted(positions)
     positions = [page.index(ttl(title)) for title in PANEL_TITLES[:3]]
@@ -147,8 +151,8 @@ def test_mode_and_safety_is_first_and_inside_the_sidebar(tmp_path):
     end = page.index("</aside>")
     mode = page.index(ttl("MODE & SAFETY"))
     assert start < mode < end
-    # Panels 00 to 08: nine title rows, two (00 MODE & SAFETY and 07 HOST) in the sidebar.
-    assert page.count('class="ttl"') == 9
+    # Panels 00 to 09: ten title rows, two (00 MODE & SAFETY and 07 HOST) in the sidebar.
+    assert page.count('class="ttl"') == 10
     assert page[start:end].count('class="ttl"') == 2
     assert end < page.index('class="ladder"') < page.index('class="next-strip"')
     for title in PANEL_TITLES[1:]:
@@ -834,7 +838,7 @@ def test_rail_is_decorative_and_cards_carry_the_state(tmp_path):
     assert "backtest_report" in cards[0] and "demo_readiness_report" in cards[3]
 
 
-def test_title_rows_run_00_to_08_with_mode_and_safety_first(tmp_path):
+def test_title_rows_run_00_to_09_with_mode_and_safety_first(tmp_path):
     page = page_for(tmp_path)
 
     titles = re.findall(r'<span class="idx">(\d\d)</span><span class="ttl">(.*?)</span>', page)
@@ -845,6 +849,7 @@ def test_title_rows_run_00_to_08_with_mode_and_safety_first(tmp_path):
         ("02", "READINESS"),
         ("03", "EVIDENCE REPORTS"),
         ("08", "FORWARD TEST"),
+        ("09", "ANALYTICS"),
         ("04", "RISK BUDGET"),
         ("05", "POSITIONS / TRADES"),
         ("06", "ALERTS"),
@@ -857,6 +862,7 @@ def test_title_rows_run_00_to_08_with_mode_and_safety_first(tmp_path):
         "*_readiness_report.json",
         "reports/",
         "reports/trend_ensemble_forward/",
+        "reports/trend_ensemble/",
         "risk_state",
         "paper_trades · paper_events",
         "logs/audit.jsonl",
@@ -1261,3 +1267,431 @@ def test_forward_test_panel_adds_no_route_control_or_script(server, tmp_path):
     assert "<script" not in body and "<form" not in section and "<button" not in section and "<a " not in section
     assert call(server, "POST")[0].status == 405
     assert call(server, path="/reports/trend_ensemble_forward/forward_progress.json")[0].status == 404
+
+
+# ---- silvr-cr-006: ANALYTICS panel and the public static snapshot ------------------------------------
+
+
+def analytics_section(page: str) -> str:
+    start = page.index(ttl("ANALYTICS"))
+    return page[page.rindex("<section>", 0, start) : page.index("</section>", start)]
+
+
+def with_gate_run(root: Path) -> None:
+    write_analytics(root, GATE_FILE, gate_data())
+    write_analytics(root, VALIDATION_FILE, validation_data())
+
+
+def test_analytics_is_panel_09_in_its_own_row_after_forward_test_and_before_risk(tmp_path):
+    with_gate_run(tmp_path)
+
+    page = page_for(tmp_path)
+
+    assert LAYOUT == ((0,), (1, 2), (6,), (7,), (3,), (4, 5))
+    assert PANEL_TITLES[7] == "ANALYTICS"
+    forward, analytics, risk = (page.index(ttl(title)) for title in ("FORWARD TEST", "ANALYTICS", "RISK BUDGET"))
+    assert forward < analytics < risk
+    row_start = page.rindex('<div class="row">', 0, analytics)
+    assert page.count("<section", row_start, analytics) == 1 and forward < row_start < analytics
+    section = analytics_section(page)
+    assert '<span class="idx">09</span>' in section
+    assert '<span class="src">reports/trend_ensemble/</span>' in section
+
+
+def test_analytics_verdict_and_criteria_table(tmp_path):
+    with_gate_run(tmp_path)
+
+    section = analytics_section(page_for(tmp_path))
+
+    assert (
+        '<th scope="row">verdict</th><td class="err">[ ERR ]</td>'
+        "<td>GATE FAIL; 2 of 6 criteria passed; t-bar 3.0; data 2022-01-01 to 2026-10-20</td>"
+    ) in section
+    table = section[section.index('<table class="crit">') : section.index("</table>", section.index('<table class="crit">'))]
+    assert (
+        '<th scope="col">CRITERION</th><th scope="col">STATE</th><th scope="col">RESULT</th>'
+        '<th scope="col">THRESHOLD</th><th scope="col">ACTUAL</th>'
+    ) in table
+    assert (
+        '<th scope="row">1 Enough trades</th><td class="ok">[ OK ]</td><td>PASS</td>'
+        "<td>&gt;= 100</td><td>1054</td>"
+    ) in table
+    assert (
+        '<th scope="row">2 Real edge</th><td class="err">[ ERR ]</td><td>FAIL</td>'
+        "<td>avg R &gt; 0, t &gt;= 3.0</td><td>avg R 0.02046, t 0.1269</td>"
+    ) in table
+    assert table.count("[ OK ]") == 2 and table.count("[ ERR ]") == 4  # glyph, word and colour class together
+    assert table.count("<td>PASS</td>") == 2 and table.count("<td>FAIL</td>") == 4
+
+
+def test_analytics_segment_table_has_one_column_per_segment(tmp_path):
+    with_gate_run(tmp_path)
+
+    section = analytics_section(page_for(tmp_path))
+
+    table = section[section.index('<table class="seg">') : section.index("</table>", section.index('<table class="seg">'))]
+    assert (
+        '<th scope="col">METRIC</th><th scope="col">TRAINING</th><th scope="col">VALIDATION</th>'
+        '<th scope="col">FINAL TEST</th>'
+    ) in table
+    assert '<th scope="row">net</th><td>$2722.05</td><td>$95.50</td><td>-$180.73</td>' in table
+    assert '<th scope="row">return</th><td>18.1%</td><td>0.6%</td><td>-1.2%</td>' in table
+    assert (
+        '<th scope="row">weekly net vs target</th><td>$17.50 vs $50 target</td>'
+        "<td>$1.80 vs $50 target</td><td>-$3.54 vs $50 target</td>"
+    ) in table
+    assert table.count("<tr>") == 1 + 13  # header row and the thirteen metrics
+    assert '<p class="note"><span class="label">NOTE</span> Backtest on past data, simulated account.' in section
+    assert "the strategy is not traded.</p>" in section
+
+
+def bar_numbers(bar: str) -> dict[str, float]:
+    found = {}
+    for kind in ("fill", "zero", "tgt"):
+        match = re.search(rf'class="{kind}" style="left:([\d.]+)%(?:;width:([\d.]+)%)?"', bar)
+        found[kind] = float(match.group(1))
+        if match.group(2):
+            found["width"] = float(match.group(2))
+    return found
+
+
+def test_analytics_has_one_aria_hidden_bar_per_segment_with_the_dollars_beside_it(tmp_path):
+    with_gate_run(tmp_path)
+
+    section = analytics_section(page_for(tmp_path))
+
+    bars = re.findall(r'<div class="bar">(.*?<span class="bval">.*?)</span></div>', section)
+    assert len(bars) == 3 and section.count('aria-hidden="true"') == 3
+    for bar, (name, text) in zip(
+        bars,
+        (("TRAINING", "$17.50 vs $50 target"), ("VALIDATION", "$1.80 vs $50 target"), ("FINAL TEST", "-$3.54 vs $50 target")),
+    ):
+        assert f'<span class="bname">{name}</span><div class="track" aria-hidden="true">' in bar
+        assert bar.endswith(f'<span class="bval">{text}')  # the figure is printed as text, not carried by the bar
+    training, validation, final = (bar_numbers(bar) for bar in bars)
+    for found in (training, validation, final):
+        assert found["tgt"] == pytest.approx(100.0, abs=0.01)  # the $50 target is the far end of the shared scale
+        assert found["zero"] == pytest.approx(training["zero"], abs=0.01)
+    assert final["fill"] == pytest.approx(0.0, abs=0.01)  # a loss extends left of the zero line
+    assert final["width"] == pytest.approx(final["zero"], abs=0.02)
+    assert training["fill"] == pytest.approx(training["zero"], abs=0.01) and training["width"] > validation["width"] > 0
+    assert "Bars start at the zero line; a loss extends left." in section
+
+
+def test_analytics_without_files_says_not_available_and_draws_nothing(tmp_path):
+    section = analytics_section(page_for(tmp_path))
+
+    assert '<td class="off">[ OFF ]</td><td>not available: no promotion_gate.json yet</td>' in section
+    assert "not available: no out_of_sample_validation_report.json yet" in section
+    assert 'class="track"' not in section and 'class="crit"' not in section and 'class="seg"' not in section
+    assert "GATE PASS" not in section and "GATE FAIL" not in section
+    assert "NOTE" not in section
+
+
+def test_analytics_bar_is_text_only_when_a_figure_is_not_available(tmp_path):
+    data = validation_data()
+    data["segments"]["final_test"]["success_standard"]["target_weekly_net"] = None
+    write_analytics(tmp_path, VALIDATION_FILE, data)
+
+    section = analytics_section(page_for(tmp_path))
+
+    assert section.count('class="track"') == 2
+    assert '<span class="bname">FINAL TEST</span><span class="bval">not available</span>' in section
+
+
+def test_analytics_unreadable_file_degrades_only_its_panel(tmp_path):
+    (tmp_path / "reports" / "trend_ensemble").mkdir(parents=True)
+    (tmp_path / "reports" / "trend_ensemble" / GATE_FILE).mkdir()
+
+    page = page_for(tmp_path)
+
+    assert "degraded: 1 panel unreadable" in page
+    assert "[ ERR ]" in analytics_section(page)
+    for title in PANEL_TITLES:
+        assert ttl(title) in page
+    assert page.count('<li class="step') == 5
+
+
+@pytest.mark.parametrize("content", [b"", "not json", "[1, 2]"])
+def test_analytics_bad_files_still_render_the_page(tmp_path, content):
+    write_analytics(tmp_path, GATE_FILE, content)
+    write_analytics(tmp_path, VALIDATION_FILE, content)
+
+    page = page_for(tmp_path)
+    section = analytics_section(page)
+
+    assert section.count('<td class="err">[ ERR ]</td>') == 2
+    assert "unreadable: " in section and 'class="degraded"' not in page
+
+
+def test_analytics_escapes_stored_text(tmp_path):
+    data = gate_data()
+    data["criteria"][0]["name"] = "<script>alert(1)</script>"
+    data["criteria"][0]["actual"] = "<b>x</b>"
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    page = page_for(tmp_path)
+
+    assert "<script" not in page and "<b>x</b>" not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in analytics_section(page)
+
+
+def test_analytics_adds_no_route_control_script_or_link(server, tmp_path):
+    with_gate_run(tmp_path)
+
+    response, body = call(server)
+
+    assert response.status == 200
+    section = analytics_section(body)
+    assert "<script" not in body and "<form" not in section and "<button" not in section and "<a " not in section
+    assert "http" not in section and "//" not in section.replace("</", "")
+    assert call(server, "POST")[0].status == 405
+    assert call(server, path="/reports/trend_ensemble/promotion_gate.json")[0].status == 404
+
+
+def test_private_page_keeps_its_navbar_mark_and_footer(tmp_path):
+    page = page_for(tmp_path)
+    status = collect_status(tmp_path, load=lambda: make_config(tmp_path), now=NOW)
+
+    assert page == render_page(status, public=False)
+    assert page.startswith("<!doctype html>")
+    assert (
+        '<header><svg viewBox="0 0 160 160" width="28" height="28" role="img" aria-label="SILVR mark">'
+        '<rect class="m-brand" x="40" y="0" width="5" height="16" rx="2"/>'
+    ) in page
+    assert (
+        '<rect class="m-ink" x="20" y="75" width="120" height="2"/></svg>'
+        '<span class="wordmark">SILVR</span><span class="meta">status &middot; read-only</span>'
+    ) in page
+    assert (
+        f"<footer>generated 2026-10-09 12:00 UTC &middot; read-only; reading {html.escape(str(tmp_path))} "
+        "&middot; reload to refresh</footer>"
+    ) in page
+    assert "static snapshot" not in page and "<td>not shown</td>" not in page
+
+
+def public_page(root: Path, **kwargs) -> str:
+    return render_page(collect_status(root, load=lambda: make_config(root), now=NOW), public=True, **kwargs)
+
+
+def test_public_page_has_no_mark_no_root_path_and_no_script(tmp_path):
+    with_gate_run(tmp_path)
+
+    page = public_page(tmp_path, bind=("0.0.0.0", 8765))
+
+    header = page[page.index("<header>") : page.index("</header>")]
+    assert "<svg" not in page and "SILVR mark" not in page  # DSD 1.5: no mark beside performance figures
+    assert '<span class="wordmark">SILVR</span><span class="meta">snapshot &middot; read-only</span>' in header
+    assert "<script" not in page and "<form" not in page and "<button" not in page
+    assert str(tmp_path) not in page and html.escape(str(tmp_path)) not in page
+    assert "0.0.0.0" not in page and "127.0.0.1" not in page and "8765" not in page
+
+
+def test_public_page_names_a_static_snapshot_and_when_it_refreshes(tmp_path):
+    page = public_page(tmp_path)
+
+    header = page[page.index("<header>") : page.index("</header>")]
+    host = page[page.index('<section class="host">') : page.index("</section>", page.index('<section class="host">'))]
+    assert '<span class="label muted">HOST</span>static snapshot<' in header
+    for key, value in (
+        ("BIND", "static snapshot"),
+        ("ROOT", "not shown"),
+        ("READ", "2026-10-09 12:00 UTC"),
+        ("REFRESH", "after each monthly forward run"),
+    ):
+        assert f'<th scope="row">{key}</th><td>{value}</td>' in host
+    assert (
+        "<footer>generated 2026-10-09 12:00 UTC &middot; read-only snapshot, "
+        "refreshed after each monthly forward run</footer>"
+    ) in page
+    assert "reading" not in page.split("</style>", 1)[1] and "reload" not in page.split("</style>", 1)[1]
+
+
+def test_public_page_shows_the_same_analytics_and_leaves_out_the_running_bot_panels(tmp_path):
+    """silvr-cr-006 V-7: stale running-bot data must not read as live trading in public."""
+    with_gate_run(tmp_path)
+
+    private, public = page_for(tmp_path), public_page(tmp_path)
+
+    assert analytics_section(public) == analytics_section(private)
+    bot_panels = {"RISK BUDGET", "POSITIONS / TRADES", "ALERTS"}
+    for title in PANEL_TITLES:
+        assert ttl(title) in private
+        assert (ttl(title) in public) is (title not in bot_panels), title
+    assert "GATE FAIL; 2 of 6 criteria passed" in public
+
+
+def test_public_not_found_page_has_no_mark_and_links_home():
+    page = render_not_found(public=True)
+
+    assert "<svg" not in page and "SILVR mark" not in page
+    assert '<span class="wordmark">SILVR</span>' in page and 'href="/"' in page
+    assert "<script" not in page and "generated " not in page
+    assert "<svg" in render_not_found()  # the local 404 keeps its mark
+
+
+FIVE_FILES = [
+    "404.html",
+    "fonts/IBMPlexMono-Bold.woff2",
+    "fonts/IBMPlexMono-Regular.woff2",
+    "index.html",
+    "vercel.json",
+]
+
+
+def exported(out: Path) -> list[str]:
+    return sorted(path.relative_to(out).as_posix() for path in out.rglob("*") if path.is_file())
+
+
+def test_export_writes_exactly_the_five_files(tmp_path):
+    root, out = tmp_path / "root", tmp_path / "deep" / "er" / "site"
+    root.mkdir()
+    with_gate_run(root)
+
+    export_site(out, root, load=lambda: make_config(root))
+
+    assert exported(out) == FIVE_FILES
+    index = (out / "index.html").read_text(encoding="utf-8")
+    assert "GATE FAIL; 2 of 6 criteria passed" in index
+    assert "<svg" not in index and "SILVR mark" not in index and str(root) not in index and "<script" not in index
+    not_found = (out / "404.html").read_text(encoding="utf-8")
+    assert not_found == render_not_found(public=True) and 'href="/"' in not_found
+    for path, digest in FONT_SHA256.items():
+        assert hashlib.sha256((out / path.lstrip("/")).read_bytes()).hexdigest() == digest
+
+
+def test_export_keeps_unrelated_files_and_can_run_twice(tmp_path):
+    root, out = tmp_path / "root", tmp_path / "site"
+    root.mkdir()
+    (out / ".vercel").mkdir(parents=True)
+    (out / ".vercel" / "project.json").write_text('{"projectId": "x"}', encoding="utf-8")
+    (out / "notes.txt").write_text("keep me", encoding="utf-8")
+    (out / "index.html").write_text("old page", encoding="utf-8")
+
+    export_site(out, root, load=lambda: make_config(root))
+    export_site(out, root, load=lambda: make_config(root))
+
+    assert (out / ".vercel" / "project.json").read_text(encoding="utf-8") == '{"projectId": "x"}'
+    assert (out / "notes.txt").read_text(encoding="utf-8") == "keep me"
+    assert (out / "index.html").read_text(encoding="utf-8").startswith("<!doctype html>")
+    assert exported(out) == sorted([*FIVE_FILES, ".vercel/project.json", "notes.txt"])
+
+
+def test_export_vercel_json_carries_exactly_the_security_headers(tmp_path):
+    root, out = tmp_path / "root", tmp_path / "site"
+    root.mkdir()
+
+    export_site(out, root, load=lambda: make_config(root))
+
+    config = json.loads((out / "vercel.json").read_text(encoding="utf-8"))
+    assert list(config) == ["headers"] and len(config["headers"]) == 1
+    rule = config["headers"][0]
+    assert rule["source"] == "/(.*)"
+    assert [(item["key"], item["value"]) for item in rule["headers"]] == list(SECURITY_HEADERS.items())
+    assert {item["key"]: item["value"] for item in rule["headers"]} == SECURITY_HEADERS
+    assert all(set(item) == {"key", "value"} for item in rule["headers"])
+
+
+def test_export_never_writes_secrets_or_touches_the_source_folder(tmp_path):
+    root, out = tmp_path / "root", tmp_path / "site"
+    root.mkdir()
+    with_gate_run(root)
+    before = sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+    contents = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+    export_site(out, root, load=lambda: make_config(root, **SECRETS))
+
+    assert sorted(path.relative_to(root).as_posix() for path in root.rglob("*")) == before
+    assert {path: path.read_bytes() for path in root.rglob("*") if path.is_file()} == contents
+    for path in out.rglob("*"):
+        if path.is_file() and path.suffix != ".woff2":
+            text = path.read_text(encoding="utf-8")
+            assert not [secret for secret in SECRETS.values() if secret in text], path.name
+
+
+def test_main_export_writes_the_snapshot_and_never_binds_a_socket(tmp_path, monkeypatch, capsys):
+    out = tmp_path / "site"
+    monkeypatch.chdir(tmp_path)
+
+    def no_server(*args, **kwargs):
+        raise AssertionError("--export must not create a server")
+
+    monkeypatch.setattr("silvr.monitoring.dashboard_server.DashboardServer", no_server)
+    monkeypatch.setattr(socket.socket, "bind", no_server)
+
+    assert main(["--export", str(out)]) == 0
+
+    assert exported(out) == FIVE_FILES
+    printed = capsys.readouterr().out.strip().splitlines()
+    assert len(printed) == 1 and str(out) in printed[0]
+    assert "<svg" not in (out / "index.html").read_text(encoding="utf-8")
+
+
+def test_main_export_returns_2_with_a_message_on_os_error(tmp_path, monkeypatch, capsys):
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("a file", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--export", str(blocker / "site")]) == 2
+
+    captured = capsys.readouterr()
+    assert "cannot export to" in captured.err and captured.out == ""
+    assert blocker.read_text(encoding="utf-8") == "a file"
+
+
+def test_main_without_export_still_serves(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    seen = []
+
+    def stop(self):
+        seen.append(self.server_address[0])
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(DashboardServer, "serve_forever", stop)
+
+    assert main(["--port", "0"]) == 0
+    assert seen == [BIND_HOST]
+
+
+def test_analytics_tables_scroll_inside_their_panel_on_a_phone_instead_of_breaking_figures():
+    from silvr.monitoring.dashboard_server import CSS
+
+    narrow = CSS.split("@media (max-width:959px){", 1)[1].split("@media", 1)[0]
+    assert ".crit,.seg{display:block;overflow-x:auto}" in narrow
+    assert ".crit th,.crit td,.seg th,.seg td{white-space:nowrap}" in narrow
+
+
+def test_public_page_hides_a_root_path_quoted_inside_a_readiness_reason(tmp_path):
+    """Live-gate review N1: readiness reasons embed absolute paths; the public copy shows <root> instead."""
+    reports = tmp_path / "reports"
+    reports.mkdir(exist_ok=True)
+    reason = f"Kill switch file is active at {tmp_path / 'KILL_SWITCH'}"
+    (reports / "demo_readiness_report.json").write_text(
+        json.dumps(
+            {
+                "ready": False,
+                "generated_at": "2026-11-11T00:00:00+00:00",
+                "checks": [{"name": "kill switch", "passed": False, "reason": reason}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    public, private = public_page(tmp_path), page_for(tmp_path)
+
+    assert html.escape(str(tmp_path)) in private
+    assert html.escape(str(tmp_path)) not in public
+    assert "kill switch: Kill switch file is active at &lt;root&gt;" in public
+
+
+def test_public_page_names_only_the_feeds_it_shows_and_ignores_hidden_failures(tmp_path):
+    status = collect_status(tmp_path, load=lambda: make_config(tmp_path), now=NOW)
+    for index in (3, 4, 5):  # RISK BUDGET, POSITIONS / TRADES, ALERTS
+        status["panels"][index]["rows"] = [{"state": "err", "label": "unreadable", "text": "OperationalError"}]
+    status["degraded"] = 3
+
+    public, private = render_page(status, public=True), render_page(status)
+
+    assert "degraded: 3 panels unreadable" in private
+    assert 'class="degraded"' not in public
+    assert "risk_state" not in public.split("</header>", 1)[0]

@@ -25,6 +25,7 @@ PANEL_TITLES: tuple[str, ...] = (
     "POSITIONS / TRADES",
     "ALERTS",
     "FORWARD TEST",  # silvr-cr-005: last collected, shown after EVIDENCE REPORTS (see LAYOUT)
+    "ANALYTICS",  # silvr-cr-006: appended last so indexes 0..6 do not move; shown after FORWARD TEST
 )
 EVIDENCE_REPORTS: tuple[str, ...] = (
     "backtest_report",
@@ -66,10 +67,36 @@ FORWARD_NOTE = "Progress only. No verdict until 2027-11-10. Do not change the st
 FORWARD_OK = ("running", "verdict PASS")
 FORWARD_DECIDED = ("verdict PASS", "verdict FAIL")  # also any "ended: ..." or "void: ..."
 NOT_AVAILABLE = "not available: no usable value in the progress file"
+ANALYTICS_DIR = Path("reports") / "trend_ensemble"
+GATE_FILE = "promotion_gate.json"
+VALIDATION_FILE = "out_of_sample_validation_report.json"
+SEGMENTS: tuple[tuple[str, str], ...] = (
+    ("training", "TRAINING"),
+    ("validation", "VALIDATION"),
+    ("final_test", "FINAL TEST"),
+)
+SEGMENT_METRICS: tuple[str, ...] = (
+    "period",
+    "trades",
+    "net",
+    "return",
+    "profit factor",
+    "average R",
+    "win rate",
+    "max drawdown",
+    "max drawdown %",
+    "fees + funding",
+    "weekly net vs target",
+    "losing weeks",
+    "kill switch trips",
+)
+WEEKLY_METRIC = SEGMENT_METRICS.index("weekly net vs target")
+ANALYTICS_NOTE = "Backtest on past data, simulated account. A FAIL means no edge was found; the strategy is not traded."
+NA = "not available"
 RISK_PREFIX = "Risk rejected: "
 SIGNAL_TEXT = "Strategy signal detected. Passing to risk engine."
 
-Row = dict[str, str]
+Row = dict[str, Any]  # state, label, text; some rows carry structured extras ("event", "kind", "cells", ...)
 
 
 def row(state: str, label: str, text: str = "") -> Row:
@@ -104,6 +131,7 @@ def collect_status(
         lambda: _positions(config),
         lambda: _alerts(root),
         lambda: _forward(root),
+        lambda: _analytics(root),
     )
     panels = []
     degraded = 0
@@ -481,10 +509,10 @@ def _is_number(value: Any, *, whole: bool = False) -> bool:
     return not isinstance(value, bool) and isinstance(value, kind) and math.isfinite(value)
 
 
-def _figure(value: Any, show: Callable[[Any], str], *, whole: bool = False) -> str:
+def _figure(value: Any, show: Callable[[Any], str], *, whole: bool = False, missing: str = NOT_AVAILABLE) -> str:
     """A stored figure as text; anything missing or of the wrong type is "not available", never zero."""
 
-    return show(value) if _is_number(value, whole=whole) else NOT_AVAILABLE
+    return show(value) if _is_number(value, whole=whole) else missing
 
 
 def _money(amount: float) -> str:
@@ -503,10 +531,167 @@ def _forward_period(data: dict[str, Any]) -> str:
 
 
 def _forward_weekly(data: dict[str, Any]) -> str:
-    average, target = data.get("weekly_average"), data.get("weekly_target")
+    return _weekly_text(data.get("weekly_average"), data.get("weekly_target"), NOT_AVAILABLE)
+
+
+def _weekly_text(average: Any, target: Any, missing: str) -> str:
     if not (_is_number(average) and _is_number(target)):
-        return NOT_AVAILABLE
+        return missing
     return f"{_money(average)} vs ${_number(target)} target"
+
+
+def _analytics(root: Path) -> list[Row]:
+    """The counted gate run as rows (silvr-cr-006); read-only, no maths beyond formatting.
+
+    Rows with a ``kind`` key carry structured values for the renderer: ``criterion``,
+    ``segment`` (one metric across the three segments) and ``bar`` (weekly net against target).
+    Every row still reads as plain label, state and text, which is the fallback table.
+    """
+
+    folder = root / ANALYTICS_DIR
+    rows = [*_gate_rows(folder / GATE_FILE), *_segment_rows(folder / VALIDATION_FILE)]
+    if all(item["state"] == "off" for item in rows):
+        return rows  # nothing to explain yet, like the forward panel before its first run
+    return [*rows, row("plain", "NOTE", ANALYTICS_NOTE)]
+
+
+def _gate_rows(path: Path) -> list[Row]:
+    data, problem, _ = _read_json_object(path)
+    if problem == "missing":
+        return [row("off", "gate", f"not available: no {path.name} yet")]
+    if data is None:
+        return [row("err", "gate", f"unreadable: {problem}")]
+    passed, criteria = data.get("passed"), data.get("criteria")
+    if not isinstance(passed, bool):
+        return [row("err", "gate", "unreadable: passed is not true or false")]
+    if not isinstance(criteria, list) or not criteria:
+        return [row("err", "gate", "unreadable: criteria missing")]
+    shown = [_criterion(item) for item in criteria]
+    cleared = sum(1 for item in shown if item.get("result") == "PASS")
+    info = data.get("info")
+    info = info if isinstance(info, dict) else {}
+    start, end = _date(info.get("data_start")), _date(info.get("data_end"))
+    bar = data.get("t_stat_bar")
+    detail = [
+        f"{cleared} of {len(shown)} criteria passed",
+        f"t-bar {float(bar)}" if _is_number(bar) else f"t-bar {NA}",
+        f"data {start} to {end}" if start and end else f"data range {NA}",
+    ]
+    verdict = row("ok" if passed else "err", "verdict", "; ".join(["GATE PASS" if passed else "GATE FAIL", *detail]))
+    return [verdict, *shown]
+
+
+def _criterion(item: Any) -> Row:
+    if not isinstance(item, dict):
+        return row("err", "criterion", "unreadable: not an object")
+    number, name = item.get("number"), item.get("name")
+    parts = [str(number)] if _is_number(number, whole=True) else []
+    parts += [name] if isinstance(name, str) and name else []
+    label = " ".join(parts) or "criterion"
+    threshold, actual = _stored_text(item.get("threshold")), _stored_text(item.get("actual"))
+    result = item.get("result")
+    if result not in ("PASS", "FAIL"):
+        result = NA  # an unreadable result is never counted as a pass
+    return {
+        **row("ok" if result == "PASS" else "err", label, f"threshold {threshold}; actual {actual}"),
+        "kind": "criterion",
+        "result": result,
+        "threshold": threshold,
+        "actual": actual,
+    }
+
+
+def _stored_text(value: Any) -> str:
+    if isinstance(value, str) and value:
+        return value
+    return _number(value) if _is_number(value) else NA
+
+
+def _date(value: Any) -> str:
+    """The date part of a stored timestamp, or "" when it cannot be read."""
+
+    try:
+        return _parse_time(value).astimezone(UTC).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _segment_rows(path: Path) -> list[Row]:
+    data, problem, _ = _read_json_object(path)
+    if problem == "missing":
+        return [row("off", "segments", f"not available: no {path.name} yet")]
+    if data is None:
+        return [row("err", "segments", f"unreadable: {problem}")]
+    segments = data.get("segments")
+    if not isinstance(segments, dict):
+        return [row("err", "segments", "unreadable: segments missing")]
+    found = [segments.get(key) for key, _ in SEGMENTS]
+    rows = [
+        row("off", label.lower(), f"not available: no {key} segment in {path.name}")
+        for (key, label), segment in zip(SEGMENTS, found)
+        if not isinstance(segment, dict)
+    ]
+    columns = [_segment_cells(segment if isinstance(segment, dict) else {}) for segment in found]
+    for index, metric in enumerate(SEGMENT_METRICS):
+        cells = [column[index] for column in columns]
+        text = "; ".join(f"{label.lower()} {cell}" for (_, label), cell in zip(SEGMENTS, cells))
+        rows.append({**row("plain", metric, text), "kind": "segment", "cells": cells})
+    for (_, label), segment, column in zip(SEGMENTS, found, columns):
+        standard = segment.get("success_standard") if isinstance(segment, dict) else None
+        standard = standard if isinstance(standard, dict) else {}
+        average, target = standard.get("average_weekly_net"), standard.get("target_weekly_net")
+        rows.append(
+            {
+                **row("plain", f"{label} weekly net", column[WEEKLY_METRIC]),
+                "kind": "bar",
+                "name": label,
+                "value": average if _is_number(average) else None,
+                "target": target if _is_number(target) else None,
+            }
+        )
+    return rows
+
+
+def _segment_cells(segment: dict[str, Any]) -> list[str]:
+    """One segment's figures in SEGMENT_METRICS order; each missing or mistyped number is "not available"."""
+
+    def part(name: str) -> dict[str, Any]:
+        found = segment.get(name)
+        return found if isinstance(found, dict) else {}
+
+    metrics, standard, kill = part("metrics"), part("success_standard"), part("kill_switch")
+    fees, funding = metrics.get("total_fees"), metrics.get("total_funding")
+    weeks = standard.get("weeks")
+    return [
+        _period(segment),
+        _figure(metrics.get("total_trades"), str, whole=True, missing=NA),
+        _figure(metrics.get("net_profit"), _money, missing=NA),
+        _figure(metrics.get("return_percent"), _percent, missing=NA),
+        _figure(metrics.get("profit_factor"), lambda value: f"{value:.2f}", missing=NA),
+        _figure(metrics.get("average_r"), lambda value: f"{value:.3f}", missing=NA),
+        _figure(metrics.get("win_rate"), _percent, missing=NA),
+        _figure(metrics.get("max_drawdown"), _money, missing=NA),
+        _figure(metrics.get("max_drawdown_percent"), _percent, missing=NA),
+        _money(fees + funding) if _is_number(fees) and _is_number(funding) else NA,
+        _weekly_text(standard.get("average_weekly_net"), standard.get("target_weekly_net"), NA),
+        _figure(
+            standard.get("losing_week_share"),
+            lambda share: f"{share * 100:.0f}%" + (f" of {weeks} weeks" if _is_number(weeks, whole=True) else ""),
+            missing=NA,
+        ),
+        _figure(kill.get("trips"), str, whole=True, missing=NA),
+    ]
+
+
+def _percent(fraction: float) -> str:
+    """A stored fraction (-0.012) as a percent (-1.2%)."""
+
+    return f"{fraction * 100:.1f}%"
+
+
+def _period(segment: dict[str, Any]) -> str:
+    start, end = _date(segment.get("start")), _date(segment.get("end"))
+    return f"{start} to {end}" if start and end else NA
 
 
 def _read_json_object(path: Path) -> tuple[dict[str, Any] | None, str, os.stat_result | None]:
