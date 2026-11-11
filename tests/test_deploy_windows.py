@@ -116,7 +116,9 @@ def test_publish_exports_the_snapshot_and_deploys_only_that_folder() -> None:
     assert "Push-Location $site" in script and "deploy --prod --yes" in script
     assert script.count("& $python") == 1 and script.count("$null | & $vercel.Source") == 1
     assert "throw" not in script
-    assert r"logs\forward-test.log" in script
+    # The log path is absolute: the deploy's output is logged while inside $site (found 2026-11-11).
+    assert r"$log = Join-Path $Root 'logs\forward-test.log'" in script
+    assert r"$log = 'logs" not in script
 
 
 def test_forward_test_publishes_after_the_toast_and_keeps_its_exit_code() -> None:
