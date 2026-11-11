@@ -114,7 +114,7 @@ def test_publish_exports_the_snapshot_and_deploys_only_that_folder() -> None:
     assert "silvr.monitoring.dashboard_server --export $site" in script
     assert r"'.tmp\silvr-dashboard'" in script
     assert "Push-Location $site" in script and "deploy --prod --yes" in script
-    assert script.count("& $python") == 1 and script.count("& $vercel.Source") == 1
+    assert script.count("& $python") == 1 and script.count("$null | & $vercel.Source") == 1
     assert "throw" not in script
     assert r"logs\forward-test.log" in script
 

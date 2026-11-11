@@ -21,7 +21,8 @@ if ($LASTEXITCODE -ne 0) { Write-Log "export failed with code $LASTEXITCODE"; ex
 
 Push-Location $site
 try {
-    & $vercel.Source deploy --prod --yes 2>&1 | ForEach-Object { Write-Log "$_" }
+    # Empty stdin: a signed-out CLI fails at once instead of waiting for a login until the task's 12-hour limit.
+    $null | & $vercel.Source deploy --prod --yes 2>&1 | ForEach-Object { Write-Log "$_" }
     $code = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
 } finally {
     Pop-Location

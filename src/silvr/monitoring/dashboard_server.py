@@ -196,7 +196,8 @@ display:flex;flex-direction:column}
 .sidebar{position:sticky;top:48px;z-index:2;background:var(--canvas)}
 .sidebar .host,.sidebar .tagline,.tele .feed{display:none}}
 @media (max-width:959px){.row{flex-direction:column}section{flex:1 1 auto;width:100%}
-.big,.mode{font-size:32px}}
+.big,.mode{font-size:32px}
+.crit,.seg{display:block;overflow-x:auto}.crit th,.crit td,.seg th,.seg td{white-space:nowrap}}
 @media (max-width:639px){.tele .host,.meta{display:none}}
 """
 # One sticky navbar for every HTML page: the S-tier mark (DSD 2.4), wordmark and context.
@@ -285,6 +286,9 @@ def render_page(status: dict[str, Any], *, bind: tuple[str, int | None] | None =
             sections += _render_host(status, host, public)
         groups.append(f'<div class="{css_class}">{sections}</div>')
     count = int(status.get("degraded", 0))
+    if public:  # a hidden panel's failure must not raise a warning whose cause the visitor cannot see
+        hidden_rows = [panels[index]["rows"] for index in _hidden_panels()]
+        count -= sum(1 for rows in hidden_rows if rows and rows[0]["label"] == "unreadable")
     degraded = ""
     if count > 0:
         noun = "panel" if count == 1 else "panels"
@@ -297,7 +301,7 @@ def render_page(status: dict[str, Any], *, bind: tuple[str, int | None] | None =
         footer = f"generated {generated_at} &middot; read-only snapshot, refreshed {SNAPSHOT_REFRESH}"
     else:
         footer = f"generated {generated_at} &middot; read-only; reading {html.escape(status['root'])} &middot; reload to refresh"
-    return PAGE.substitute(
+    page = PAGE.substitute(
         css=CSS,
         header=_header(_telemetry(status["generated_at"], host, port, public), public),
         banner=groups[0] + _TAGLINE,
@@ -306,6 +310,15 @@ def render_page(status: dict[str, Any], *, bind: tuple[str, int | None] | None =
         panels="\n".join(groups[1:]),
         footer=footer,
     )
+    root = html.escape(status["root"])
+    # Readiness reasons can quote absolute paths under the root; the folder path stays private (V-4).
+    return page.replace(root, "&lt;root&gt;") if public and root else page
+
+
+def _hidden_panels() -> set[int]:
+    """Panel indexes the public snapshot leaves out (V-7)."""
+
+    return {index for group in LAYOUT for index in group} - {index for group in PUBLIC_LAYOUT for index in group}
 
 
 def render_not_found(*, public: bool = False) -> str:
@@ -345,7 +358,8 @@ def _telemetry(generated_at: str, host: str, port: int | None, public: bool = Fa
         '<div class="tele">'
         f'<span class="host"><span class="label muted">HOST</span>{html.escape(address)}</span>'
         '<span class="feed"><span class="label muted">FEED</span>'
-        "reports &middot; risk_state &middot; audit.jsonl</span>"
+        + ("reports" if public else "reports &middot; risk_state &middot; audit.jsonl")
+        + "</span>"
         f'<span class="utc"><span class="label muted">UTC</span>{html.escape(moment)}</span>'
         "</div>"
     )
@@ -576,28 +590,25 @@ def _render_positions(panel: dict[str, Any], restraint: dict[str, Any], number: 
 def _render_analytics(panel: dict[str, Any], number: int, source: str) -> str:
     """Panel 09 (silvr-cr-006): verdict rows, criteria table, segment table and one bar per segment.
 
-    Rows carry a ``kind`` (criterion, segment, bar); the rest print as the plain table. Any
-    unexpected shape falls back to the plain table, as ``_render_risk`` does.
+    Rows carry a ``kind`` (criterion, segment, bar); the rest print as the plain table. The rows come
+    only from ``status._analytics``, so a bad shape is a bug and fails loudly instead of hiding.
     """
 
-    try:
-        groups: dict[str, list[dict[str, Any]]] = {"criterion": [], "segment": [], "bar": [], "": []}
-        for item in panel["rows"]:
-            kind = item.get("kind")
-            groups[kind if kind in groups else ""].append(item)
-        notes = [item for item in groups[""] if item["label"] == "NOTE"]
-        body = (
-            _analytics_plain([item for item in groups[""] if item not in notes])
-            + _analytics_criteria(groups["criterion"])
-            + _analytics_segments(groups["segment"])
-            + _analytics_bars(groups["bar"])
-        )
-        tail = "".join(
-            f'<p class="note"><span class="label">{html.escape(item["label"])}</span> {html.escape(item["text"])}</p>'
-            for item in notes
-        )
-    except (AttributeError, KeyError, TypeError, ValueError):
-        return _render_panel(panel, note_last=True, number=number, source=source)
+    groups: dict[str, list[dict[str, Any]]] = {"criterion": [], "segment": [], "bar": [], "": []}
+    for item in panel["rows"]:
+        kind = item.get("kind")
+        groups[kind if kind in groups else ""].append(item)
+    notes = [item for item in groups[""] if item["label"] == "NOTE"]
+    body = (
+        _analytics_plain([item for item in groups[""] if item not in notes])
+        + _analytics_criteria(groups["criterion"])
+        + _analytics_segments(groups["segment"])
+        + _analytics_bars(groups["bar"])
+    )
+    tail = "".join(
+        f'<p class="note"><span class="label">{html.escape(item["label"])}</span> {html.escape(item["text"])}</p>'
+        for item in notes
+    )
     return f'<section>{_title(number, panel["title"], source)}{body}{tail}</section>'
 
 
@@ -635,8 +646,6 @@ def _analytics_segments(items: list[dict[str, Any]]) -> str:
     body = ""
     for item in items:
         cells = item["cells"]
-        if len(cells) != 3:
-            raise ValueError("a segment row needs three cells")
         body += (
             f'<tr><th scope="row">{html.escape(item["label"])}</th>'
             + "".join(f"<td>{html.escape(cell)}</td>" for cell in cells)

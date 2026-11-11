@@ -1424,30 +1424,6 @@ def test_analytics_bad_files_still_render_the_page(tmp_path, content):
     assert "unreadable: " in section and 'class="degraded"' not in page
 
 
-def test_analytics_unexpected_row_shape_falls_back_to_the_plain_table(tmp_path):
-    with_gate_run(tmp_path)
-    for kind, damage in (
-        ("criterion", lambda item: item.pop("threshold")),
-        ("criterion", lambda item: item.pop("result")),
-        ("segment", lambda item: item.update(cells=["only one"])),
-        ("bar", lambda item: item.update(value="x")),
-    ):
-        forged = collect_status(tmp_path, load=lambda: make_config(tmp_path), now=NOW)
-        for item in forged["panels"][7]["rows"]:
-            if item.get("kind") == kind:
-                damage(item)
-
-        page = render_page(forged)  # must not raise
-        section = analytics_section(page)
-
-        assert '<table class="crit"' not in section and '<table class="seg"' not in section
-        assert 'class="track"' not in section
-        assert "<th scope=\"row\">1 Enough trades</th>" in section  # the rows still read as the plain table
-        assert "the strategy is not traded." in section
-    intact = analytics_section(page_for(tmp_path))
-    assert '<table class="crit"' in intact and intact.count('class="track"') == 3
-
-
 def test_analytics_escapes_stored_text(tmp_path):
     data = gate_data()
     data["criteria"][0]["name"] = "<script>alert(1)</script>"
@@ -1675,3 +1651,47 @@ def test_main_without_export_still_serves(monkeypatch, tmp_path):
 
     assert main(["--port", "0"]) == 0
     assert seen == [BIND_HOST]
+
+
+def test_analytics_tables_scroll_inside_their_panel_on_a_phone_instead_of_breaking_figures():
+    from silvr.monitoring.dashboard_server import CSS
+
+    narrow = CSS.split("@media (max-width:959px){", 1)[1].split("@media", 1)[0]
+    assert ".crit,.seg{display:block;overflow-x:auto}" in narrow
+    assert ".crit th,.crit td,.seg th,.seg td{white-space:nowrap}" in narrow
+
+
+def test_public_page_hides_a_root_path_quoted_inside_a_readiness_reason(tmp_path):
+    """Live-gate review N1: readiness reasons embed absolute paths; the public copy shows <root> instead."""
+    reports = tmp_path / "reports"
+    reports.mkdir(exist_ok=True)
+    reason = f"Kill switch file is active at {tmp_path / 'KILL_SWITCH'}"
+    (reports / "demo_readiness_report.json").write_text(
+        json.dumps(
+            {
+                "ready": False,
+                "generated_at": "2026-11-11T00:00:00+00:00",
+                "checks": [{"name": "kill switch", "passed": False, "reason": reason}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    public, private = public_page(tmp_path), page_for(tmp_path)
+
+    assert html.escape(str(tmp_path)) in private
+    assert html.escape(str(tmp_path)) not in public
+    assert "kill switch: Kill switch file is active at &lt;root&gt;" in public
+
+
+def test_public_page_names_only_the_feeds_it_shows_and_ignores_hidden_failures(tmp_path):
+    status = collect_status(tmp_path, load=lambda: make_config(tmp_path), now=NOW)
+    for index in (3, 4, 5):  # RISK BUDGET, POSITIONS / TRADES, ALERTS
+        status["panels"][index]["rows"] = [{"state": "err", "label": "unreadable", "text": "OperationalError"}]
+    status["degraded"] = 3
+
+    public, private = render_page(status, public=True), render_page(status)
+
+    assert "degraded: 3 panels unreadable" in private
+    assert 'class="degraded"' not in public
+    assert "risk_state" not in public.split("</header>", 1)[0]
