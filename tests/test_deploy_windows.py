@@ -81,6 +81,14 @@ def test_installer_pins_trigger_and_task_settings() -> None:
     assert script.count("-WorkingDirectory $Root") == 1
 
 
+def test_forward_task_xml_interpolates_only_escaped_values() -> None:
+    script = read("install-forward-tasks.ps1")
+    body = script.split('$forwardXml = @"', 1)[1].split('"@', 1)[0]
+
+    # Values from the environment or filesystem must pass through the XML escape before going in.
+    assert set(re.findall(r"\$\w+", body)) == {"$start", "$months", "$userXml", "$conhostXml", "$argsXml", "$rootXml"}
+
+
 def test_forward_test_toasts_instead_of_throwing_when_python_is_missing() -> None:
     script = read("forward-test.ps1")
 
