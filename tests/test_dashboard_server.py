@@ -1316,15 +1316,36 @@ def test_analytics_verdict_and_criteria_table(tmp_path):
         '<th scope="col">THRESHOLD</th><th scope="col">ACTUAL</th>'
     ) in table
     assert (
-        '<th scope="row">1 Enough trades</th><td class="ok">[ OK ]</td><td>PASS</td>'
+        '<th scope="row">1 Enough trades</th><td class="ok" title="PASS: needs &gt;= 100; got 1054. '
+        'Checks there are enough trades for the result to mean anything.">[ OK ]</td><td>PASS</td>'
         "<td>&gt;= 100</td><td>1054</td>"
     ) in table
     assert (
-        '<th scope="row">2 Real edge</th><td class="err">[ ERR ]</td><td>FAIL</td>'
+        '<th scope="row">2 Real edge</th><td class="err" title="FAIL: needs avg R &gt; 0, t &gt;= 3.0; '
+        "got avg R 0.02046, t 0.1269. Checks the average trade makes money and that t, how sure we are "
+        'it is not luck, clears the bar.">[ ERR ]</td><td>FAIL</td>'
         "<td>avg R &gt; 0, t &gt;= 3.0</td><td>avg R 0.02046, t 0.1269</td>"
     ) in table
     assert table.count("[ OK ]") == 2 and table.count("[ ERR ]") == 4  # glyph, word and colour class together
     assert table.count("<td>PASS</td>") == 2 and table.count("<td>FAIL</td>") == 4
+    assert table.count(' title="') == 6  # every state explains itself, PASS and FAIL alike
+
+
+def test_analytics_criteria_title_escapes_stored_quotes_and_markup_and_skips_unreadable_rows(tmp_path):
+    data = gate_data()
+    data["criteria"][0]["threshold"] = '"><script>alert(1)</script>'
+    data["criteria"][1]["actual"] = "it's \"bad\" & <b>"
+    data["criteria"][2] = "not an object"
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    section = analytics_section(page_for(tmp_path))
+
+    table = section[section.index('<table class="crit">') : section.index("</table>", section.index('<table class="crit">'))]
+    assert "<script" not in section and "<b>" not in table
+    assert 'title="PASS: needs &quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;; got 1054.' in table
+    assert "got it&#x27;s &quot;bad&quot; &amp; &lt;b&gt;. Checks the average trade" in table
+    assert "unreadable: not an object" in section  # the unreadable row prints in the plain table, with no title
+    assert section.count(' title="') == 5  # the five readable criteria only
 
 
 def test_analytics_segment_table_has_one_column_per_segment(tmp_path):
@@ -1715,9 +1736,11 @@ def test_ladder_cards_show_the_trend_run_and_the_forward_test_next(tmp_path):
         '<span class="detail">trend_ensemble/out_of_sample_validation_report</span>'
     ) in cards
     assert (
-        '<span class="status"><span class="err">[ ERR ]</span> GATE FAIL · 2 of 6</span>'
-        '<span class="detail">trend_ensemble/promotion_gate</span>'
+        '<span class="status"><span class="err" title="Failed: Real edge, Profit factor, Drawdown, '
+        'Out-of-sample efficiency. Hover the states in 09 ANALYTICS for each reason.">[ ERR ]</span> '
+        'GATE FAIL · 2 of 6</span><span class="detail">trend_ensemble/promotion_gate</span>'
     ) in cards
+    assert cards.count(' title="') == 1  # only the gate step carries a why
     assert '<span class="detail">backtest_report</span>' not in cards
     assert '<span class="detail">out_of_sample_validation_report</span>' not in cards
     assert '<span class="detail">paper_trading_report</span>' in cards  # the other cards keep their detail
@@ -1729,6 +1752,29 @@ def test_ladder_cards_show_the_trend_run_and_the_forward_test_next(tmp_path):
         '<p class="next-strip"><span class="label">NEXT ▸</span> '
         "forward test, one verdict after 2027-11-10 (no tuning on data already seen)</p>"
     ) in page
+
+
+def test_ladder_card_why_is_escaped_and_a_pass_says_all_passed(tmp_path):
+    data = gate_data()
+    data["criteria"][1]["name"] = 'Real "edge" <i>'
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    page = page_for(tmp_path)
+    cards = page[page.index("<ol>") : page.index("</ol>")]
+
+    assert 'title="Failed: Real &quot;edge&quot; &lt;i&gt;, Profit factor,' in cards
+    assert "<i>" not in cards
+
+    passing = gate_data()
+    passing["passed"] = True
+    for item in passing["criteria"]:
+        item["result"] = "PASS"
+    write_analytics(tmp_path, GATE_FILE, passing)
+
+    page = page_for(tmp_path)
+    cards = page[page.index("<ol>") : page.index("</ol>")]
+
+    assert '<span class="ok" title="All 6 criteria passed.">[ OK ]</span> GATE PASS' in cards
 
 
 def test_ladder_cards_without_a_gate_run_keep_the_report_details(tmp_path):

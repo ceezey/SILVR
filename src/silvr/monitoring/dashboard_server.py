@@ -462,11 +462,12 @@ def _render_card(index: int, step: dict[str, str], next_index: int | None, full:
     flag = "<strong>NEXT</strong>" if is_next else ""
     shown = step.get("detail") or (STEP_DETAILS[index] if full else "")  # the gate run names its own file (V-9)
     detail = f'<span class="detail">{html.escape(shown)}</span>' if shown else ""
+    hover = _hover(step.get("why"))
     return (
         f'<li class="{classes}"><div class="head"><span class="mk {marker}"></span>'
         f'<span class="idx">{index + 1:02d}</span>{flag}</div>'
         f'<span class="label">{html.escape(step["label"])}</span>'
-        f'<span class="status"><span class="{step["state"]}">{TAGS[step["state"]]}</span> '
+        f'<span class="status"><span class="{step["state"]}"{hover}>{TAGS[step["state"]]}</span> '
         f'{html.escape(step["text"])}</span>{detail}</li>'
     )
 
@@ -618,6 +619,12 @@ def _render_analytics(panel: dict[str, Any], number: int, source: str) -> str:
     return f'<section>{_title(number, panel["title"], source)}{body}{tail}</section>'
 
 
+def _hover(why: str | None) -> str:
+    """A title attribute (hover tooltip) carrying the real reason for a state, or nothing when there is none."""
+
+    return f' title="{html.escape(why, quote=True)}"' if why else ""
+
+
 def _sub(title: str) -> str:
     return f'<span class="label muted sub">{html.escape(title)}</span>'
 
@@ -638,7 +645,7 @@ def _analytics_criteria(items: list[dict[str, Any]]) -> str:
         return ""
     body = "".join(
         f'<tr><th scope="row">{html.escape(item["label"])}</th>'
-        f'<td class="{item["state"]}">{TAGS[item["state"]]}</td>'
+        f'<td class="{item["state"]}"{_hover(item.get("why"))}>{TAGS[item["state"]]}</td>'
         f'<td>{html.escape(item["result"])}</td><td>{html.escape(item["threshold"])}</td>'
         f'<td>{html.escape(item["actual"])}</td></tr>'
         for item in items
