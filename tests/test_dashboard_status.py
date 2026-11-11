@@ -1231,6 +1231,72 @@ def test_analytics_gate_verdict_and_six_criteria(tmp_path):
     assert status["degraded"] == 0
 
 
+def test_analytics_criterion_why_gives_result_threshold_actual_and_meaning(tmp_path):
+    from silvr.monitoring.status import CRITERION_MEANINGS
+
+    write_analytics(tmp_path, GATE_FILE, gate_data())
+
+    criteria = of_kind(collect(tmp_path), "criterion")
+
+    assert sorted(CRITERION_MEANINGS) == [1, 2, 3, 4, 5, 6]
+    assert criteria[0]["why"] == (  # a PASS explains itself too
+        "PASS: needs >= 100; got 1054. Checks there are enough trades for the result to mean anything."
+    )
+    assert criteria[1]["why"] == (
+        "FAIL: needs avg R > 0, t >= 3.0; got avg R 0.02046, t 0.1269. "
+        "Checks the average trade makes money and that t, how sure we are it is not luck, clears the bar."
+    )
+    for number, item in enumerate(criteria, start=1):
+        assert item["why"].endswith(CRITERION_MEANINGS[number])
+    assert [item["name"] for item in criteria][:3] == ["Enough trades", "Real edge", "Profit factor"]
+
+
+def test_analytics_warn_counts_as_passed_and_is_never_listed_as_failed(tmp_path):
+    data = gate_data()
+    data["passed"] = True
+    for item in data["criteria"]:
+        item["result"] = "PASS"
+    data["criteria"][2]["result"] = "WARN"  # the gate writes WARN for a profit factor above 3.0 and counts it as passed
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    status = collect(tmp_path)
+    criteria = of_kind(status, "criterion")
+    verdict = next(item for item in status["panels"][7]["rows"] if item["label"] == "verdict")
+    gate_step = status["ladder"]["steps"][1]
+
+    assert (criteria[2]["state"], criteria[2]["result"]) == ("warn", "WARN")
+    assert criteria[2]["why"].startswith("WARN: needs >= 1.5 (warn > 3.0); got ")
+    assert verdict["text"].startswith("GATE PASS; 6 of 6 criteria passed")
+    assert (gate_step["state"], gate_step["why"]) == ("ok", "All 6 criteria passed.")
+
+
+def test_analytics_criterion_why_drops_the_meaning_for_an_unknown_or_unreadable_number(tmp_path):
+    data = gate_data()
+    data["criteria"][0]["number"] = 99  # no meaning written for it
+    data["criteria"][1]["number"] = "2"  # not a whole number
+    del data["criteria"][2]["number"]
+    data["criteria"][3] = "not an object"
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    result = rows(collect(tmp_path), ANALYTICS)
+
+    assert result[1]["why"] == "PASS: needs >= 100; got 1054."
+    assert result[2]["why"] == "FAIL: needs avg R > 0, t >= 3.0; got avg R 0.02046, t 0.1269."
+    assert result[3]["why"] == "FAIL: needs >= 1.5 (warn > 3.0); got 0.8683."
+    assert "why" not in result[4]  # "unreadable: not an object" has nothing to explain
+
+
+def test_analytics_criterion_why_for_an_unreadable_result_says_not_available(tmp_path):
+    data = gate_data()
+    data["criteria"][1]["result"] = "MAYBE"
+    del data["criteria"][1]["threshold"]
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    why = of_kind(collect(tmp_path), "criterion")[1]["why"]
+
+    assert why.startswith("not available: needs not available; got avg R 0.02046, t 0.1269. Checks the average trade")
+
+
 def test_analytics_passing_gate_is_ok(tmp_path):
     data = gate_data()
     data["passed"] = True
@@ -1431,6 +1497,10 @@ def test_analytics_collecting_changes_nothing_on_disk(tmp_path):
 
 TREND_FILE_DETAIL = "trend_ensemble/out_of_sample_validation_report"
 TREND_GATE_DETAIL = "trend_ensemble/promotion_gate"
+FAILED_WHY = (
+    "Failed: Real edge, Profit factor, Drawdown, Out-of-sample efficiency. "
+    "Hover the states in 09 ANALYTICS for each reason."
+)
 
 
 def passing_gate() -> dict:
@@ -1452,7 +1522,13 @@ def test_ladder_with_a_failing_gate_run_reads_the_trend_run(tmp_path):
     assert FORWARD_NEXT == "Next: forward test, one verdict after 2027-11-10 (no tuning on data already seen)"
     assert ladder["steps"] == [
         {"state": "ok", "label": "Backtest", "text": "trend_ensemble run", "detail": TREND_FILE_DETAIL},
-        {"state": "err", "label": "Out-of-sample", "text": "GATE FAIL · 2 of 6", "detail": TREND_GATE_DETAIL},
+        {
+            "state": "err",
+            "label": "Out-of-sample",
+            "text": "GATE FAIL · 2 of 6",
+            "detail": TREND_GATE_DETAIL,
+            "why": FAILED_WHY,
+        },
         {"state": "off", "label": "Paper", "text": MISSING_REASONS["paper_trading_report"]},
         {"state": "off", "label": "Demo", "text": MISSING_REASONS["demo_readiness_report"]},
         {"state": "off", "label": "Live", "text": "blocked (PRD-F12)"},
@@ -1466,7 +1542,17 @@ def test_ladder_takes_the_counts_from_the_verdict_text(tmp_path):
     data["criteria"][1]["result"] = "PASS"  # 3 of 6 pass, the gate still fails
     write_analytics(tmp_path, GATE_FILE, data)
 
-    assert steps(collect(tmp_path))[1]["text"] == "GATE FAIL · 3 of 6"
+    step = steps(collect(tmp_path))[1]
+    assert step["text"] == "GATE FAIL · 3 of 6"
+    assert step["why"].startswith("Failed: Profit factor, Drawdown, Out-of-sample efficiency.")  # no number in names
+
+
+def test_ladder_failed_list_uses_the_name_and_falls_back_to_the_label(tmp_path):
+    data = gate_data()
+    del data["criteria"][1]["name"]  # label is then just the number
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    assert steps(collect(tmp_path))[1]["why"].startswith("Failed: 2, Profit factor,")
 
 
 def test_ladder_with_a_passing_gate_run_moves_next_to_paper(tmp_path):
@@ -1477,7 +1563,13 @@ def test_ladder_with_a_passing_gate_run_moves_next_to_paper(tmp_path):
     ladder = collect(tmp_path)["ladder"]
 
     assert ladder["steps"][0] == {"state": "ok", "label": "Backtest", "text": "trend_ensemble run", "detail": TREND_FILE_DETAIL}
-    assert ladder["steps"][1] == {"state": "ok", "label": "Out-of-sample", "text": "GATE PASS", "detail": TREND_GATE_DETAIL}
+    assert ladder["steps"][1] == {
+        "state": "ok",
+        "label": "Out-of-sample",
+        "text": "GATE PASS",
+        "detail": TREND_GATE_DETAIL,
+        "why": "All 6 criteria passed.",
+    }
     assert (ladder["next"], ladder["next_text"], ladder["gates_clear"]) == (2, NEXT_TEXT[2], 2)
 
 
