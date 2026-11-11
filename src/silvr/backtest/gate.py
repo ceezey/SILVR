@@ -117,6 +117,8 @@ def _fmt(value: float) -> str:
 
 
 def evaluate_gate(report: Mapping[str, Any], *, prior_looks: int = 0) -> GateVerdict:
+    if report.get("kind") == "forward_progress":
+        raise GateInputError("a forward progress report is not a gate input; only the forward verdict report is")
     t_stat_bar = MIN_T_STAT_REPEAT if prior_looks >= 1 else MIN_T_STAT
     strategy = report.get("strategy", DEFAULT_STRATEGY)
     if not isinstance(strategy, str) or not strategy:
