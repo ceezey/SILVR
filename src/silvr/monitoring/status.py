@@ -104,6 +104,18 @@ SEGMENT_METRICS: tuple[str, ...] = (
 WEEKLY_METRIC = SEGMENT_METRICS.index("weekly net vs target")
 ANALYTICS_NOTE = "Backtest on past data, simulated account. A FAIL means no edge was found; the strategy is not traded."
 NA = "not available"
+CLEARED = ("PASS", "WARN")  # the gate counts a WARN as passed (gate.py: profit factor above the warn level)
+RESULT_STATES = {"PASS": "ok", "WARN": "warn", "FAIL": "err"}
+# Plain-English meaning of each gate criterion, keyed by the number promotion_gate.json gives it.
+# No limits here: the tooltip's "needs ..." part carries the real one from the gate file.
+CRITERION_MEANINGS: dict[int, str] = {
+    1: "Checks there are enough trades for the result to mean anything.",
+    2: "Checks the average trade makes money and that t, how sure we are it is not luck, clears the bar.",
+    3: "Checks money won clearly beats money lost (below 1.0 is a net loss); a very high value is a WARN, often too good to be true.",
+    4: "Checks the average win is big enough against the average loss.",
+    5: "Checks the worst drop stays within the limit and the return is well above that drop.",
+    6: "Checks the training result was positive and the final test kept enough of it; less means it did not carry over.",
+}
 RISK_PREFIX = "Risk rejected: "
 SIGNAL_TEXT = "Strategy signal detected. Passing to risk engine."
 
@@ -183,7 +195,8 @@ def _ladder(evidence_rows: list[Row], readiness_rows: list[Row], analytics_rows:
     if verdict is None:
         steps = [_strategy_step(label, stem, evidence_rows) for label, stem in zip(LADDER_STEPS, STRATEGY_REPORTS)]
     else:
-        steps = [*_gate_steps(verdict), _strategy_step(LADDER_STEPS[2], STRATEGY_REPORTS[2], evidence_rows)]
+        criteria = [item for item in analytics_rows if item.get("kind") == "criterion"]
+        steps = [*_gate_steps(verdict, criteria), _strategy_step(LADDER_STEPS[2], STRATEGY_REPORTS[2], evidence_rows)]
     steps.append(_demo_step(readiness_rows))
     steps.append(row("off", LADDER_STEPS[4], "blocked (PRD-F12)"))
     next_index = next((index for index, step in enumerate(steps[:4]) if step["state"] != "ok"), None)
@@ -211,9 +224,19 @@ def _strategy_step(label: str, stem: str, evidence_rows: list[Row]) -> Row:
     return row("err", label, found["text"].split(",")[0])
 
 
-def _gate_steps(verdict: Row) -> list[Row]:
-    """Steps 1 and 2 from the counted gate run; each names its file under trend_ensemble/ (V-9)."""
+def _gate_steps(verdict: Row, criteria: list[Row]) -> list[Row]:
+    """Steps 1 and 2 from the counted gate run; each names its file under trend_ensemble/ (V-9).
 
+    The Out-of-sample step carries a "why" (a hover tooltip) naming the criteria that failed.
+    """
+
+    failed = [item.get("name") or item["label"] for item in criteria if item.get("result") not in CLEARED]
+    if failed:
+        why = f"Failed: {', '.join(failed)}. Hover the states in 09 ANALYTICS for each reason."
+    elif verdict["state"] == "ok":
+        why = f"All {len(criteria)} criteria passed."
+    else:
+        why = "The gate file says FAIL, but lists no failed criterion."
     if verdict["state"] == "ok":
         outcome = row("ok", LADDER_STEPS[1], "GATE PASS")
     else:
@@ -222,7 +245,7 @@ def _gate_steps(verdict: Row) -> list[Row]:
         outcome = row("err", LADDER_STEPS[1], f"GATE FAIL{suffix}")
     return [
         {**row("ok", LADDER_STEPS[0], "trend_ensemble run"), "detail": GATE_DETAILS[0]},
-        {**outcome, "detail": GATE_DETAILS[1]},
+        {**outcome, "detail": GATE_DETAILS[1], "why": why},
     ]
 
 
@@ -603,7 +626,7 @@ def _gate_rows(path: Path) -> list[Row]:
     if not isinstance(criteria, list) or not criteria:
         return [row("err", "gate", "unreadable: criteria missing")]
     shown = [_criterion(item) for item in criteria]
-    cleared = sum(1 for item in shown if item.get("result") == "PASS")
+    cleared = sum(1 for item in shown if item.get("result") in CLEARED)
     info = data.get("info")
     info = info if isinstance(info, dict) else {}
     start, end = _date(info.get("data_start")), _date(info.get("data_end"))
@@ -626,14 +649,18 @@ def _criterion(item: Any) -> Row:
     label = " ".join(parts) or "criterion"
     threshold, actual = _stored_text(item.get("threshold")), _stored_text(item.get("actual"))
     result = item.get("result")
-    if result not in ("PASS", "FAIL"):
+    if result not in ("PASS", "WARN", "FAIL"):
         result = NA  # an unreadable result is never counted as a pass
+    meaning = CRITERION_MEANINGS.get(number) if _is_number(number, whole=True) else None
+    why = f"{result}: needs {threshold}; got {actual}." + (f" {meaning}" if meaning else "")
     return {
-        **row("ok" if result == "PASS" else "err", label, f"threshold {threshold}; actual {actual}"),
+        **row(RESULT_STATES.get(result, "err"), label, f"threshold {threshold}; actual {actual}"),
         "kind": "criterion",
+        "name": name if isinstance(name, str) else "",
         "result": result,
         "threshold": threshold,
         "actual": actual,
+        "why": why,
     }
 
 
