@@ -487,7 +487,7 @@ Next recommended task
 
 ## 6. Public Surface
 
-None. The bot has no public web surface; crawler policy is not applicable.
+One read-only static page: the dashboard's public snapshot at https://silvr-dashboard.vercel.app (`silvr-cr-006`), written by `python -m silvr.monitoring.dashboard_server --export DIR` and deployed by `deploy/windows/publish-dashboard.ps1` after each monthly forward run. It has no script, form, control or server code, carries the dashboard's CSP and security headers through `vercel.json`, and shows no mark, folder path or running-bot panel. It is linked from the owner's portfolio, so no crawler restriction is set. The bot itself has no public web surface.
 
 ## 7. Repo and Vault Files
 

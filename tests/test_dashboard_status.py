@@ -1402,3 +1402,119 @@ def test_analytics_collecting_changes_nothing_on_disk(tmp_path):
 
     assert [(path.read_bytes(), path.stat().st_mtime_ns) for path in (gate, validation)] == before
     assert sorted(path.name for path in gate.parent.iterdir()) == sorted([GATE_FILE, VALIDATION_FILE])
+
+
+# ---- silvr-cr-006 V-9: the evidence ladder reads the counted gate run ---------------------------------
+
+TREND_FILE_DETAIL = "trend_ensemble/out_of_sample_validation_report"
+TREND_GATE_DETAIL = "trend_ensemble/promotion_gate"
+
+
+def passing_gate() -> dict:
+    data = gate_data()
+    data["passed"] = True
+    for item in data["criteria"]:
+        item["result"] = "PASS"
+    return data
+
+
+def test_ladder_with_a_failing_gate_run_reads_the_trend_run(tmp_path):
+    from silvr.monitoring.status import FORWARD_NEXT
+
+    write_report(tmp_path, "backtest_report", b"")  # the old evidence reports no longer drive steps 1 and 2
+    write_analytics(tmp_path, GATE_FILE, gate_data())
+
+    ladder = collect(tmp_path)["ladder"]
+
+    assert FORWARD_NEXT == "Next: forward test, one verdict after 2027-11-10 (no tuning on data already seen)"
+    assert ladder["steps"] == [
+        {"state": "ok", "label": "Backtest", "text": "trend_ensemble run", "detail": TREND_FILE_DETAIL},
+        {"state": "err", "label": "Out-of-sample", "text": "GATE FAIL · 2 of 6", "detail": TREND_GATE_DETAIL},
+        {"state": "off", "label": "Paper", "text": "missing"},
+        {"state": "off", "label": "Demo", "text": "missing"},
+        {"state": "off", "label": "Live", "text": "blocked (PRD-F12)"},
+    ]
+    assert (ladder["next"], ladder["next_text"], ladder["gates_clear"]) == (1, FORWARD_NEXT, 1)
+    assert collect(tmp_path)["degraded"] == 0
+
+
+def test_ladder_takes_the_counts_from_the_verdict_text(tmp_path):
+    data = gate_data()
+    data["criteria"][1]["result"] = "PASS"  # 3 of 6 pass, the gate still fails
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    assert steps(collect(tmp_path))[1]["text"] == "GATE FAIL · 3 of 6"
+
+
+def test_ladder_with_a_passing_gate_run_moves_next_to_paper(tmp_path):
+    from silvr.monitoring.status import NEXT_TEXT
+
+    write_analytics(tmp_path, GATE_FILE, passing_gate())
+
+    ladder = collect(tmp_path)["ladder"]
+
+    assert ladder["steps"][0] == {"state": "ok", "label": "Backtest", "text": "trend_ensemble run", "detail": TREND_FILE_DETAIL}
+    assert ladder["steps"][1] == {"state": "ok", "label": "Out-of-sample", "text": "GATE PASS", "detail": TREND_GATE_DETAIL}
+    assert (ladder["next"], ladder["next_text"], ladder["gates_clear"]) == (2, NEXT_TEXT[2], 2)
+
+
+def test_ladder_paper_and_demo_steps_are_unchanged_beside_a_gate_run(tmp_path):
+    write_analytics(tmp_path, GATE_FILE, passing_gate())
+    write_report(tmp_path, STEP_STEMS[2], "{}", mtime=old_mtime())
+    fresh_demo(tmp_path)
+
+    ladder = collect(tmp_path)["ladder"]
+
+    assert ladder["steps"][2] == {"state": "ok", "label": "Paper", "text": "2 B"}
+    assert ladder["steps"][3] == {"state": "ok", "label": "Demo", "text": "READY"}
+    assert (ladder["next"], ladder["gates_clear"]) == (None, 4)
+
+
+def test_ladder_without_a_gate_file_is_exactly_as_before(tmp_path):
+    from silvr.monitoring.status import NEXT_TEXT
+
+    plain = tmp_path / "plain"
+    with_segments = tmp_path / "segments"
+    plain.mkdir()
+    write_analytics(with_segments, VALIDATION_FILE, validation_data())  # no verdict row without the gate file
+
+    ladder = collect(with_segments)["ladder"]
+
+    assert ladder == collect(plain)["ladder"]
+    assert ladder["steps"][:2] == [
+        {"state": "off", "label": "Backtest", "text": "missing"},
+        {"state": "off", "label": "Out-of-sample", "text": "missing"},
+    ]
+    assert all("detail" not in step for step in ladder["steps"])
+    assert (ladder["next"], ladder["next_text"], ladder["gates_clear"]) == (0, NEXT_TEXT[0], 0)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"", "not json", "[1, 2]", {**gate_data(), "passed": "yes"}, {**gate_data(), "criteria": []}],
+)
+def test_ladder_with_an_unreadable_gate_file_keeps_the_old_behaviour(tmp_path, content):
+    plain = tmp_path / "plain"
+    broken = tmp_path / "broken"
+    for root in (plain, broken):
+        write_report(root, "backtest_report", b"")
+        write_report(root, "out_of_sample_validation_report", "{}")
+    write_analytics(broken, GATE_FILE, content)
+
+    ladder = collect(broken)["ladder"]
+
+    assert ladder == collect(plain)["ladder"]
+    assert ladder["steps"][:2] == [
+        {"state": "err", "label": "Backtest", "text": "0 B"},
+        {"state": "ok", "label": "Out-of-sample", "text": "2 B"},
+    ]
+    assert (ladder["next"], ladder["gates_clear"]) == (0, 1)
+
+
+def test_ladder_with_a_gate_directory_instead_of_a_file_keeps_the_old_behaviour(tmp_path):
+    (tmp_path / "reports" / "trend_ensemble" / GATE_FILE).mkdir(parents=True)  # ANALYTICS panel raises
+
+    ladder = collect(tmp_path)["ladder"]
+
+    assert ladder["steps"][0] == {"state": "off", "label": "Backtest", "text": "missing"}
+    assert ladder["next"] == 0

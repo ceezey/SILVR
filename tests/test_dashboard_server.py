@@ -1695,3 +1695,72 @@ def test_public_page_names_only_the_feeds_it_shows_and_ignores_hidden_failures(t
     assert "degraded: 3 panels unreadable" in private
     assert 'class="degraded"' not in public
     assert "risk_state" not in public.split("</header>", 1)[0]
+
+
+# ---- silvr-cr-006 V-9: ladder cards for the counted gate run; V-10: public mode readout ---------------
+
+
+def test_ladder_cards_show_the_trend_run_and_the_forward_test_next(tmp_path):
+    with_gate_run(tmp_path)
+
+    page = page_for(tmp_path)
+
+    cards = page[page.index('<ol>') : page.index("</ol>")]
+    assert cards.count('<li class="step') == 5
+    assert (
+        '<span class="status"><span class="ok">[ OK ]</span> trend_ensemble run</span>'
+        '<span class="detail">trend_ensemble/out_of_sample_validation_report</span>'
+    ) in cards
+    assert (
+        '<span class="status"><span class="err">[ ERR ]</span> GATE FAIL · 2 of 6</span>'
+        '<span class="detail">trend_ensemble/promotion_gate</span>'
+    ) in cards
+    assert '<span class="detail">backtest_report</span>' not in cards
+    assert '<span class="detail">out_of_sample_validation_report</span>' not in cards
+    assert '<span class="detail">paper_trading_report</span>' in cards  # the other cards keep their detail
+    assert cards.count("<strong>NEXT</strong>") == 1
+    assert cards.index("<strong>NEXT</strong>") < cards.index("GATE FAIL") < cards.index("Paper")  # step 2 is Next
+    assert '<span class="big">1</span><span class="denom"> / 4</span>' in page
+    assert "1 of 4 evidence gates clear. Next gate: Out-of-sample." in page
+    assert (
+        '<p class="next-strip"><span class="label">NEXT ▸</span> '
+        "forward test, one verdict after 2027-11-10 (no tuning on data already seen)</p>"
+    ) in page
+
+
+def test_ladder_cards_without_a_gate_run_keep_the_report_details(tmp_path):
+    today_shape(tmp_path)
+
+    page = page_for(tmp_path)
+
+    assert '<span class="detail">backtest_report</span>' in page
+    assert '<span class="detail">out_of_sample_validation_report</span>' in page
+    assert "trend_ensemble run" not in page and "GATE FAIL · " not in page
+    assert "run a backtest (runbook-backtest.md steps 5 and 6)</p>" in page
+
+
+def test_public_banner_says_configured_mode_and_that_paper_is_only_a_setting(tmp_path):
+    page = public_page(tmp_path)
+    sidebar = page[page.index('<aside class="sidebar">') : page.index("</aside>")]
+
+    assert '<span class="label muted">CONFIGURED MODE</span><span class="mode">PAPER</span>' in sidebar
+    assert '<span class="muted">Setting only, not a running bot. No real order exists.</span>' in sidebar
+    assert "OPERATING MODE" not in page and "Simulated fills only" not in page
+
+
+def test_public_banner_for_another_mode_has_the_new_label_and_no_paper_line(tmp_path):
+    status = collect_status(tmp_path, load=lambda: make_config(tmp_path), now=NOW)
+    status["panels"][0]["rows"][0]["text"] = "DEMO"
+
+    public = render_page(status, public=True)
+
+    assert '<span class="label muted">CONFIGURED MODE</span><span class="mode">DEMO</span>' in public
+    assert "Setting only" not in public and "OPERATING MODE" not in public
+
+
+def test_private_banner_keeps_operating_mode_and_the_simulated_line(tmp_path):
+    page = page_for(tmp_path)
+
+    assert '<span class="label muted">OPERATING MODE</span><span class="mode">PAPER</span>' in page
+    assert '<span class="muted">Simulated fills only. No real order exists.</span>' in page
+    assert "CONFIGURED MODE" not in page and "Setting only" not in page

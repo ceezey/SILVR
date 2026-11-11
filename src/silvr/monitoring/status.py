@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -47,6 +48,8 @@ NEXT_TEXT: tuple[str, ...] = (
     "Next: refresh demo readiness  python -m silvr.demo_readiness (runbook-demo-testnet.md steps 3 and 4)",
 )
 ALL_GATES_PASS = "All evidence gates pass. Live trading stays blocked (PRD-F12)."
+FORWARD_NEXT = "Next: forward test, one verdict after 2027-11-10 (no tuning on data already seen)"  # silvr-cr-006 V-9
+GATE_DETAILS: tuple[str, str] = ("trend_ensemble/out_of_sample_validation_report", "trend_ensemble/promotion_gate")
 ALERT_STATES: dict[str, str] = {
     "risk_rejected": "warn",
     "signal_rejected": "warn",
@@ -143,7 +146,7 @@ def collect_status(
             degraded += 1
         panels.append({"title": title, "rows": rows})
     try:
-        ladder = _ladder(panels[2]["rows"], panels[1]["rows"])
+        ladder = _ladder(panels[2]["rows"], panels[1]["rows"], panels[7]["rows"])
     except Exception as exc:  # a broken panel makes the ladder unreadable, never a guess (AC-23.7)
         ladder = {"steps": [row("err", "unreadable", type(exc).__name__)], "next": None, "next_text": ""}
         degraded += 1
@@ -161,14 +164,24 @@ def collect_status(
     }
 
 
-def _ladder(evidence_rows: list[Row], readiness_rows: list[Row]) -> dict[str, Any]:
-    """Build the five-step evidence ladder from rows already collected."""
+def _ladder(evidence_rows: list[Row], readiness_rows: list[Row], analytics_rows: list[Row]) -> dict[str, Any]:
+    """Build the five-step evidence ladder from rows already collected.
 
-    steps = [_strategy_step(label, stem, evidence_rows) for label, stem in zip(LADDER_STEPS, STRATEGY_REPORTS)]
+    With the counted gate run present (an ANALYTICS verdict row, silvr-cr-006 V-9) steps 1 and 2 read it
+    instead of the two evidence reports; without it they read the reports exactly as before.
+    """
+
+    verdict = next((item for item in analytics_rows if item["label"] == "verdict"), None)
+    if verdict is None:
+        steps = [_strategy_step(label, stem, evidence_rows) for label, stem in zip(LADDER_STEPS, STRATEGY_REPORTS)]
+    else:
+        steps = [*_gate_steps(verdict), _strategy_step(LADDER_STEPS[2], STRATEGY_REPORTS[2], evidence_rows)]
     steps.append(_demo_step(readiness_rows))
     steps.append(row("off", LADDER_STEPS[4], "blocked (PRD-F12)"))
     next_index = next((index for index, step in enumerate(steps[:4]) if step["state"] != "ok"), None)
     next_text = ALL_GATES_PASS if next_index is None else NEXT_TEXT[next_index]
+    if verdict is not None and next_index == 1:
+        next_text = FORWARD_NEXT  # a trend FAIL: the next evidence is the forward test, not another backtest
     # Gates clear (silvr-cr-004 V-3a): steps 1 to 4 in state ok. Live is never counted.
     gates_clear = sum(1 for step in steps[:4] if step["state"] == "ok")
     return {"steps": steps, "next": next_index, "next_text": next_text, "gates_clear": gates_clear}
@@ -188,6 +201,21 @@ def _strategy_step(label: str, stem: str, evidence_rows: list[Row]) -> Row:
     if found["text"] == "missing":
         return row("off", label, "missing")
     return row("err", label, found["text"].split(",")[0])
+
+
+def _gate_steps(verdict: Row) -> list[Row]:
+    """Steps 1 and 2 from the counted gate run; each names its file under trend_ensemble/ (V-9)."""
+
+    if verdict["state"] == "ok":
+        outcome = row("ok", LADDER_STEPS[1], "GATE PASS")
+    else:
+        counted = re.search(r"(\d+) of (\d+) criteria passed", verdict["text"])
+        suffix = f" · {counted[1]} of {counted[2]}" if counted else ""
+        outcome = row("err", LADDER_STEPS[1], f"GATE FAIL{suffix}")
+    return [
+        {**row("ok", LADDER_STEPS[0], "trend_ensemble run"), "detail": GATE_DETAILS[0]},
+        {**outcome, "detail": GATE_DETAILS[1]},
+    ]
 
 
 def _demo_step(readiness_rows: list[Row]) -> Row:
