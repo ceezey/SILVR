@@ -12,6 +12,7 @@ from silvr.monitoring.status import (
     AUDIT_EVENTS,
     AUDIT_TAIL_BYTES,
     EVIDENCE_REPORTS,
+    MISSING_REASONS,
     PANEL_TITLES,
     _read_json_object,
     collect_status,
@@ -403,7 +404,21 @@ def test_evidence_rows_flag_missing_empty_and_invalid(tmp_path):
     assert evidence["out_of_sample_validation_report"]["text"].endswith("; not valid JSON")
     assert evidence["paper_trading_report"]["text"].endswith("; not a JSON object")
     assert evidence["live_readiness_report"]["state"] == "ok"
-    assert evidence["demo_readiness_report"] == {"state": "err", "label": "demo_readiness_report", "text": "missing"}
+    assert evidence["demo_readiness_report"] == {
+        "state": "off",
+        "label": "demo_readiness_report",
+        "text": MISSING_REASONS["demo_readiness_report"],
+    }
+
+
+def test_absent_reports_give_their_reason_not_missing(tmp_path):
+    status = collect(tmp_path)
+
+    for stem in EVIDENCE_REPORTS:
+        assert by_label(status, EVIDENCE)[stem] == {"state": "off", "label": stem, "text": MISSING_REASONS[stem]}
+    readiness_rows = by_label(status, READINESS)
+    assert readiness_rows["live"] == {"state": "off", "label": "live", "text": MISSING_REASONS["live_readiness_report"]}
+    assert readiness_rows["demo"] == {"state": "off", "label": "demo", "text": MISSING_REASONS["demo_readiness_report"]}
 
 
 def test_readiness_ready_not_ready_and_failing_checks(tmp_path):
@@ -560,7 +575,11 @@ def test_ladder_has_five_labelled_steps_and_no_degraded_when_clean(tmp_path):
 
 def test_ladder_strategy_steps_by_evidence_state(tmp_path):
     for index, stem in enumerate(STEP_STEMS):
-        assert steps(collect(tmp_path))[index] == {"state": "off", "label": STEP_LABELS[index], "text": "missing"}
+        assert steps(collect(tmp_path))[index] == {
+            "state": "off",
+            "label": STEP_LABELS[index],
+            "text": MISSING_REASONS[stem],
+        }
         write_report(tmp_path, stem, b"")
         assert steps(collect(tmp_path))[index] == {"state": "err", "label": STEP_LABELS[index], "text": "0 B"}
         write_report(tmp_path, stem, "not json")
@@ -591,7 +610,11 @@ def test_ladder_demo_not_ready_keeps_err_and_the_stale_suffix(tmp_path):
 
 
 def test_ladder_demo_missing_is_off_and_bad_files_are_unreadable(tmp_path):
-    assert steps(collect(tmp_path))[3] == {"state": "off", "label": "Demo", "text": "missing"}
+    assert steps(collect(tmp_path))[3] == {
+        "state": "off",
+        "label": "Demo",
+        "text": MISSING_REASONS["demo_readiness_report"],
+    }
     for content in (b"", "not json", "[]"):
         write_report(tmp_path, "demo_readiness_report", content)
         assert steps(collect(tmp_path))[3] == {"state": "err", "label": "Demo", "text": "unreadable"}
@@ -1430,8 +1453,8 @@ def test_ladder_with_a_failing_gate_run_reads_the_trend_run(tmp_path):
     assert ladder["steps"] == [
         {"state": "ok", "label": "Backtest", "text": "trend_ensemble run", "detail": TREND_FILE_DETAIL},
         {"state": "err", "label": "Out-of-sample", "text": "GATE FAIL · 2 of 6", "detail": TREND_GATE_DETAIL},
-        {"state": "off", "label": "Paper", "text": "missing"},
-        {"state": "off", "label": "Demo", "text": "missing"},
+        {"state": "off", "label": "Paper", "text": MISSING_REASONS["paper_trading_report"]},
+        {"state": "off", "label": "Demo", "text": MISSING_REASONS["demo_readiness_report"]},
         {"state": "off", "label": "Live", "text": "blocked (PRD-F12)"},
     ]
     assert (ladder["next"], ladder["next_text"], ladder["gates_clear"]) == (1, FORWARD_NEXT, 1)
@@ -1482,8 +1505,8 @@ def test_ladder_without_a_gate_file_is_exactly_as_before(tmp_path):
 
     assert ladder == collect(plain)["ladder"]
     assert ladder["steps"][:2] == [
-        {"state": "off", "label": "Backtest", "text": "missing"},
-        {"state": "off", "label": "Out-of-sample", "text": "missing"},
+        {"state": "off", "label": "Backtest", "text": MISSING_REASONS["backtest_report"]},
+        {"state": "off", "label": "Out-of-sample", "text": MISSING_REASONS["out_of_sample_validation_report"]},
     ]
     assert all("detail" not in step for step in ladder["steps"])
     assert (ladder["next"], ladder["next_text"], ladder["gates_clear"]) == (0, NEXT_TEXT[0], 0)
@@ -1516,5 +1539,5 @@ def test_ladder_with_a_gate_directory_instead_of_a_file_keeps_the_old_behaviour(
 
     ladder = collect(tmp_path)["ladder"]
 
-    assert ladder["steps"][0] == {"state": "off", "label": "Backtest", "text": "missing"}
+    assert ladder["steps"][0] == {"state": "off", "label": "Backtest", "text": MISSING_REASONS["backtest_report"]}
     assert ladder["next"] == 0

@@ -35,6 +35,14 @@ EVIDENCE_REPORTS: tuple[str, ...] = (
     "live_readiness_report",
     "demo_readiness_report",
 )
+# Why each report file is absent on an install that runs only trend_ensemble; shown instead of "missing".
+MISSING_REASONS: dict[str, str] = {
+    "backtest_report": "not written: no runner produces this file",
+    "out_of_sample_validation_report": "not here: trend_ensemble writes it to trend_ensemble/ (09)",
+    "paper_trading_report": "not written: no paper runtime for trend_ensemble",
+    "live_readiness_report": "not run: python -m silvr.readiness; live blocked (PRD-F12)",
+    "demo_readiness_report": "not run: python -m silvr.demo_readiness",
+}
 STRATEGY_REPORTS: tuple[str, ...] = EVIDENCE_REPORTS[:3]
 READINESS_REPORTS: tuple[tuple[str, str], ...] = (
     ("live", "live_readiness_report"),
@@ -198,8 +206,8 @@ def _strategy_step(label: str, stem: str, evidence_rows: list[Row]) -> Row:
     found = _find_row(evidence_rows, stem)
     if found["state"] == "ok":
         return row("ok", label, found["text"].split(",")[0])
-    if found["text"] == "missing":
-        return row("off", label, "missing")
+    if found["state"] == "off":
+        return row("off", label, found["text"])
     return row("err", label, found["text"].split(",")[0])
 
 
@@ -227,8 +235,8 @@ def _demo_step(readiness_rows: list[Row]) -> Row:
         return row("warn", LADDER_STEPS[3], "READY · stale")
     if state == "err" and text.startswith("NOT READY"):
         return row("err", LADDER_STEPS[3], text)
-    if text == "missing":
-        return row("off", LADDER_STEPS[3], "missing")
+    if state == "off":
+        return row("off", LADDER_STEPS[3], text)
     return row("err", LADDER_STEPS[3], "unreadable")
 
 
@@ -280,7 +288,7 @@ def _readiness(root: Path, now: datetime) -> list[Row]:
     for name, stem in READINESS_REPORTS:
         data, problem, _ = _read_json_object(reports / f"{stem}.json")
         if data is None:
-            rows.append(row("err", name, problem))
+            rows.append(row("off", name, MISSING_REASONS[stem]) if problem == "missing" else row("err", name, problem))
             continue
         ready = data.get("ready") is True
         generated_row, stale = _generated_row(data.get("generated_at"), newest_evidence, now)
@@ -320,7 +328,7 @@ def _evidence(root: Path) -> list[Row]:
         path = root / "reports" / f"{stem}.json"
         _, problem, stat = _read_json_object(path)
         if stat is None:
-            rows.append(row("err", stem, "missing"))
+            rows.append(row("off", stem, MISSING_REASONS[stem]))
             continue
         detail = f"{stat.st_size} B, modified {_format_time(datetime.fromtimestamp(stat.st_mtime, UTC))}"
         rows.append(row("err", stem, f"{detail}; {problem}") if problem else row("ok", stem, detail))
