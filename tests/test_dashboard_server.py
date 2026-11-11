@@ -24,7 +24,7 @@ from silvr.monitoring.dashboard_server import (
     render_not_found,
     render_page,
 )
-from silvr.monitoring.status import PANEL_TITLES, collect_status
+from silvr.monitoring.status import MISSING_REASONS, PANEL_TITLES, collect_status
 from test_dashboard_status import GATE_FILE, VALIDATION_FILE, gate_data, validation_data, write_analytics
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
@@ -295,11 +295,14 @@ def test_unreadable_ladder_renders_one_step_and_no_strip(tmp_path):
 
 
 def test_state_tags_carry_glyph_word_and_class(tmp_path):
+    write_report(tmp_path, "backtest_report", "")
     page = page_for(tmp_path)
 
     assert '<td class="off">[ OFF ]</td><td>OFF</td>' in page
     assert '<td class="ok">[ OK ]</td><td>ON</td>' in page
-    assert '<td class="err">[ ERR ]</td><td>missing</td>' in page
+    assert '<td class="err">[ ERR ]</td><td>0 B, modified ' in page  # an empty report stays an error
+    assert f'<td class="off">[ OFF ]</td><td>{html.escape(MISSING_REASONS["live_readiness_report"])}</td>' in page
+    assert "<td>missing</td>" not in page
 
 
 def test_markup_in_sources_is_escaped(tmp_path):
