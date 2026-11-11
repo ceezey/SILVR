@@ -29,4 +29,6 @@ $code = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
 "$(Get-Date -Format o) forward test exited with code $code" | Add-Content $log
 $toastLine = $lines | Where-Object { $_ -and $_.StartsWith('TOAST: ') } | Select-Object -Last 1
 Show-Toast $(if ($toastLine) { $toastLine.Substring('TOAST: '.Length) } else { $crash })
+# silvr-cr-006: refresh the hosted snapshot. It logs its own result and never changes $code.
+& (Join-Path $PSScriptRoot 'publish-dashboard.ps1')
 exit $code

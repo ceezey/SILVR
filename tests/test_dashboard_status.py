@@ -19,7 +19,7 @@ from silvr.monitoring.status import (
 from silvr.storage import PostgresStorage
 
 NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
-BANNER, READINESS, EVIDENCE, RISK, POSITIONS, ALERTS, FORWARD = range(7)
+BANNER, READINESS, EVIDENCE, RISK, POSITIONS, ALERTS, FORWARD, ANALYTICS = range(8)
 NOTE_TEXT = "Progress only. No verdict until 2027-11-10. Do not change the strategy because of this number."
 
 
@@ -74,7 +74,7 @@ def audit_line(event_type: str, message: str = "m", **context) -> str:
     )
 
 
-def test_seven_panels_in_layout_order(tmp_path):
+def test_eight_panels_in_collection_order(tmp_path):
     status = collect(tmp_path)
 
     assert list(PANEL_TITLES) == [
@@ -85,6 +85,7 @@ def test_seven_panels_in_layout_order(tmp_path):
         "POSITIONS / TRADES",
         "ALERTS",
         "FORWARD TEST",
+        "ANALYTICS",  # silvr-cr-006: appended last so the indexes above did not move
     ]
     assert [panel["title"] for panel in status["panels"]] == list(PANEL_TITLES)
     assert status["generated_at"] == "2026-10-09 12:00 UTC"
@@ -1082,3 +1083,438 @@ def test_positions_events_carry_v6_text_and_the_event_type(tmp_path, database_ur
         ("signal_detected", "Strategy signal detected. Passing to risk engine."),
     ]
     assert all(item["label"].startswith("SIM ") for item in result)
+
+
+# ---- silvr-cr-006: ANALYTICS -------------------------------------------------------------------------
+
+GATE_FILE = "promotion_gate.json"
+VALIDATION_FILE = "out_of_sample_validation_report.json"
+ANALYTICS_NOTE = "Backtest on past data, simulated account. A FAIL means no edge was found; the strategy is not traded."
+
+
+def gate_data() -> dict:
+    """The counted run's promotion_gate.json: a FAIL, two criteria pass and four fail."""
+
+    def criterion(number, name, threshold, actual, result):
+        return {"number": number, "name": name, "threshold": threshold, "actual": actual, "result": result}
+
+    return {
+        "report": "reports\\trend_ensemble\\out_of_sample_validation_report.json",
+        "passed": False,
+        "strategy": "trend_ensemble",
+        "t_stat_bar": 3.0,
+        "criteria": [
+            criterion(1, "Enough trades", ">= 100", "1054", "PASS"),
+            criterion(2, "Real edge", "avg R > 0, t >= 3.0", "avg R 0.02046, t 0.1269", "FAIL"),
+            criterion(3, "Profit factor", ">= 1.5 (warn > 3.0)", "0.8683", "FAIL"),
+            criterion(4, "Realized reward:risk", ">= 1.5", "3.059", "PASS"),
+            criterion(5, "Drawdown", "<= 0.3, return/dd >= 2.0", "dd 0.04298, return/dd 0", "FAIL"),
+            criterion(6, "Out-of-sample efficiency", "final avg R >= 0.5 x training, training > 0", "final 0.02046 vs training 0.2271", "FAIL"),
+        ],
+        "info": {
+            "data_start": "2022-01-01T00:00:00+00:00",
+            "data_end": "2026-10-20T23:59:00+00:00",
+            "candles": 37886400,
+            "final_test_kill_switch_trips": 0,
+        },
+        "reminder": "No peeking.",
+    }
+
+
+def segment_data(start, end, trips, trades, net, ret, factor, avg_r, win, drawdown, drawdown_pct, fees, funding, weekly, losing, weeks) -> dict:
+    return {
+        "start": start,
+        "end": end,
+        "kill_switch": {"tripped_at": None, "trips": trips},
+        "metrics": {
+            "total_trades": trades,
+            "net_profit": net,
+            "return_percent": ret,
+            "profit_factor": factor,
+            "average_r": avg_r,
+            "win_rate": win,
+            "max_drawdown": drawdown,
+            "max_drawdown_percent": drawdown_pct,
+            "total_fees": fees,
+            "total_funding": funding,
+        },
+        "success_standard": {
+            "average_weekly_net": weekly,
+            "target_weekly_net": 50.0,
+            "losing_week_share": losing,
+            "weeks": weeks,
+        },
+    }
+
+
+def validation_data() -> dict:
+    return {
+        "strategy": "trend_ensemble",
+        "k": 1.0,
+        "symbols": [f"SYM{number}/USDT" for number in range(15)],
+        "segments": {
+            "training": segment_data(
+                "2022-01-01T00:00:00+00:00", "2024-11-18T09:35:00+00:00", 0, 3280, 2722.049153729601,
+                0.1814699435819734, 1.6263473942927582, 0.22707561248541758, 0.28262195121951217,
+                1742.1671723186628, 0.11614447815457751, 139.92565232337412, 490.93304746827545, 17.5, 0.45, 150,
+            ),
+            "validation": segment_data(
+                "2024-11-18T09:36:00+00:00", "2025-11-04T04:47:00+00:00", 1, 1200, 95.5,
+                0.0064, 1.1, 0.05, 0.27, 800.0, 0.07, 60.0, 20.0, 1.8, 0.6, 50,
+            ),
+            "final_test": segment_data(
+                "2025-11-04T04:48:00+00:00", "2026-10-20T23:59:00+00:00", 0, 1054, -180.7310583833817,
+                -0.01204873722555878, 0.8682941484366153, 0.020463615448308655, 0.2523719165085389,
+                644.6577074453508, 0.042977180496356716, 50.59963544189413, 34.5230044697373,
+                -3.5437462428115967, 0.7254901960784313, 51,
+            ),
+        },
+    }
+
+
+def write_analytics(root: Path, name: str, content: dict | str | bytes) -> Path:
+    path = root / "reports" / "trend_ensemble" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(content, dict):
+        content = json.dumps(content)
+    path.write_bytes(content.encode("utf-8") if isinstance(content, str) else content)
+    return path
+
+
+def of_kind(status: dict, kind: str) -> list[dict]:
+    return [item for item in rows(status, ANALYTICS) if item.get("kind") == kind]
+
+
+def segment_cells(status: dict) -> dict[str, list[str]]:
+    return {item["label"]: item["cells"] for item in of_kind(status, "segment")}
+
+
+def test_analytics_gate_verdict_and_six_criteria(tmp_path):
+    write_analytics(tmp_path, GATE_FILE, gate_data())
+
+    status = collect(tmp_path)
+
+    assert rows(status, ANALYTICS)[0] == {
+        "state": "err",
+        "label": "verdict",
+        "text": "GATE FAIL; 2 of 6 criteria passed; t-bar 3.0; data 2022-01-01 to 2026-10-20",
+    }
+    criteria = of_kind(status, "criterion")
+    assert [(item["state"], item["result"]) for item in criteria] == [
+        ("ok", "PASS"), ("err", "FAIL"), ("err", "FAIL"), ("ok", "PASS"), ("err", "FAIL"), ("err", "FAIL"),
+    ]
+    assert (criteria[0]["label"], criteria[0]["text"]) == ("1 Enough trades", "threshold >= 100; actual 1054")
+    assert criteria[1]["threshold"] == "avg R > 0, t >= 3.0" and criteria[1]["actual"] == "avg R 0.02046, t 0.1269"
+    assert status["degraded"] == 0
+
+
+def test_analytics_passing_gate_is_ok(tmp_path):
+    data = gate_data()
+    data["passed"] = True
+    for item in data["criteria"]:
+        item["result"] = "PASS"
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    first = rows(collect(tmp_path), ANALYTICS)[0]
+
+    assert first["state"] == "ok" and first["text"].startswith("GATE PASS; 6 of 6 criteria passed")
+
+
+def test_analytics_segments_show_every_figure_for_the_three_segments(tmp_path):
+    write_analytics(tmp_path, VALIDATION_FILE, validation_data())
+
+    cells = segment_cells(collect(tmp_path))
+
+    assert list(cells) == [
+        "period", "trades", "net", "return", "profit factor", "average R", "win rate", "max drawdown",
+        "max drawdown %", "fees + funding", "weekly net vs target", "losing weeks", "kill switch trips",
+    ]
+    assert cells["period"] == ["2022-01-01 to 2024-11-18", "2024-11-18 to 2025-11-04", "2025-11-04 to 2026-10-20"]
+    assert cells["trades"] == ["3280", "1200", "1054"]
+    assert cells["net"] == ["$2722.05", "$95.50", "-$180.73"]
+    assert cells["return"] == ["18.1%", "0.6%", "-1.2%"]  # a stored fraction shown as a percent
+    assert cells["profit factor"] == ["1.63", "1.10", "0.87"]
+    assert cells["average R"] == ["0.227", "0.050", "0.020"]
+    assert cells["win rate"] == ["28.3%", "27.0%", "25.2%"]
+    assert cells["max drawdown"] == ["$1742.17", "$800.00", "$644.66"]
+    assert cells["max drawdown %"] == ["11.6%", "7.0%", "4.3%"]
+    assert cells["fees + funding"] == ["$630.86", "$80.00", "$85.12"]
+    assert cells["weekly net vs target"] == ["$17.50 vs $50 target", "$1.80 vs $50 target", "-$3.54 vs $50 target"]
+    assert cells["losing weeks"] == ["45% of 150 weeks", "60% of 50 weeks", "73% of 51 weeks"]
+    assert cells["kill switch trips"] == ["0", "1", "0"]
+
+
+def test_analytics_segment_rows_read_as_plain_rows_too(tmp_path):
+    write_analytics(tmp_path, VALIDATION_FILE, validation_data())
+
+    net = by_label(collect(tmp_path), ANALYTICS)["net"]
+
+    assert net["state"] == "plain"
+    assert net["text"] == "training $2722.05; validation $95.50; final test -$180.73"
+
+
+def test_analytics_one_weekly_bar_per_segment(tmp_path):
+    write_analytics(tmp_path, VALIDATION_FILE, validation_data())
+
+    bars = of_kind(collect(tmp_path), "bar")
+
+    assert [(item["name"], item["value"], item["target"]) for item in bars] == [
+        ("TRAINING", 17.5, 50.0),
+        ("VALIDATION", 1.8, 50.0),
+        ("FINAL TEST", -3.5437462428115967, 50.0),
+    ]
+    assert bars[2]["text"] == "-$3.54 vs $50 target"
+
+
+def test_analytics_missing_files_are_off_with_the_reason_and_never_estimated(tmp_path):
+    status = collect(tmp_path)
+
+    assert rows(status, ANALYTICS) == [
+        {"state": "off", "label": "gate", "text": "not available: no promotion_gate.json yet"},
+        {"state": "off", "label": "segments", "text": "not available: no out_of_sample_validation_report.json yet"},
+    ]  # no NOTE: there is no figure to explain yet
+    assert status["degraded"] == 0
+
+
+def test_analytics_note_is_always_last(tmp_path):
+    write_analytics(tmp_path, GATE_FILE, gate_data())
+    write_analytics(tmp_path, VALIDATION_FILE, validation_data())
+
+    assert rows(collect(tmp_path), ANALYTICS)[-1] == {"state": "plain", "label": "NOTE", "text": ANALYTICS_NOTE}
+
+
+@pytest.mark.parametrize(
+    ("content", "problem"), [(b"", "empty"), ("not json", "not valid JSON"), ("[1, 2]", "not a JSON object")]
+)
+def test_analytics_empty_or_invalid_files_are_err(tmp_path, content, problem):
+    write_analytics(tmp_path, GATE_FILE, content)
+    write_analytics(tmp_path, VALIDATION_FILE, content)
+
+    found = by_label(collect(tmp_path), ANALYTICS)
+
+    assert found["gate"] == {"state": "err", "label": "gate", "text": f"unreadable: {problem}"}
+    assert found["segments"] == {"state": "err", "label": "segments", "text": f"unreadable: {problem}"}
+    assert not [item for item in rows(collect(tmp_path), ANALYTICS) if item.get("kind")]
+
+
+def test_analytics_wrong_gate_shape_is_err(tmp_path):
+    for change, text in (
+        ({"passed": "yes"}, "unreadable: passed is not true or false"),
+        ({"passed": None}, "unreadable: passed is not true or false"),
+        ({"criteria": []}, "unreadable: criteria missing"),
+        ({"criteria": "none"}, "unreadable: criteria missing"),
+    ):
+        write_analytics(tmp_path, GATE_FILE, {**gate_data(), **change})
+
+        assert rows(collect(tmp_path), ANALYTICS)[0] == {"state": "err", "label": "gate", "text": text}
+
+
+def test_analytics_segments_missing_is_err(tmp_path):
+    write_analytics(tmp_path, VALIDATION_FILE, {"k": 1.0, "segments": [1]})
+
+    assert by_label(collect(tmp_path), ANALYTICS)["segments"] == {
+        "state": "err",
+        "label": "segments",
+        "text": "unreadable: segments missing",
+    }
+
+
+def test_analytics_one_wrong_type_is_not_available_never_zero(tmp_path):
+    data = validation_data()
+    final = data["segments"]["final_test"]
+    final["metrics"]["net_profit"] = "lots"
+    final["metrics"]["total_trades"] = True
+    final["metrics"]["total_funding"] = None  # fees + funding needs both numbers
+    final["metrics"]["win_rate"] = float("nan")
+    final["success_standard"]["target_weekly_net"] = "50"
+    del final["kill_switch"]
+    write_analytics(tmp_path, VALIDATION_FILE, data)
+
+    cells = segment_cells(collect(tmp_path))
+
+    for label in ("net", "trades", "fees + funding", "win rate", "weekly net vs target", "kill switch trips"):
+        assert cells[label][2] == "not available", label
+        assert cells[label][0] != "not available", label  # the other segments are untouched
+    assert cells["return"][2] == "-1.2%"
+    bar = of_kind(collect(tmp_path), "bar")[2]
+    assert bar["target"] is None and bar["text"] == "not available"
+
+
+def test_analytics_missing_segment_is_listed_and_every_cell_is_not_available(tmp_path):
+    data = validation_data()
+    del data["segments"]["validation"]
+    data["segments"]["training"] = {}
+    write_analytics(tmp_path, VALIDATION_FILE, data)
+
+    status = collect(tmp_path)
+
+    found = by_label(status, ANALYTICS)
+    assert found["validation"] == {
+        "state": "off",
+        "label": "validation",
+        "text": "not available: no validation segment in out_of_sample_validation_report.json",
+    }
+    assert "training" not in found  # an empty segment is present but holds no figure: its cells say so
+    for label, cells in segment_cells(status).items():
+        assert cells[0] == cells[1] == "not available", label
+        assert cells[2] != "not available", label
+    assert [item["value"] for item in of_kind(status, "bar")][:2] == [None, None]
+
+
+def test_analytics_unreadable_gate_details_are_not_available(tmp_path):
+    data = gate_data()
+    data["t_stat_bar"] = True
+    data["info"] = "oops"
+    data["criteria"][0] = "not an object"
+    data["criteria"][1]["result"] = "MAYBE"
+    del data["criteria"][2]["threshold"]
+    data["criteria"][3]["actual"] = 3.5
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    result = rows(collect(tmp_path), ANALYTICS)
+
+    assert result[0]["text"] == "GATE FAIL; 1 of 6 criteria passed; t-bar not available; data range not available"
+    assert result[1] == {"state": "err", "label": "criterion", "text": "unreadable: not an object"}
+    assert (result[2]["state"], result[2]["result"]) == ("err", "not available")  # never counted as a pass
+    assert result[3]["threshold"] == "not available" and result[3]["text"].startswith("threshold not available;")
+    assert result[4]["actual"] == "3.5"
+
+
+def test_analytics_unreadable_source_does_not_blank_the_page(tmp_path):
+    (tmp_path / "reports" / "trend_ensemble" / GATE_FILE).mkdir(parents=True)
+
+    status = collect(tmp_path)
+
+    assert rows(status, ANALYTICS)[0]["state"] == "err" and rows(status, ANALYTICS)[0]["label"] == "unreadable"
+    assert status["degraded"] == 1
+    assert [panel["title"] for panel in status["panels"]] == list(PANEL_TITLES)
+    assert len(steps(status)) == 5
+    for index in (BANNER, READINESS, EVIDENCE, RISK, POSITIONS, ALERTS, FORWARD):
+        assert all(item["label"] != "unreadable" for item in rows(status, index))
+
+
+def test_analytics_collecting_changes_nothing_on_disk(tmp_path):
+    gate = write_analytics(tmp_path, GATE_FILE, gate_data())
+    validation = write_analytics(tmp_path, VALIDATION_FILE, validation_data())
+    before = [(path.read_bytes(), path.stat().st_mtime_ns) for path in (gate, validation)]
+
+    collect(tmp_path)
+
+    assert [(path.read_bytes(), path.stat().st_mtime_ns) for path in (gate, validation)] == before
+    assert sorted(path.name for path in gate.parent.iterdir()) == sorted([GATE_FILE, VALIDATION_FILE])
+
+
+# ---- silvr-cr-006 V-9: the evidence ladder reads the counted gate run ---------------------------------
+
+TREND_FILE_DETAIL = "trend_ensemble/out_of_sample_validation_report"
+TREND_GATE_DETAIL = "trend_ensemble/promotion_gate"
+
+
+def passing_gate() -> dict:
+    data = gate_data()
+    data["passed"] = True
+    for item in data["criteria"]:
+        item["result"] = "PASS"
+    return data
+
+
+def test_ladder_with_a_failing_gate_run_reads_the_trend_run(tmp_path):
+    from silvr.monitoring.status import FORWARD_NEXT
+
+    write_report(tmp_path, "backtest_report", b"")  # the old evidence reports no longer drive steps 1 and 2
+    write_analytics(tmp_path, GATE_FILE, gate_data())
+
+    ladder = collect(tmp_path)["ladder"]
+
+    assert FORWARD_NEXT == "Next: forward test, one verdict after 2027-11-10 (no tuning on data already seen)"
+    assert ladder["steps"] == [
+        {"state": "ok", "label": "Backtest", "text": "trend_ensemble run", "detail": TREND_FILE_DETAIL},
+        {"state": "err", "label": "Out-of-sample", "text": "GATE FAIL · 2 of 6", "detail": TREND_GATE_DETAIL},
+        {"state": "off", "label": "Paper", "text": "missing"},
+        {"state": "off", "label": "Demo", "text": "missing"},
+        {"state": "off", "label": "Live", "text": "blocked (PRD-F12)"},
+    ]
+    assert (ladder["next"], ladder["next_text"], ladder["gates_clear"]) == (1, FORWARD_NEXT, 1)
+    assert collect(tmp_path)["degraded"] == 0
+
+
+def test_ladder_takes_the_counts_from_the_verdict_text(tmp_path):
+    data = gate_data()
+    data["criteria"][1]["result"] = "PASS"  # 3 of 6 pass, the gate still fails
+    write_analytics(tmp_path, GATE_FILE, data)
+
+    assert steps(collect(tmp_path))[1]["text"] == "GATE FAIL · 3 of 6"
+
+
+def test_ladder_with_a_passing_gate_run_moves_next_to_paper(tmp_path):
+    from silvr.monitoring.status import NEXT_TEXT
+
+    write_analytics(tmp_path, GATE_FILE, passing_gate())
+
+    ladder = collect(tmp_path)["ladder"]
+
+    assert ladder["steps"][0] == {"state": "ok", "label": "Backtest", "text": "trend_ensemble run", "detail": TREND_FILE_DETAIL}
+    assert ladder["steps"][1] == {"state": "ok", "label": "Out-of-sample", "text": "GATE PASS", "detail": TREND_GATE_DETAIL}
+    assert (ladder["next"], ladder["next_text"], ladder["gates_clear"]) == (2, NEXT_TEXT[2], 2)
+
+
+def test_ladder_paper_and_demo_steps_are_unchanged_beside_a_gate_run(tmp_path):
+    write_analytics(tmp_path, GATE_FILE, passing_gate())
+    write_report(tmp_path, STEP_STEMS[2], "{}", mtime=old_mtime())
+    fresh_demo(tmp_path)
+
+    ladder = collect(tmp_path)["ladder"]
+
+    assert ladder["steps"][2] == {"state": "ok", "label": "Paper", "text": "2 B"}
+    assert ladder["steps"][3] == {"state": "ok", "label": "Demo", "text": "READY"}
+    assert (ladder["next"], ladder["gates_clear"]) == (None, 4)
+
+
+def test_ladder_without_a_gate_file_is_exactly_as_before(tmp_path):
+    from silvr.monitoring.status import NEXT_TEXT
+
+    plain = tmp_path / "plain"
+    with_segments = tmp_path / "segments"
+    plain.mkdir()
+    write_analytics(with_segments, VALIDATION_FILE, validation_data())  # no verdict row without the gate file
+
+    ladder = collect(with_segments)["ladder"]
+
+    assert ladder == collect(plain)["ladder"]
+    assert ladder["steps"][:2] == [
+        {"state": "off", "label": "Backtest", "text": "missing"},
+        {"state": "off", "label": "Out-of-sample", "text": "missing"},
+    ]
+    assert all("detail" not in step for step in ladder["steps"])
+    assert (ladder["next"], ladder["next_text"], ladder["gates_clear"]) == (0, NEXT_TEXT[0], 0)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"", "not json", "[1, 2]", {**gate_data(), "passed": "yes"}, {**gate_data(), "criteria": []}],
+)
+def test_ladder_with_an_unreadable_gate_file_keeps_the_old_behaviour(tmp_path, content):
+    plain = tmp_path / "plain"
+    broken = tmp_path / "broken"
+    for root in (plain, broken):
+        write_report(root, "backtest_report", b"")
+        write_report(root, "out_of_sample_validation_report", "{}")
+    write_analytics(broken, GATE_FILE, content)
+
+    ladder = collect(broken)["ladder"]
+
+    assert ladder == collect(plain)["ladder"]
+    assert ladder["steps"][:2] == [
+        {"state": "err", "label": "Backtest", "text": "0 B"},
+        {"state": "ok", "label": "Out-of-sample", "text": "2 B"},
+    ]
+    assert (ladder["next"], ladder["gates_clear"]) == (0, 1)
+
+
+def test_ladder_with_a_gate_directory_instead_of_a_file_keeps_the_old_behaviour(tmp_path):
+    (tmp_path / "reports" / "trend_ensemble" / GATE_FILE).mkdir(parents=True)  # ANALYTICS panel raises
+
+    ladder = collect(tmp_path)["ladder"]
+
+    assert ladder["steps"][0] == {"state": "off", "label": "Backtest", "text": "missing"}
+    assert ladder["next"] == 0

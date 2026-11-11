@@ -9,6 +9,9 @@ Hosted mode (owner decision 2026-10-24): ``--host 0.0.0.0
 variable set. The server speaks plain HTTP, so only expose it behind HTTPS. A
 non-loopback bind without a password is refused, and every GET then needs HTTP
 Basic auth.
+
+Static snapshot (silvr-cr-006): ``--export DIR`` writes the same page, rendered for the public (no mark, no
+bind address, no folder path), to DIR for a static host, and exits without starting a server.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import binascii
 import hmac
 import html
 import ipaddress
+import json
 import os
 import string
 import sys
@@ -36,8 +40,13 @@ DEFAULT_PORT = 8765
 PASSWORD_ENV = "DASHBOARD_PASSWORD"
 AUTH_CHALLENGE = 'Basic realm="silvr", charset="UTF-8"'
 TAGS = {"ok": "[ OK ]", "warn": "[ WRN ]", "err": "[ ERR ]", "off": "[ OFF ]", "plain": ""}
-# DSD section 3.2: banner; readiness | evidence; forward test (silvr-cr-005); risk budget; positions | alerts.
-LAYOUT: tuple[tuple[int, ...], ...] = ((0,), (1, 2), (6,), (3,), (4, 5))
+# DSD section 3.2: banner; readiness | evidence; forward test (silvr-cr-005); analytics (silvr-cr-006);
+# risk budget; positions | alerts.
+LAYOUT: tuple[tuple[int, ...], ...] = ((0,), (1, 2), (6,), (7,), (3,), (4, 5))
+# The public snapshot leaves out the running-bot panels RISK BUDGET, POSITIONS / TRADES and ALERTS
+# (silvr-cr-006 V-7): no bot runs, so a stale row in risk_state, paper_trades or audit.jsonl would read as
+# live trading to a visitor.
+PUBLIC_LAYOUT: tuple[tuple[int, ...], ...] = tuple(group for group in LAYOUT if group not in {(3,), (4, 5)})
 # Panel number and data source shown in each panel title row (silvr-cr-004); 01 is the ladder, 07 the host.
 PANEL_META: tuple[tuple[int, str], ...] = (
     (0, ".env"),
@@ -47,10 +56,14 @@ PANEL_META: tuple[tuple[int, str], ...] = (
     (5, "paper_trades · paper_events"),
     (6, "logs/audit.jsonl"),
     (8, "reports/trend_ensemble_forward/"),
+    (9, "reports/trend_ensemble/"),
 )
 ROW_CLASSES = {(1, 2): "row fix-first", (4, 5): "row fix-last"}
 RISK_LABELS = ("day", "daily realized pnl", "trades today", "consecutive losses", "open positions", "updated")
 PAPER_LINE = "Simulated fills only. No real order exists."
+PUBLIC_PAPER_LINE = "Setting only, not a running bot. No real order exists."
+SNAPSHOT_HOST = "static snapshot"
+SNAPSHOT_REFRESH = "after each monthly forward run"
 # Detail line under each ladder card: the report that feeds the step.
 STEP_DETAILS = (*STRATEGY_REPORTS, "demo_readiness_report", "PRD-F12 · stays closed")
 SECURITY_HEADERS = {
@@ -146,6 +159,18 @@ background:var(--canvas);border:1px solid var(--border);border-radius:3px}
 .cell .val{font-size:22px;font-weight:700;line-height:32px}
 .cell .detail{font-size:11px}
 .limits{padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)}
+.sub{display:block;margin:16px 0 4px}
+.seg td:last-child{font-size:12px}
+.bars{margin:0 0 4px}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:0 8px}
+.bar .bname{flex:0 0 12ch}
+.bar .bval{flex:0 0 auto;font-size:11px;white-space:nowrap}
+.track{position:relative;flex:1 1 20ch;height:12px;background:var(--canvas);border:1px solid var(--border)}
+.track>div{position:absolute;top:0;bottom:0}
+.track .fill{top:3px;bottom:3px;background:var(--accent)}
+.track .zero{width:1px;background:var(--ink)}
+.track .tgt{width:0;border-left:1px dashed var(--muted)}
+.cap{margin:4px 0 0;font-size:11px}
 .log{list-style:none;margin:0;padding:0}
 .log li{display:flex;gap:8px;align-items:baseline}
 .log .ts,.log .ev{font-size:11px;color:var(--muted)}
@@ -172,12 +197,13 @@ display:flex;flex-direction:column}
 .sidebar{position:sticky;top:48px;z-index:2;background:var(--canvas)}
 .sidebar .host,.sidebar .tagline,.tele .feed{display:none}}
 @media (max-width:959px){.row{flex-direction:column}section{flex:1 1 auto;width:100%}
-.big,.mode{font-size:32px}}
+.big,.mode{font-size:32px}
+.crit,.seg{display:block;overflow-x:auto}.crit th,.crit td,.seg th,.seg td{white-space:nowrap}}
 @media (max-width:639px){.tele .host,.meta{display:none}}
 """
 # One sticky navbar for every HTML page: the S-tier mark (DSD 2.4), wordmark and context.
-HEADER_START = (
-    '<header><svg viewBox="0 0 160 160" width="28" height="28" role="img" aria-label="SILVR mark">'
+MARK = (
+    '<svg viewBox="0 0 160 160" width="28" height="28" role="img" aria-label="SILVR mark">'
     '<rect class="m-brand" x="40" y="0" width="5" height="16" rx="2"/>'
     '<rect class="m-brand" x="115" y="0" width="5" height="16" rx="2"/>'
     '<rect class="m-head" x="1.5" y="15.5" width="157" height="141" rx="12"/>'
@@ -186,10 +212,14 @@ HEADER_START = (
     '<rect class="m-err" x="84" y="77" width="56" height="12"/>'
     '<rect class="m-ink" x="20" y="75" width="120" height="2"/>'
     "</svg>"
-    '<span class="wordmark">SILVR</span>'
-    '<span class="meta">status &middot; read-only</span>'
 )
+WORDMARK = '<span class="wordmark">SILVR</span>'
+HEADER_START = "<header>" + MARK + WORDMARK + '<span class="meta">status &middot; read-only</span>'
+# The public snapshot (silvr-cr-006 V-4) keeps the wordmark but never the mark: DSD 1.5 keeps the mark off
+# any public surface that shows performance figures.
+PUBLIC_HEADER_START = "<header>" + WORDMARK + '<span class="meta">snapshot &middot; read-only</span>'
 HEADER = HEADER_START + "</header>"
+PUBLIC_HEADER = PUBLIC_HEADER_START + "</header>"
 NOT_FOUND_PAGE = string.Template(
     """<!doctype html>
 <html lang="en">
@@ -230,7 +260,7 @@ $degraded$ladder
 $panels
 </div>
 </div>
-<footer>generated $generated_at &middot; read-only; reading $root &middot; reload to refresh</footer>
+<footer>$footer</footer>
 </main>
 </body>
 </html>
@@ -238,24 +268,28 @@ $panels
 )
 
 
-def render_page(status: dict[str, Any], *, bind: tuple[str, int | None] | None = None) -> str:
+def render_page(status: dict[str, Any], *, bind: tuple[str, int | None] | None = None, public: bool = False) -> str:
     """Render the status dict as one self-contained, escaped HTML page.
 
     ``bind`` is the (host, port) the server is bound to; without it the navbar names the default host only.
+    ``public`` renders the static snapshot (silvr-cr-006 V-4): no mark, no bind address, no folder path.
     """
 
     host, port = bind or (BIND_HOST, None)
     panels = status["panels"]
     restraint = status["restraint"]
-    rendered = [_render_status_panel(index, panel, restraint) for index, panel in enumerate(panels)]
+    rendered = [_render_status_panel(index, panel, restraint, public) for index, panel in enumerate(panels)]
     groups = []
-    for group in LAYOUT:
+    for group in PUBLIC_LAYOUT if public else LAYOUT:
         css_class = "row banner" if group == LAYOUT[0] else ROW_CLASSES.get(group, "row")
         sections = "".join(rendered[index] for index in group)
         if group == LAYOUT[0]:
-            sections += _render_host(status, host)
+            sections += _render_host(status, host, public)
         groups.append(f'<div class="{css_class}">{sections}</div>')
     count = int(status.get("degraded", 0))
+    if public:  # a hidden panel's failure must not raise a warning whose cause the visitor cannot see
+        hidden_rows = [panels[index]["rows"] for index in _hidden_panels()]
+        count -= sum(1 for rows in hidden_rows if rows and rows[0]["label"] == "unreadable")
     degraded = ""
     if count > 0:
         noun = "panel" if count == 1 else "panels"
@@ -263,22 +297,35 @@ def render_page(status: dict[str, Any], *, bind: tuple[str, int | None] | None =
             f'<p class="degraded"><span class="warn">{TAGS["warn"]}</span> '
             f"degraded: {count} {noun} unreadable</p>\n"
         )
-    return PAGE.substitute(
+    generated_at = html.escape(status["generated_at"])
+    if public:
+        footer = f"generated {generated_at} &middot; read-only snapshot, refreshed {SNAPSHOT_REFRESH}"
+    else:
+        footer = f"generated {generated_at} &middot; read-only; reading {html.escape(status['root'])} &middot; reload to refresh"
+    page = PAGE.substitute(
         css=CSS,
-        header=_header(_telemetry(status["generated_at"], host, port)),
+        header=_header(_telemetry(status["generated_at"], host, port, public), public),
         banner=groups[0] + _TAGLINE,
         degraded=degraded,
         ladder=_render_ladder(status["ladder"]),
         panels="\n".join(groups[1:]),
-        generated_at=html.escape(status["generated_at"]),
-        root=html.escape(status["root"]),
+        footer=footer,
     )
+    root = html.escape(status["root"])
+    # Readiness reasons can quote absolute paths under the root; the folder path stays private (V-4).
+    return page.replace(root, "&lt;root&gt;") if public and root else page
 
 
-def render_not_found() -> str:
+def _hidden_panels() -> set[int]:
+    """Panel indexes the public snapshot leaves out (V-7)."""
+
+    return {index for group in LAYOUT for index in group} - {index for group in PUBLIC_LAYOUT for index in group}
+
+
+def render_not_found(*, public: bool = False) -> str:
     """Render the branded 404 page: no status data and no collection."""
 
-    return NOT_FOUND_PAGE.substitute(css=CSS, header=HEADER)
+    return NOT_FOUND_PAGE.substitute(css=CSS, header=PUBLIC_HEADER if public else HEADER)
 
 
 def is_loopback_host(host: str) -> bool:
@@ -298,21 +345,22 @@ _TAGLINE = (
 )
 
 
-def _header(telemetry: str = "") -> str:
-    return HEADER_START + telemetry + "</header>"
+def _header(telemetry: str = "", public: bool = False) -> str:
+    return (PUBLIC_HEADER_START if public else HEADER_START) + telemetry + "</header>"
 
 
-def _telemetry(generated_at: str, host: str, port: int | None) -> str:
+def _telemetry(generated_at: str, host: str, port: int | None, public: bool = False) -> str:
     """Plain-text strip on the right of the navbar: bound host, data feeds, read time (UTC)."""
 
     shown = f"[{host}]" if ":" in host else host
-    address = shown if port is None else f"{shown}:{port}"
+    address = SNAPSHOT_HOST if public else shown if port is None else f"{shown}:{port}"
     moment = generated_at.removesuffix(" UTC")
     return (
         '<div class="tele">'
         f'<span class="host"><span class="label muted">HOST</span>{html.escape(address)}</span>'
         '<span class="feed"><span class="label muted">FEED</span>'
-        "reports &middot; risk_state &middot; audit.jsonl</span>"
+        + ("reports" if public else "reports &middot; risk_state &middot; audit.jsonl")
+        + "</span>"
         f'<span class="utc"><span class="label muted">UTC</span>{html.escape(moment)}</span>'
         "</div>"
     )
@@ -329,18 +377,18 @@ def _title(number: int | None, title: str, source: str = "") -> str:
     )
 
 
-def _render_host(status: dict[str, Any], host: str) -> str:
+def _render_host(status: dict[str, Any], host: str, public: bool = False) -> str:
     """Panel 07: where the page is served from and what it read (all values already known to the server)."""
 
     loopback = is_loopback_host(host)
     rows = (
-        ("BIND", f"{host} only" if loopback else host),
-        ("ROOT", status["root"]),
+        ("BIND", SNAPSHOT_HOST if public else f"{host} only" if loopback else host),
+        ("ROOT", "not shown" if public else status["root"]),
         ("READ", status["generated_at"]),
-        ("REFRESH", "reload the page"),
+        ("REFRESH", SNAPSHOT_REFRESH if public else "reload the page"),
     )
     body = "".join(f'<tr><th scope="row">{key}</th><td>{html.escape(value)}</td></tr>' for key, value in rows)
-    source = "loopback" if loopback else "bound host"
+    source = "snapshot" if public else "loopback" if loopback else "bound host"
     return f'<section class="host">{_title(7, "HOST", source)}<table><tbody>{body}</tbody></table></section>'
 
 
@@ -412,7 +460,8 @@ def _render_card(index: int, step: dict[str, str], next_index: int | None, full:
     else:
         marker = "s-next" if is_next else "s-todo"
     flag = "<strong>NEXT</strong>" if is_next else ""
-    detail = f'<span class="detail">{html.escape(STEP_DETAILS[index])}</span>' if full else ""
+    shown = step.get("detail") or (STEP_DETAILS[index] if full else "")  # the gate run names its own file (V-9)
+    detail = f'<span class="detail">{html.escape(shown)}</span>' if shown else ""
     return (
         f'<li class="{classes}"><div class="head"><span class="mk {marker}"></span>'
         f'<span class="idx">{index + 1:02d}</span>{flag}</div>'
@@ -422,29 +471,35 @@ def _render_card(index: int, step: dict[str, str], next_index: int | None, full:
     )
 
 
-def _render_status_panel(index: int, panel: dict[str, Any], restraint: dict[str, Any]) -> str:
+def _render_status_panel(index: int, panel: dict[str, Any], restraint: dict[str, Any], public: bool = False) -> str:
     number, source = PANEL_META[index]
     if index == 0:
-        lead, rows = _readout(panel["rows"])
+        lead, rows = _readout(panel["rows"], public)
         return _render_panel({**panel, "rows": rows}, note_last=True, number=number, source=source, lead=lead)
     if index == 3:
         return _render_risk(panel, number, source)
     if index == 4:
         return _render_positions(panel, restraint, number, source)
+    if index == 7:
+        return _render_analytics(panel, number, source)
     headers = ("TIME", "STATE", "EVENT") if index == 5 else ("ITEM", "STATE", "DETAIL")
     return _render_panel(panel, note_last=index == 6, number=number, source=source, headers=headers)
 
 
-def _readout(rows: list[dict[str, str]]) -> tuple[str, list[dict[str, str]]]:
-    """The operating-mode readout (V-1) and the banner rows without the MODE row it replaces."""
+def _readout(rows: list[dict[str, str]], public: bool = False) -> tuple[str, list[dict[str, str]]]:
+    """The operating-mode readout (V-1) and the banner rows without the MODE row it replaces.
+
+    The public snapshot says CONFIGURED MODE and that PAPER is a setting, not a running bot (silvr-cr-006 V-10).
+    """
 
     mode = next((item for item in rows if item["label"] == "MODE"), None)
     if mode is None:
         return "", rows
     text = mode["text"]
-    line = f'<span class="muted">{PAPER_LINE}</span>' if text.upper() == "PAPER" else ""
+    paper_line = PUBLIC_PAPER_LINE if public else PAPER_LINE
+    line = f'<span class="muted">{paper_line}</span>' if text.upper() == "PAPER" else ""
     readout = (
-        '<div class="readout"><span class="label muted">OPERATING MODE</span>'
+        f'<div class="readout"><span class="label muted">{"CONFIGURED" if public else "OPERATING"} MODE</span>'
         f'<span class="mode">{html.escape(text)}</span>{line}</div><div class="hair"></div>'
     )
     return readout, [item for item in rows if item is not mode]
@@ -536,6 +591,111 @@ def _render_positions(panel: dict[str, Any], restraint: dict[str, Any], number: 
         )
     log = f'<ul class="log">{"".join(entries)}</ul>' if entries else ""
     return f'<section>{_title(number, panel["title"], source)}{_render_restraint(restraint)}{table}{log}</section>'
+
+
+def _render_analytics(panel: dict[str, Any], number: int, source: str) -> str:
+    """Panel 09 (silvr-cr-006): verdict rows, criteria table, segment table and one bar per segment.
+
+    Rows carry a ``kind`` (criterion, segment, bar); the rest print as the plain table. The rows come
+    only from ``status._analytics``, so a bad shape is a bug and fails loudly instead of hiding.
+    """
+
+    groups: dict[str, list[dict[str, Any]]] = {"criterion": [], "segment": [], "bar": [], "": []}
+    for item in panel["rows"]:
+        kind = item.get("kind")
+        groups[kind if kind in groups else ""].append(item)
+    notes = [item for item in groups[""] if item["label"] == "NOTE"]
+    body = (
+        _analytics_plain([item for item in groups[""] if item not in notes])
+        + _analytics_criteria(groups["criterion"])
+        + _analytics_segments(groups["segment"])
+        + _analytics_bars(groups["bar"])
+    )
+    tail = "".join(
+        f'<p class="note"><span class="label">{html.escape(item["label"])}</span> {html.escape(item["text"])}</p>'
+        for item in notes
+    )
+    return f'<section>{_title(number, panel["title"], source)}{body}{tail}</section>'
+
+
+def _sub(title: str) -> str:
+    return f'<span class="label muted sub">{html.escape(title)}</span>'
+
+
+def _table(klass: str, headers: tuple[str, ...], body: str) -> str:
+    head = "".join(f'<th scope="col">{html.escape(name)}</th>' for name in headers)
+    return f'<table class="{klass}"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+
+
+def _analytics_plain(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    return _table("plain", ("ITEM", "STATE", "DETAIL"), "".join(_row_html(item) for item in items))
+
+
+def _analytics_criteria(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    body = "".join(
+        f'<tr><th scope="row">{html.escape(item["label"])}</th>'
+        f'<td class="{item["state"]}">{TAGS[item["state"]]}</td>'
+        f'<td>{html.escape(item["result"])}</td><td>{html.escape(item["threshold"])}</td>'
+        f'<td>{html.escape(item["actual"])}</td></tr>'
+        for item in items
+    )
+    return _sub("CRITERIA") + _table("crit", ("CRITERION", "STATE", "RESULT", "THRESHOLD", "ACTUAL"), body)
+
+
+def _analytics_segments(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    body = ""
+    for item in items:
+        cells = item["cells"]
+        body += (
+            f'<tr><th scope="row">{html.escape(item["label"])}</th>'
+            + "".join(f"<td>{html.escape(cell)}</td>" for cell in cells)
+            + "</tr>"
+        )
+    return _sub("SEGMENTS") + _table("seg", ("METRIC", "TRAINING", "VALIDATION", "FINAL TEST"), body)
+
+
+def _analytics_bars(items: list[dict[str, Any]]) -> str:
+    """One bar per segment on a shared scale: zero line, weekly target mark, fill left (loss) or right (gain).
+
+    The track is aria-hidden: the dollar figures printed beside it carry the meaning.
+    """
+
+    if not items:
+        return ""
+    points = [0.0]
+    for item in items:
+        if item["value"] is not None and item["target"] is not None:
+            points += [float(item["value"]), float(item["target"])]
+    low, high = min(points), max(points)
+    span = (high - low) or 1.0
+
+    def at(amount: float) -> float:
+        return (amount - low) / span * 100
+
+    lines = []
+    for item in items:
+        track = ""
+        if item["value"] is not None and item["target"] is not None:
+            value = float(item["value"])
+            left, right = sorted((at(0.0), at(value)))
+            track = (
+                '<div class="track" aria-hidden="true">'
+                f'<div class="fill" style="left:{left:.2f}%;width:{right - left:.2f}%"></div>'
+                f'<div class="zero" style="left:{at(0.0):.2f}%"></div>'
+                f'<div class="tgt" style="left:{at(float(item["target"])):.2f}%"></div></div>'
+            )
+        lines.append(
+            f'<div class="bar"><span class="bname">{html.escape(item["name"])}</span>{track}'
+            f'<span class="bval">{html.escape(item["text"])}</span></div>'
+        )
+    caption = '<p class="muted cap">Bars start at the zero line; a loss extends left. The dashed mark is the weekly target.</p>'
+    return _sub("WEEKLY NET VS WEEKLY TARGET") + f'<div class="bars">{"".join(lines)}</div>{caption}'
 
 
 class DashboardServer(ThreadingHTTPServer):
@@ -656,8 +816,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
 
+def export_site(directory: Path, root: Path, *, load: Callable[[], AppConfig] = load_config) -> None:
+    """Write the public snapshot (silvr-cr-006 V-3) to ``directory``: the five files below and nothing else.
+
+    Everything is built in memory first, so a failure while collecting or rendering writes nothing.
+    Existing files in ``directory`` (a .vercel folder, say) are never touched or deleted.
+    """
+
+    status = collect_status(root, load=load)
+    headers = [{"key": name, "value": value} for name, value in SECURITY_HEADERS.items()]
+    outputs = {
+        "index.html": render_page(status, public=True).encode("utf-8"),
+        "404.html": render_not_found(public=True).encode("utf-8"),
+        "vercel.json": (json.dumps({"headers": [{"source": "/(.*)", "headers": headers}]}, indent=2) + "\n").encode("utf-8"),
+    }
+    for name in FONTS.values():
+        outputs[f"fonts/{name}"] = files("silvr.monitoring").joinpath("fonts", name).read_bytes()
+    (directory / "fonts").mkdir(parents=True, exist_ok=True)
+    for name, data in outputs.items():
+        (directory / name).write_bytes(data)
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Serve the read-only status page until interrupted."""
+    """Serve the read-only status page until interrupted, or with --export write the static snapshot."""
 
     parser = argparse.ArgumentParser(
         prog="python -m silvr.monitoring.dashboard_server",
@@ -669,7 +850,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"port to listen on (default {DEFAULT_PORT})")
     parser.add_argument("--host", default=BIND_HOST, help=f"address to bind (default {BIND_HOST})")
     parser.add_argument("--allowed-host", default=None, help="extra Host header to accept, e.g. the public domain")
+    parser.add_argument(
+        "--export",
+        metavar="DIR",
+        default=None,
+        help="write the public static snapshot (index.html, 404.html, fonts, vercel.json) to DIR and exit; starts no server",
+    )
     args = parser.parse_args(argv)
+    if args.export is not None:
+        try:
+            export_site(Path(args.export), Path.cwd())
+        except OSError as exc:
+            print(f"cannot export to {args.export}: {exc.strerror or type(exc).__name__}", file=sys.stderr)
+            return 2
+        print(f"silvr status: exported static snapshot to {args.export}")
+        return 0
     if not 0 <= args.port <= 65535:
         print(f"invalid port: {args.port}", file=sys.stderr)
         return 2
