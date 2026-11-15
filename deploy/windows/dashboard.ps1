@@ -18,6 +18,7 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 # Another listener on the port would answer the poll below and fake the "running" toast.
+# shortcut: check-then-bind race, fine for a status toast; bind-and-report from Python if it matters.
 $holder = Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($holder) {
     "$(Get-Date -Format o) port 8765 is already in use by process $($holder.OwningProcess)" | Add-Content $log
