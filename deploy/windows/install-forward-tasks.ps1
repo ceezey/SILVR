@@ -3,7 +3,8 @@
 #   pwsh -NoProfile -File deploy\windows\install-forward-tasks.ps1 -Root C:\SILVR-live
 #   "SILVR Forward Test": day 1 of every month at 09:00 local time; StartWhenAvailable runs it at
 #       the next logon if the PC was off; runs only while the user is logged on (Interactive).
-#   "SILVR Dashboard": at logon of this user, the read-only dashboard on port 8765.
+#   "SILVR Dashboard": at logon of this user, dashboard.ps1 (the read-only dashboard on port 8765,
+#       with a toast once it answers).
 # Both actions run as conhost.exe --headless pwsh, so no console window flashes (as the bot task).
 # The monthly task is registered from Task Scheduler XML: New-ScheduledTaskTrigger has no -Monthly,
 # Windows rejects a CIM monthly trigger instance ("The parameter is incorrect", seen 2026-11-11), and
@@ -59,11 +60,8 @@ $forwardXml = @"
 "@
 Register-ScheduledTask -TaskName $forwardName -Force -Xml $forwardXml | Out-Null
 
-$python = Join-Path $Root '.venv\Scripts\python.exe'
-$dashboardLog = Join-Path $Root 'logs\dashboard-console.log'
-New-Item -ItemType Directory -Force (Join-Path $Root 'logs') | Out-Null
 $dashboardAction = New-ScheduledTaskAction -Execute $conhost -WorkingDirectory $Root -Argument (
-    "--headless `"{0}`" -NoProfile -Command `"& '{1}' -m silvr.monitoring.dashboard_server --port 8765 *>> '{2}'`"" -f $pwsh, $python, $dashboardLog)
+    '--headless "{0}" -NoProfile -File "{1}"' -f $pwsh, (Join-Path $Root 'deploy\windows\dashboard.ps1'))
 Register-ScheduledTask -TaskName $dashboardName -Force -Principal $principal -Settings $dashboardSettings `
     -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $user) -Action $dashboardAction | Out-Null
 
