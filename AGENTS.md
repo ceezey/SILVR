@@ -3,8 +3,8 @@
 > **Project memory lives in the AI Memory Vault, not in this repo.** Since 2026-10-19 every SILVR doc (PRD, SDD, RFCs, QAD, OPS, runbooks, CRs, the LOG and the audit) is a note in the Obsidian vault at `C:\AI Agentic Memory`. Before working:
 >
 > 1. Read the vault rules: `C:\AI Agentic Memory\AGENTS.md`.
-> 2. Read the project index, which is also the doc status manifest: `C:\AI Agentic Memory\01_Projects\SILVR\00_Project_Index.md`.
-> 3. Read prior session notes in `C:\AI Agentic Memory\01_Projects\SILVR\Memory\`.
+> 2. Read the project index, which is also the doc status manifest: `C:\AI Agentic Memory\Developer\01_Projects\SILVR\00_Project_Index.md`.
+> 3. Read prior session notes in `C:\AI Agentic Memory\Developer\01_Projects\SILVR\Memory\`.
 >
 > Write project knowledge (doc updates, CRs, session logs, decisions) in the vault, never in `docs/`. The repo's [docs/index.md](docs/index.md) only points there. This file is hand-maintained and is the only copy of the build guide.
 
@@ -19,7 +19,7 @@ This guide tells a coding agent or a human how to build SILVR from the canonical
 
 ## 1. How to Build From These Docs
 
-Read in this order. Start at the vault project index (`C:\AI Agentic Memory\01_Projects\SILVR\00_Project_Index.md`; [docs/index.md](docs/index.md) points there), then:
+Read in this order. Start at the vault project index (`C:\AI Agentic Memory\Developer\01_Projects\SILVR\00_Project_Index.md`; [docs/index.md](docs/index.md) points there), then:
 
 ```mermaid
 flowchart LR
@@ -33,16 +33,16 @@ flowchart LR
     X --> G["BUILD (this guide)"]
 ```
 
-1. [scrutiny-silvr.md](<C:/AI Agentic Memory/01_Projects/SILVR/Planning/scrutiny-silvr.md>): gaps (`G-#`) and what is known to be wrong.
-2. [brd-silvr.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/brd-silvr.md>): business goals, metrics, owner-input register.
-3. [prd-silvr.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/prd-silvr.md>): features `PRD-F1`..`PRD-F12`, stories, status, task checkboxes (section 9).
-4. [sdd-silvr.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/sdd-silvr.md>): architecture and module design.
-5. RFCs: [signal engine](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>), [risk and kill switch](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>), [ML filter gate](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>), [readiness gates](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>).
-6. [qad-silvr.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>): test scenarios `QAD-T#`.
-7. [aia-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>), [clr-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/clr-silvr.md>), [ops-silvr.md](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SILVR/ops-silvr.md>): AI risks, compliance rows, runbooks.
-8. This guide. Supporting: [idea-silvr.md](<C:/AI Agentic Memory/01_Projects/SILVR/Planning/idea-silvr.md>), [val-silvr.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/val-silvr.md>), [ues-silvr.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/ues-silvr.md>), [sad-silvr.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/sad-silvr.md>), [voice-silvr.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/voice-silvr.md>), [audit-docs-drift.md](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>), [README.md](README.md).
+1. [scrutiny-silvr.md](<C:/AI Agentic Memory/Developer/01_Projects/SILVR/Planning/scrutiny-silvr.md>): gaps (`G-#`) and what is known to be wrong.
+2. [brd-silvr.md](<C:/AI Agentic Memory/Developer/03_Resources/Blueprints/SILVR/brd-silvr.md>): business goals, metrics, owner-input register.
+3. [prd-silvr.md](<C:/AI Agentic Memory/Developer/03_Resources/Blueprints/SILVR/prd-silvr.md>): features `PRD-F1`..`PRD-F12`, stories, status, task checkboxes (section 9).
+4. [sdd-silvr.md](<C:/AI Agentic Memory/Developer/03_Resources/Blueprints/SILVR/sdd-silvr.md>): architecture and module design.
+5. RFCs: [signal engine](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>), [risk and kill switch](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>), [ML filter gate](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>), [readiness gates](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>).
+6. [qad-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>): test scenarios `QAD-T#`.
+7. [aia-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>), [clr-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Compliance_&_Security/SILVR/clr-silvr.md>), [ops-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Dev_&_Ops/SILVR/ops-silvr.md>): AI risks, compliance rows, runbooks.
+8. This guide. Supporting: [idea-silvr.md](<C:/AI Agentic Memory/Developer/01_Projects/SILVR/Planning/idea-silvr.md>), [val-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Quality_&_Strategy/SILVR/val-silvr.md>), [ues-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Quality_&_Strategy/SILVR/ues-silvr.md>), [sad-silvr.md](<C:/AI Agentic Memory/Developer/03_Resources/Blueprints/SILVR/sad-silvr.md>), [voice-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Quality_&_Strategy/SILVR/voice-silvr.md>), [audit-docs-drift.md](<C:/AI Agentic Memory/Developer/04_Archives/Audits/2026-10/audit-docs-drift.md>), [README.md](README.md).
 
-Draft docs are the best current knowledge and the code wins over them. Flag a doc/code disagreement or an `Open` / `Owner input required` item to the owner instead of guessing. Once a doc is Locked, changes to it need a Change Record. A disagreement is recorded in [audit-docs-drift.md](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>).
+Draft docs are the best current knowledge and the code wins over them. Flag a doc/code disagreement or an `Open` / `Owner input required` item to the owner instead of guessing. Once a doc is Locked, changes to it need a Change Record. A disagreement is recorded in [audit-docs-drift.md](<C:/AI Agentic Memory/Developer/04_Archives/Audits/2026-10/audit-docs-drift.md>).
 
 Re-ground (re-read the relevant doc and the code) when:
 
@@ -55,18 +55,18 @@ Re-ground (re-read the relevant doc and the code) when:
 
 | To build | Read | Verify against |
 |----------|------|----------------|
-| Signal engine (PRD-F1, `trend_ensemble`) | [rfc-silvr-signal-engine.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>), SDD strategy section | `tests/test_trend_params.py`, `tests/test_trend_signals.py`, `tests/test_trend_sizing.py`, QAD strategy scenarios |
-| Backtester and validation (PRD-F2) | SDD backtest section, [qad-silvr.md](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>) | `tests/test_trend_engine.py`, `tests/test_trend_runner.py`, `tests/test_gate.py`; evidence reports must be non-empty before any performance claim |
-| Risk engine and kill switch (PRD-F3) | [rfc-silvr-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>) | `tests/test_risk_engine.py`, `tests/test_risk_trend_profile.py`, `tests/test_sim_kill_switch.py`, [clr-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/clr-silvr.md>), subagent SAD-A2 |
+| Signal engine (PRD-F1, `trend_ensemble`) | [rfc-silvr-signal-engine.md](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>), SDD strategy section | `tests/test_trend_params.py`, `tests/test_trend_signals.py`, `tests/test_trend_sizing.py`, QAD strategy scenarios |
+| Backtester and validation (PRD-F2) | SDD backtest section, [qad-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>) | `tests/test_trend_engine.py`, `tests/test_trend_runner.py`, `tests/test_gate.py`; evidence reports must be non-empty before any performance claim |
+| Risk engine and kill switch (PRD-F3) | [rfc-silvr-risk-kill-switch.md](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>) | `tests/test_risk_engine.py`, `tests/test_risk_trend_profile.py`, `tests/test_sim_kill_switch.py`, [clr-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Compliance_&_Security/SILVR/clr-silvr.md>), subagent SAD-A2 |
 | Paper trading (PRD-F4), Planned: no runtime since `9df48c0` | PRD section 9 | `tests/test_main.py` (paper and demo exit 2 before any network or database) |
-| Demo mode (PRD-F5) and readiness (PRD-F8) | [rfc-silvr-readiness-gates.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>) | readiness tests, subagent SAD-A1 |
-| ML filter (PRD-F6), Planned: no ML code since `9df48c0` | [rfc-silvr-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>), [aia-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>), the ML Rules in section 5 | `tests/test_config.py::test_ml_filter_enabled_rejected`, subagent SAD-A3 |
-| Monitoring (PRD-F7), deployment (PRD-F11) | [ops-silvr.md](<C:/AI Agentic Memory/02_Areas/Dev_&_Ops/SILVR/ops-silvr.md>) | monitoring tests, runbook steps |
+| Demo mode (PRD-F5) and readiness (PRD-F8) | [rfc-silvr-readiness-gates.md](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>) | readiness tests, subagent SAD-A1 |
+| ML filter (PRD-F6), Planned: no ML code since `9df48c0` | [rfc-silvr-ml-filter-gate.md](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>), [aia-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>), the ML Rules in section 5 | `tests/test_config.py::test_ml_filter_enabled_rejected`, subagent SAD-A3 |
+| Monitoring (PRD-F7), deployment (PRD-F11) | [ops-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Dev_&_Ops/SILVR/ops-silvr.md>) | monitoring tests, runbook steps |
 | Config (PRD-F9), data and storage (PRD-F10) | SDD config and data sections | config tests, the runbook-local-dev step 3 env block loads; `.env.example` loads as paper mode since `c6d909d` (G-4 closed, `tests/test_config.py:258`) |
 
 ## 2. Subagents
 
-Four safety reviewers run before merge on the paths each guards, and one standard-library-only builder (`psl-purist`, SAD-B1) writes operator UI and Telegram code on request. The roster, trigger rules and orchestration are in [sad-silvr.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/sad-silvr.md>) sections 3 and 4. The agent cards live in `.claude/agents/`, are hand-maintained and canonical. The SAD section 3 holds a snapshot: after editing a card, copy the change into the SAD.
+Four safety reviewers run before merge on the paths each guards, and one standard-library-only builder (`psl-purist`, SAD-B1) writes operator UI and Telegram code on request. The roster, trigger rules and orchestration are in [sad-silvr.md](<C:/AI Agentic Memory/Developer/03_Resources/Blueprints/SILVR/sad-silvr.md>) sections 3 and 4. The agent cards live in `.claude/agents/`, are hand-maintained and canonical. The SAD section 3 holds a snapshot: after editing a card, copy the change into the SAD.
 
 ## 3. Stack Currency & Deprecations
 
@@ -82,7 +82,7 @@ Four safety reviewers run before merge on the paths each guards, and one standar
 | Hosting | Oracle Cloud Always Free VM (Ampere A1, Ubuntu, home region outside the US): `docker compose` run by a systemd unit (restart on exit 1, stop on exit 2), logrotate for `logs/` | `deploy/systemd/silvr.service`; `deploy/logrotate/silvr`; `deploy/scripts/prepare-host.sh` |
 | Dev dependency | `pytest>=8.0` (optional extra `dev`) | `pyproject.toml` |
 | Build backend | `setuptools>=68` | `pyproject.toml` |
-| scikit-learn | Not used: the ML training code that imported it was deleted in `9df48c0`, and nothing in `src/` imports it | [aia-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>) section 1.2 |
+| scikit-learn | Not used: the ML training code that imported it was deleted in `9df48c0`, and nothing in `src/` imports it | [aia-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>) section 1.2 |
 | Docker base image | `python:3.11-slim` | `Dockerfile` line 1 |
 | Binance Futures REST and WebSocket | Versionless public API; no pinned version | https://binance-docs.github.io/apidocs/futures/en/ |
 
@@ -92,11 +92,11 @@ No version in this table is invented. If `pyproject.toml` or the `Dockerfile` ch
 
 | ID | Old convention (in old docs) | Current code | Use instead |
 |----|------------------------------|--------------|-------------|
-| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Superseded (`9df48c0`): the ML filter, `build_ml_filter_config` and the ML registry and threshold settings are deleted; `ML_FILTER_ENABLED=true` raises `ConfigError` at load (`src/silvr/config/settings.py:148-150`) | Keep `ML_FILTER_ENABLED=false`; a future filter needs its own spec under the ML Rules in section 5 and [rfc-silvr-ml-filter-gate.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>) |
-| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into a `default` profile `RiskConfig` (`src/silvr/risk/factory.py:15-23`), but since `9df48c0` only tests call it: the trend backtest builds `RiskConfig.trend()` with a simulated kill switch (`src/silvr/backtest/trend_runner.py:202-204`), and no paper or demo runtime exists; the daily-loss and leverage bounds are checked in demo mode only | A trend backtest takes `RiskConfig.trend()` (`src/silvr/risk/models.py:33-47`) and never the real kill-switch path; a future runtime builds its engine from settings through `src/silvr/risk/factory.py` and must select the `trend` profile (open for the follow-up runtime project); never hand-build a `RiskConfig` for a running bot; see [rfc-silvr-risk-kill-switch.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>) |
-| D-10 | Live trading is gated by `LIVE_TRADING` plus readiness | `LIVE_TRADING=true` is rejected at load; readiness is never consulted by the entrypoint | Live is `Planned, blocked`; see [rfc-silvr-readiness-gates.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>) |
+| D-4 | `ML_FILTER_ENABLED` and `ML_ENABLED` turn the ML filter on | Superseded (`9df48c0`): the ML filter, `build_ml_filter_config` and the ML registry and threshold settings are deleted; `ML_FILTER_ENABLED=true` raises `ConfigError` at load (`src/silvr/config/settings.py:148-150`) | Keep `ML_FILTER_ENABLED=false`; a future filter needs its own spec under the ML Rules in section 5 and [rfc-silvr-ml-filter-gate.md](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md>) |
+| D-11 | `MAX_RISK_PER_TRADE`, `MAX_DAILY_LOSS`, `MAX_LEVERAGE` env keys set risk caps | Partly resolved (`5e4acc5`): `MAX_RISK_PER_TRADE` must be in (0, 0.005] in every mode and `RiskConfig` rejects more than 0.005; `build_risk_config` maps all three keys and the kill-switch path into a `default` profile `RiskConfig` (`src/silvr/risk/factory.py:15-23`), but since `9df48c0` only tests call it: the trend backtest builds `RiskConfig.trend()` with a simulated kill switch (`src/silvr/backtest/trend_runner.py:202-204`), and no paper or demo runtime exists; the daily-loss and leverage bounds are checked in demo mode only | A trend backtest takes `RiskConfig.trend()` (`src/silvr/risk/models.py:33-47`) and never the real kill-switch path; a future runtime builds its engine from settings through `src/silvr/risk/factory.py` and must select the `trend` profile (open for the follow-up runtime project); never hand-build a `RiskConfig` for a running bot; see [rfc-silvr-risk-kill-switch.md](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-risk-kill-switch.md>) |
+| D-10 | Live trading is gated by `LIVE_TRADING` plus readiness | `LIVE_TRADING=true` is rejected at load; readiness is never consulted by the entrypoint | Live is `Planned, blocked`; see [rfc-silvr-readiness-gates.md](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-readiness-gates.md>) |
 
-The full list is in [audit-docs-drift.md](<C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md>).
+The full list is in [audit-docs-drift.md](<C:/AI Agentic Memory/Developer/04_Archives/Audits/2026-10/audit-docs-drift.md>).
 
 ## 4. Golden-Path Patterns
 
@@ -280,11 +280,11 @@ For every task:
 7. Summarize changed files.
 8. Explain how to run tests.
 
-Note: `PROGRESS.md` and `TODO.md` were retired by the documentation suite. Read steps 5 and 6 as: update the vault project index (`01_Projects/SILVR/00_Project_Index.md`) and the LOG ([log-silvr](<C:/AI Agentic Memory/01_Projects/SILVR/Logs/log-silvr.md>)), and update the PRD section 9 checkboxes.
+Note: `PROGRESS.md` and `TODO.md` were retired by the documentation suite. Read steps 5 and 6 as: update the vault project index (`Developer/01_Projects/SILVR/00_Project_Index.md`) and the LOG ([log-silvr](<C:/AI Agentic Memory/Developer/01_Projects/SILVR/Logs/log-silvr.md>)), and update the PRD section 9 checkboxes.
 
 ### Strategy Rules
 
-The strategy is `trend_ensemble`: a long-only Donchian-ensemble trend follower over a frozen universe of 15 Binance USDT-M perpetuals (BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, AVAXUSDT, LINKUSDT, DOTUSDT, LTCUSDT, TRXUSDT, ATOMUSDT, NEARUSDT, BCHUSDT; `src/silvr/strategy/trend/params.py`). It follows Zarattini, Pagani and Barbon (2025), "Catching Crypto Trends" (SSRN 5209907). The rules and their reasons are in [rfc-silvr-signal-engine.md](<C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>) (RFC-001).
+The strategy is `trend_ensemble`: a long-only Donchian-ensemble trend follower over a frozen universe of 15 Binance USDT-M perpetuals (BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, AVAXUSDT, LINKUSDT, DOTUSDT, LTCUSDT, TRXUSDT, ATOMUSDT, NEARUSDT, BCHUSDT; `src/silvr/strategy/trend/params.py`). It follows Zarattini, Pagani and Barbon (2025), "Catching Crypto Trends" (SSRN 5209907). The rules and their reasons are in [rfc-silvr-signal-engine.md](<C:/AI Agentic Memory/Developer/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md>) (RFC-001).
 
 The bot looks for:
 
@@ -390,8 +390,8 @@ Do not require real API keys for tests.
 
 When completing a task:
 
-- update the vault project index (`C:\AI Agentic Memory\01_Projects\SILVR\00_Project_Index.md`) and the LOG ([log-silvr](<C:/AI Agentic Memory/01_Projects/SILVR/Logs/log-silvr.md>)) every task;
-- update the PRD section 9 checkboxes ([prd-silvr.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/prd-silvr.md>));
+- update the vault project index (`C:\AI Agentic Memory\Developer\01_Projects\SILVR\00_Project_Index.md`) and the LOG ([log-silvr](<C:/AI Agentic Memory/Developer/01_Projects/SILVR/Logs/log-silvr.md>)) every task;
+- update the PRD section 9 checkboxes ([prd-silvr.md](<C:/AI Agentic Memory/Developer/03_Resources/Blueprints/SILVR/prd-silvr.md>));
 - if architecture, strategy, risk or ML changes, update the SDD, RFC-001 (signal engine), RFC-002 (risk and kill switch) or the AIA respectively;
 - a change to a Locked doc requires a Change Record (section 5.1);
 - doc edits happen in the vault, follow its frontmatter and wikilink rules (vault `AGENTS.md` sections 3 and 4), and never rename a note (repo code cites `runbook-backtest.md` and `runbook-demo-testnet.md` by basename).
@@ -444,12 +444,12 @@ Branch flow (owner decision, 2026-10-14): BE and FE work, then merge to `dev`, t
 1. Branch from `dev` per task: `feat/be-<name>` for bot code, `feat/fe-<name>` for the operator dashboard or Telegram (FE is built by `psl-purist`, SAD-B1).
 2. Build on the branch with tests, and run the reviewers below before merging.
 3. Merge the branch into local `dev`. Do not push: push `dev` only when the owner says "push" (fetch and compare with `origin/dev` first; never force-push). After the push, remove the branch's worktree and delete the branch. No PR and no owner sign-off is needed for this step (owner rule, 2026-11-10; also in the global agent instructions).
-4. QA on `dev`: the full `python -m pytest`, the [QAD](<C:/AI Agentic Memory/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>) section 6 release criteria for the affected mode gate, and a smoke run of the bot and the dashboard. The owner signs off.
+4. QA on `dev`: the full `python -m pytest`, the [QAD](<C:/AI Agentic Memory/Developer/02_Areas/Quality_&_Strategy/SILVR/qad-silvr.md>) section 6 release criteria for the affected mode gate, and a smoke run of the bot and the dashboard. The owner signs off.
 5. Open a PR from `dev` to `main` only after QA passes and the owner says go.
 
 For each change:
 
-1. When a change touches a Locked doc, propose a Change Record `cr-silvr-<slug>.md` in the vault folder `01_Projects/SILVR/Change_Records/` (template `03_Resources/Templates/change-record-template.md`) with sections: Why, Divergences, Changes, Verification, Pre-merge gate runs, Deferred.
+1. When a change touches a Locked doc, propose a Change Record `cr-silvr-<slug>.md` in the vault folder `Developer/01_Projects/SILVR/Change_Records/` (template `Developer/03_Resources/Templates/change-record-template.md`) with sections: Why, Divergences, Changes, Verification, Pre-merge gate runs, Deferred.
 2. Apply the change (code, tests, docs).
 3. Verify: run the tests and the doc checks; run the subagent reviewers that SAD section 4 requires.
 4. Register the Change Record in section 2 of the vault project index.
@@ -499,9 +499,9 @@ Nothing is generated. `tools/materialize_docs.py` was retired on 2026-10-19 when
 | `CLAUDE.md` | repo root; pointer to `AGENTS.md` | hand |
 | `README.md` | repo root | hand |
 | `docs/index.md` | repo; pointer to the vault project index | hand |
-| `.claude/agents/*` | repo; canonical agent cards (snapshot in [sad-silvr.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/sad-silvr.md>) section 3) | hand |
-| Model card | [aia-silvr.md](<C:/AI Agentic Memory/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>) section 1 (was `MODEL_CARD.md`) | vault |
-| Brand and design system | [dsd-silvr.md](<C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/dsd-silvr.md>) sections 0 to 7 (were `BRAND.md`, `DESIGN.md`) | vault |
+| `.claude/agents/*` | repo; canonical agent cards (snapshot in [sad-silvr.md](<C:/AI Agentic Memory/Developer/03_Resources/Blueprints/SILVR/sad-silvr.md>) section 3) | hand |
+| Model card | [aia-silvr.md](<C:/AI Agentic Memory/Developer/02_Areas/Compliance_&_Security/SILVR/aia-silvr.md>) section 1 (was `MODEL_CARD.md`) | vault |
+| Brand and design system | [dsd-silvr.md](<C:/AI Agentic Memory/Developer/03_Resources/Blueprints/SILVR/dsd-silvr.md>) sections 0 to 7 (were `BRAND.md`, `DESIGN.md`) | vault |
 | Every other doc | the vault; locations listed in the project index | vault |
 
 ## 8. Self-Check
