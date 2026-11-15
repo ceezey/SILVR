@@ -3,7 +3,13 @@ import re
 from pathlib import Path
 
 WINDOWS = Path(__file__).resolve().parents[1] / "deploy" / "windows"
-SCRIPTS = ("forward-test.ps1", "toast.ps1", "install-forward-tasks.ps1", "publish-dashboard.ps1")
+SCRIPTS = (
+    "forward-test.ps1",
+    "toast.ps1",
+    "install-forward-tasks.ps1",
+    "publish-dashboard.ps1",
+    "dashboard.ps1",
+)
 
 
 def read(name: str) -> str:
@@ -53,8 +59,7 @@ def test_installer_names_only_the_two_silvr_tasks() -> None:
         "Unregister-ScheduledTask -TaskName 'SILVR Forward Test','SILVR Dashboard' -Confirm:$false"
         in script
     )
-    assert "dashboard_server --port 8765" in script
-    assert r"logs\dashboard-console.log" in script
+    assert r"deploy\windows\dashboard.ps1" in script
 
 
 def test_forward_task_has_a_12_hour_limit_and_dashboard_none() -> None:
@@ -128,3 +133,30 @@ def test_forward_test_publishes_after_the_toast_and_keeps_its_exit_code() -> Non
     assert "publish-dashboard.ps1" in tail
     assert tail.rstrip().endswith("exit $code")
     assert "$code = " not in tail.split("publish-dashboard.ps1", 1)[1]
+
+
+def test_dashboard_runs_the_server_and_toasts_once_it_answers() -> None:
+    script = read("dashboard.ps1")
+
+    assert script.count("& $python") == 1
+    assert "& $python -m silvr.monitoring.dashboard_server --port 8765 *>> $log" in script
+    assert r"$log = Join-Path $Root 'logs\dashboard-console.log'" in script
+    # The started toast waits for the port, so it never claims a dashboard that did not come up.
+    watch = script.split("$watch = Start-ThreadJob", 1)[1].split("& $python", 1)[0]
+    assert "ConnectAsync('127.0.0.1', 8765)" in watch and "toast.ps1" not in watch
+    assert "-File $toast -Message $text" in watch
+    assert "throw" not in script
+
+
+def test_dashboard_toasts_when_the_venv_is_missing_the_port_is_busy_or_the_server_stops() -> None:
+    script = read("dashboard.ps1")
+
+    missing = script.split("if (-not (Test-Path $python)) {", 1)[1].split("}", 1)[0]
+    assert "Add-Content $log" in missing and "Show-Toast" in missing and "exit 1" in missing
+    busy = script.split("if ($holder) {", 1)[1].split("}", 1)[0]
+    assert "Get-NetTCPConnection -LocalPort 8765 -State Listen" in script
+    assert script.index("if ($holder)") < script.index("Start-ThreadJob")
+    assert "Show-Toast" in busy and "exit 2" in busy
+    tail = script.split("dashboard_server --port 8765", 1)[1]
+    assert "$null -eq $LASTEXITCODE" in tail and "Show-Toast" in tail
+    assert tail.rstrip().endswith("exit $code")
