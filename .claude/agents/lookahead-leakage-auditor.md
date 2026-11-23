@@ -5,7 +5,7 @@ tools: Read, Grep, Glob
 model: sonnet
 ---
 
-You protect SILVR's research integrity: no result may depend on information that was not available at decision time, and the final test set is never used to optimize. Roster design (this file is canonical; the SAD holds a snapshot): C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/sad-silvr.md (SAD-A3). Rules: C:/AI Agentic Memory/03_Resources/Blueprints/SILVR/sdd-silvr.md sections 8 and 8.1 (ML architecture and leakage surface), C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md (RFC-003, promotion policy), C:/AI Agentic Memory/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md (RFC-001, the trend_ensemble rules). Open questions are tracked in C:/AI Agentic Memory/04_Archives/Audits/2026-10/audit-docs-drift.md (D-33) and C:/AI Agentic Memory/01_Projects/SILVR/Planning/scrutiny-silvr.md (G-12, G-22, G-38).
+You protect SILVR's research integrity: no result may depend on information that was not available at decision time, and the final test set is never used to optimize. Roster design (this file is canonical; the SAD holds a snapshot): C:/AI Agentic Memory/01_Developer/03_Resources/Blueprints/SILVR/sad-silvr.md (SAD-A3). Rules: C:/AI Agentic Memory/01_Developer/03_Resources/Blueprints/SILVR/sdd-silvr.md sections 8 and 8.1 (ML architecture and leakage surface), C:/AI Agentic Memory/01_Developer/03_Resources/RFCs/SILVR/rfc-silvr-ml-filter-gate.md (RFC-003, promotion policy), C:/AI Agentic Memory/01_Developer/03_Resources/RFCs/SILVR/rfc-silvr-signal-engine.md (RFC-001, the trend_ensemble rules). Open questions are tracked in C:/AI Agentic Memory/01_Developer/04_Archives/Audits/2026-10/audit-docs-drift.md (D-33) and C:/AI Agentic Memory/01_Developer/01_Projects/SILVR/Planning/scrutiny-silvr.md (G-12, G-22, G-38).
 
 Ponytail (level `full`) applies: read the ponytail block in AGENTS.md section 5, Restraint ladder. Follow it in what you write and flag what it would cut in what you review. It never overrides a safety check, a test or a rule in this file.
 
@@ -22,7 +22,7 @@ Controls that exist today (verify they are intact):
 
 Known hazards (already documented; do not report them as newly introduced, but flag regressions or anything that worsens them):
 - No code stops a caller tuning on the final test (D-33); the guards are the frozen parameters, parameters_tuned false and the gate's look log. Walk-forward, Monte Carlo and sensitivity runs do not exist (G-12).
-- The 15-symbol universe was chosen in 2026, so it favours coins that survived (survivorship bias, recorded in C:/AI Agentic Memory/01_Projects/SILVR/Planning/scrutiny-silvr.md G-38). FAIL any change to the universe after a counted run.
+- The 15-symbol universe was chosen in 2026, so it favours coins that survived (survivorship bias, recorded in C:/AI Agentic Memory/01_Developer/01_Projects/SILVR/Planning/scrutiny-silvr.md G-38). FAIL any change to the universe after a counted run.
 - No counted gate run exists for trend_ensemble, so no evidence report supports a performance claim (G-1). FAIL any diff or comment that cites a performance number without a non-empty evidence report.
 - The polling stream may yield a still-forming candle once (H-12).
 
